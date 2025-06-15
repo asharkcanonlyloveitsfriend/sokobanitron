@@ -6,6 +6,7 @@ import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -16,7 +17,16 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.example.einkarcade.ui.theme.EinkArcadeTheme
 
 enum class Direction { UP, DOWN, LEFT, RIGHT }
-enum class Tile { EMPTY, PLAYER }
+enum class Tile { EMPTY }
+
+data class Position(val row: Int, val col: Int)
+data class GameState(
+    val grid: List<List<Tile>>
+) {
+    fun isInBounds(position: Position): Boolean {
+        return position.row in grid.indices && position.col in grid[0].indices
+    }
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -28,48 +38,30 @@ class MainActivity : ComponentActivity() {
         internal const val GRID_HEIGHT = 6
         internal const val GAME_WIDTH = CELL_SIZE * GRID_WIDTH
         internal const val GAME_HEIGHT = CELL_SIZE * GRID_HEIGHT
-        internal val LEVEL_GRID = mutableStateOf(
-            Array(GRID_HEIGHT) { row ->
-                Array(GRID_WIDTH) { col ->
-                    if (row == 0 && col == 0) Tile.PLAYER else Tile.EMPTY
+        internal val PLAYER_POSITION = mutableStateOf(Position(0, 0))
+        internal val GAME_STATE = GameState(
+            grid = List(GRID_HEIGHT) { row ->
+                List(GRID_WIDTH) { col ->
+                    Tile.EMPTY
                 }
             }
         )
     }
 
-
-    private var playerRow = 0
-    private var playerCol = 0
-
     private fun move(direction: Direction) {
         Log.d("GameInput", "Move: $direction")
 
-        val (newRow, newCol) = when (direction) {
-            Direction.UP -> playerRow - 1 to playerCol
-            Direction.DOWN -> playerRow + 1 to playerCol
-            Direction.LEFT -> playerRow to playerCol - 1
-            Direction.RIGHT -> playerRow to playerCol + 1
+        val (playerRow, playerCol) = PLAYER_POSITION.value
+
+        val newPosition = when (direction) {
+            Direction.UP -> Position(playerRow - 1, playerCol)
+            Direction.DOWN -> Position(playerRow + 1, playerCol)
+            Direction.LEFT -> Position(playerRow, playerCol - 1)
+            Direction.RIGHT -> Position(playerRow, playerCol + 1)
         }
 
-        // Check bounds
-        if (newRow !in 0 until GRID_HEIGHT || newCol !in 0 until GRID_WIDTH) return
-
-        val oldGrid = LEVEL_GRID.value
-        if (oldGrid[newRow][newCol] != Tile.EMPTY) return
-
-        val newGrid = oldGrid.mapIndexed { row, rowData ->
-            rowData.mapIndexed { col, tile ->
-                when {
-                    row == playerRow && col == playerCol -> Tile.EMPTY
-                    row == newRow && col == newCol -> Tile.PLAYER
-                    else -> tile
-                }
-            }.toTypedArray()
-        }.toTypedArray()
-
-        playerRow = newRow
-        playerCol = newCol
-        LEVEL_GRID.value = newGrid
+        if (!GAME_STATE.isInBounds(newPosition)) return
+        PLAYER_POSITION.value = newPosition
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -102,27 +94,25 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun GameScreen(modifier: Modifier = Modifier) {
-    androidx.compose.foundation.Canvas(
-        modifier = modifier
-            .fillMaxSize()
-    ) {
+    Canvas(modifier = modifier.fillMaxSize()) {
         drawRect(
-            color = androidx.compose.ui.graphics.Color.LightGray,
+            color = androidx.compose.ui.graphics.Color.DarkGray,
             topLeft = androidx.compose.ui.geometry.Offset(MainActivity.GAME_LEFT, MainActivity.GAME_TOP),
             size = androidx.compose.ui.geometry.Size(MainActivity.GAME_WIDTH, MainActivity.GAME_HEIGHT),
             style = androidx.compose.ui.graphics.drawscope.Stroke(width = 4f)
         )
+        val player = MainActivity.PLAYER_POSITION.value
         for (row in 0 until MainActivity.GRID_HEIGHT) {
             for (col in 0 until MainActivity.GRID_WIDTH) {
                 val x = MainActivity.GAME_LEFT + col * MainActivity.CELL_SIZE
                 val y = MainActivity.GAME_TOP + row * MainActivity.CELL_SIZE
                 drawRect(
-                    color = androidx.compose.ui.graphics.Color.DarkGray,
+                    color = androidx.compose.ui.graphics.Color.LightGray,
                     topLeft = androidx.compose.ui.geometry.Offset(x, y),
                     size = androidx.compose.ui.geometry.Size(MainActivity.CELL_SIZE, MainActivity.CELL_SIZE),
                     style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1f)
                 )
-                if (MainActivity.LEVEL_GRID.value[row][col] == Tile.PLAYER) {
+                if (row == player.row && col == player.col) {
                     drawRect(
                         color = androidx.compose.ui.graphics.Color.Gray,
                         topLeft = androidx.compose.ui.geometry.Offset(x, y),
