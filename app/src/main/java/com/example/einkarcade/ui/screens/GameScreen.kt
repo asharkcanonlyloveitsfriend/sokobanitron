@@ -35,6 +35,7 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -47,11 +48,79 @@ private const val CELL_SIZE = 100f
 private const val GRID_OFFSET_X = 50f
 private const val GRID_OFFSET_Y = 50f
 
-private fun drawGameObject(
+private fun DrawScope.drawGameObject(
     position: Position,
-    draw: (Offset) -> Unit
+    draw: DrawScope.(Offset) -> Unit
 ) {
-    draw(position.toOffset())
+    this.draw(position.toOffset())
+}
+
+private fun DrawScope.drawWall(position: Position) {
+    drawGameObject(position) { offset ->
+        drawRect(
+            color = Color.Black,
+            topLeft = offset,
+            size = Size(CELL_SIZE, CELL_SIZE)
+        )
+    }
+}
+
+private fun DrawScope.drawEmpty(position: Position) {
+    drawGameObject(position) { offset ->
+        drawRect(
+            color = Color.Gray,
+            topLeft = offset,
+            size = Size(CELL_SIZE, CELL_SIZE)
+        )
+    }
+}
+
+private fun DrawScope.drawFloor(position: Position) {
+    drawGameObject(position) { offset ->
+        drawRect(
+            color = Color.White,
+            topLeft = offset,
+            size = Size(CELL_SIZE, CELL_SIZE)
+        )
+    }
+}
+
+private fun DrawScope.drawTarget(position: Position) {
+    drawGameObject(position) { offset ->
+        drawRect(
+            color = Color.LightGray,
+            topLeft = offset,
+            size = Size(CELL_SIZE, CELL_SIZE)
+        )
+    }
+}
+
+private fun DrawScope.drawBox(position: Position, selected: Boolean) {
+    val padding = CELL_SIZE * 0.2f
+    val color = if (selected) Color.Black else Color.Gray
+    drawGameObject(position) { offset ->
+        drawRect(
+            color = color,
+            topLeft = Offset(offset.x + padding, offset.y + padding),
+            size = Size(
+                CELL_SIZE - 2 * padding,
+                CELL_SIZE - 2 * padding
+            )
+        )
+    }
+}
+
+private fun DrawScope.drawPlayer(position: Position) {
+    drawGameObject(position) { offset ->
+        drawCircle(
+            color = Color.Gray,
+            radius = CELL_SIZE * 0.4f,
+            center = Offset(
+                offset.x + CELL_SIZE / 2,
+                offset.y + CELL_SIZE / 2
+            )
+        )
+    }
 }
 
 @Composable
@@ -188,60 +257,19 @@ fun GameScreen(
                 for ((rowIndex, row) in gameController.tiles.withIndex()) {
                     for ((colIndex, tile) in row.withIndex()) {
                         when (tile) {
-                            Tile.WALL -> {
-                                drawGameObject(Position(rowIndex, colIndex)) { offset ->
-                                    drawRect(
-                                        color = Color.Black,
-                                        topLeft = offset,
-                                        size = Size(
-                                            CELL_SIZE,
-                                            CELL_SIZE
-                                        )
-                                    )
-                                }
-                            }
-                            Tile.TARGET -> {
-                                drawGameObject(Position(rowIndex, colIndex)) { offset ->
-                                    drawRect(
-                                        color = Color.LightGray,
-                                        topLeft = offset,
-                                        size = Size(
-                                            CELL_SIZE,
-                                            CELL_SIZE
-                                        )
-                                    )
-                                }
-                            }
-                            else -> {}
+                            Tile.WALL -> drawWall(Position(rowIndex, colIndex))
+                            Tile.GOAL -> drawTarget(Position(rowIndex, colIndex))
+                            Tile.FLOOR -> drawFloor(Position(rowIndex, colIndex))
+                            Tile.EMPTY -> drawEmpty(Position(rowIndex, colIndex))
                         }
                     }
                 }
 
                 for (position in gameController.boxPositions) {
-                    val padding = CELL_SIZE * 0.2f
-                    val color = if (position == selectedBoxPosition.value) Color.Black else Color.Gray
-                    drawGameObject(position) { offset ->
-                        drawRect(
-                            color = color,
-                            topLeft = Offset(offset.x + padding, offset.y + padding),
-                            size = Size(
-                                CELL_SIZE - 2 * padding,
-                                CELL_SIZE - 2 * padding
-                            )
-                        )
-                    }
+                    drawBox(position, position == selectedBoxPosition.value)
                 }
 
-                drawGameObject(playerPosition) { offset ->
-                    drawCircle(
-                        color = Color.Gray,
-                        radius = CELL_SIZE * 0.4f,
-                        center = Offset(
-                            offset.x + CELL_SIZE / 2,
-                            offset.y + CELL_SIZE / 2
-                        )
-                    )
-                }
+                drawPlayer(playerPosition)
             }
 
             Row(

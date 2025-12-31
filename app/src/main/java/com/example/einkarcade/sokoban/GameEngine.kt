@@ -11,7 +11,7 @@ class GameEngine(private val level: Level) {
         get() = gameState.boxPositions
 
     val isGameWon: Boolean
-        get() = gameState.boxPositions.all { level.isTarget(it) }
+        get() = gameState.boxPositions.all { level.isGoal(it) }
 
     private fun hasBoxAt(position: Position): Boolean {
         return gameState.boxPositions.contains(position)
