@@ -4,6 +4,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.painter.Painter
 import com.example.einkarcade.sokoban.Position
 
 const val CELL_SIZE = 100f
@@ -47,31 +49,71 @@ fun DrawScope.drawGoal(position: Position) {
     }
 }
 
-fun DrawScope.drawBox(position: Position, selected: Boolean) {
-    val padding = CELL_SIZE * 0.2f
-    val color = if (selected) Color.Black else Color.Gray
-    drawGameObject(position) { offset ->
+fun DrawScope.drawBox(position: Position, painter: Painter, selected: Boolean) {
+    val offset = position.toOffset()
+    val targetSize = CELL_SIZE * 0.90f
+    val left = offset.x + (CELL_SIZE - targetSize) / 2
+    val top = offset.y + (CELL_SIZE - targetSize) / 2
+
+    // Draw box SVG
+    withTransform({
+        translate(left, top)
+    }) {
+        with(painter) {
+            draw(size = Size(targetSize, targetSize))
+        }
+    }
+
+    if (selected) {
+        val bracketLength = targetSize * 0.24f
+        val strokeWidth = targetSize * 0.065f
+        val inset = targetSize * 0.075f
+
+        val x0 = left + inset
+        val y0 = top + inset
+        val x1 = left + targetSize - inset - bracketLength
+        val y1 = top + targetSize - inset - bracketLength
+
+        val color = Color.Black
+
+        // Top-left
+        drawRect(color, Offset(x0, y0), Size(bracketLength, strokeWidth))
+        drawRect(color, Offset(x0, y0), Size(strokeWidth, bracketLength))
+
+        // Top-right
+        drawRect(color, Offset(x1, y0), Size(bracketLength, strokeWidth))
+        drawRect(color, Offset(x1 + bracketLength - strokeWidth, y0), Size(strokeWidth, bracketLength))
+
+        // Bottom-left
+        drawRect(color, Offset(x0, y1 + bracketLength - strokeWidth), Size(bracketLength, strokeWidth))
+        drawRect(color, Offset(x0, y1), Size(strokeWidth, bracketLength))
+
+        // Bottom-right
         drawRect(
-            color = color,
-            topLeft = Offset(offset.x + padding, offset.y + padding),
-            size = Size(
-                CELL_SIZE - 2 * padding,
-                CELL_SIZE - 2 * padding
-            )
+            color,
+            Offset(x1, y1 + bracketLength - strokeWidth),
+            Size(bracketLength, strokeWidth)
+        )
+        drawRect(
+            color,
+            Offset(x1 + bracketLength - strokeWidth, y1),
+            Size(strokeWidth, bracketLength)
         )
     }
 }
 
-fun DrawScope.drawPlayer(position: Position) {
-    drawGameObject(position) { offset ->
-        drawCircle(
-            color = Color.Gray,
-            radius = CELL_SIZE * 0.4f,
-            center = Offset(
-                offset.x + CELL_SIZE / 2,
-                offset.y + CELL_SIZE / 2
-            )
-        )
+fun DrawScope.drawPlayer(position: Position, painter: Painter) {
+    val offset = position.toOffset()
+    val targetSize = CELL_SIZE * 0.8f
+    val left = offset.x + (CELL_SIZE - targetSize) / 2
+    val top = offset.y + (CELL_SIZE - targetSize) / 2
+
+    withTransform({
+        translate(left, top)
+    }) {
+        with(painter) {
+            draw(size = Size(targetSize, targetSize))
+        }
     }
 }
 

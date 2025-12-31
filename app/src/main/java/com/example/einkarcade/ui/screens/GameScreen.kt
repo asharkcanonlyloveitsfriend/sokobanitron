@@ -35,8 +35,10 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.einkarcade.R
 import com.example.einkarcade.GameController
 import com.example.einkarcade.sokoban.Position
 import com.example.einkarcade.sokoban.Tile
@@ -51,6 +53,8 @@ fun GameScreen(
     gameController.revision.value
     val playerPosition = gameController.playerPosition
     val syncError = remember { mutableStateOf<String?>(null) }
+    val boxPainter = painterResource(id = R.drawable.box)
+    val playerPainter = painterResource(id = R.drawable.player_slime)
 
     Box(modifier = modifier.fillMaxSize()) {
         fun handleTap(tappedPosition: Position) {
@@ -185,10 +189,10 @@ fun GameScreen(
                 }
 
                 for (position in gameController.boxPositions) {
-                    drawBox(position, position == selectedBoxPosition.value)
+                    drawBox(position, boxPainter, position == selectedBoxPosition.value)
                 }
 
-                drawPlayer(playerPosition)
+                drawPlayer(playerPosition, playerPainter)
             }
 
             Row(
