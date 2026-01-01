@@ -47,6 +47,7 @@ import com.example.einkarcade.sokoban.Position
 import com.example.einkarcade.sokoban.Tile
 import com.example.einkarcade.ui.rendering.*
 
+
 @Composable
 fun GameScreen(
     modifier: Modifier = Modifier,
@@ -92,7 +93,14 @@ fun GameScreen(
                     .padding(16.dp)
                     .clickable { setExpanded.value = true }
             ) {
-                Text("Set: ${gameController.currentSetName}", fontSize = 24.sp)
+                Text(
+                    text = gameController.currentSetName,
+                    fontSize = 16.sp,
+                    color = Color.LightGray,
+                    modifier = Modifier
+                        .background(Color.Black, shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
                 DropdownMenu(
                     expanded = setExpanded.value,
                     onDismissRequest = { setExpanded.value = false }
@@ -118,6 +126,8 @@ fun GameScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.padding(bottom = 2.dp))
+
             val levelExpanded = remember { mutableStateOf(false) }
             val levels = gameController.levels()
             val currentLevelName = gameController.levelName
@@ -131,7 +141,14 @@ fun GameScreen(
                     .padding(start = 16.dp, bottom = 8.dp)
                     .clickable { levelExpanded.value = true }
             ) {
-                Text("Level: ${gameController.levelName}", fontSize = 24.sp)
+                Text(
+                    text = gameController.levelName,
+                    fontSize = 16.sp,
+                    color = Color.LightGray,
+                    modifier = Modifier
+                        .background(Color.Black, shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
                 DropdownMenu(
                     expanded = levelExpanded.value,
                     onDismissRequest = { levelExpanded.value = false }
