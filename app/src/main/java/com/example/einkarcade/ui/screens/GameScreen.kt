@@ -1,6 +1,8 @@
 package com.example.einkarcade.ui.screens
 
 import kotlin.math.min
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,6 +24,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,6 +44,13 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.Star
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.einkarcade.R
 import com.example.einkarcade.GameController
 import com.example.einkarcade.sokoban.Position
@@ -253,63 +263,62 @@ fun GameScreen(
                 drawPlayer(Position(playerPosition.row + 1, playerPosition.col + 1), playerPainter, cellSize, offsetX, offsetY)
             }
 
+            @Composable
+            fun BottomIconButton(
+                onClick: () -> Unit,
+                icon: ImageVector,
+                contentDescription: String
+            ) {
+                val interactionSource = remember { MutableInteractionSource() }
+                val isPressed = interactionSource.collectIsPressedAsState()
+
+                Box(
+                    modifier = Modifier
+                        .background(if (isPressed.value) Color.DarkGray else Color.Black)
+                        .clickable(
+                            interactionSource = interactionSource,
+                            indication = null,
+                            onClick = onClick
+                        )
+                        .padding(12.dp)
+                        .focusProperties { canFocus = false },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = contentDescription,
+                        tint = Color.LightGray
+                    )
+                }
+            }
+
             Row(
                 modifier = Modifier.padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Button(
-                    onClick = { gameController.restart() },
-                    modifier = Modifier.focusProperties { canFocus = false }
-                ) {
-                    Text("Restart")
-                }
-                Button(
-                    onClick = { gameController.undo() },
-                    modifier = Modifier
-                        .padding(start = 8.dp)
-                        .focusProperties { canFocus = false }
-                ) {
-                    Text("Undo")
-                }
-                Button(
+                BottomIconButton(
                     onClick = { gameController.previousLevel() },
-                    modifier = Modifier
-                        .padding(start = 8.dp)
-                        .focusProperties { canFocus = false }
-                ) {
-                    Text("Previous")
-                }
-                Button(
+                    icon = Icons.Filled.ChevronLeft,
+                    contentDescription = "Previous level"
+                )
+
+                BottomIconButton(
                     onClick = { gameController.nextLevel() },
-                    modifier = Modifier
-                        .padding(start = 8.dp)
-                        .focusProperties { canFocus = false }
-                ) {
-                    Text("Next")
-                }
-                // Rating buttons with a check when selected.
+                    icon = Icons.Filled.ChevronRight,
+                    contentDescription = "Next level"
+                )
+
                 val currentRating = gameController.getCurrentRating()
 
-                Button(
-                    onClick = { gameController.toggleThumbDown() },
-                    modifier = Modifier
-                        .padding(start = 8.dp)
-                        .focusProperties { canFocus = false }
-                ) {
-                    val selected = currentRating == -1
-                    Text(if (selected) "👎✓" else "👎")
-                }
-                Button(
+                BottomIconButton(
                     onClick = { gameController.toggleThumbUp() },
-                    modifier = Modifier
-                        .padding(start = 8.dp)
-                        .focusProperties { canFocus = false }
-                ) {
-                    val selected = currentRating == 1
-                    Text(if (selected) "👍✓" else "👍")
-                }
+                    icon = if (currentRating == 1) Icons.Filled.Star else Icons.Outlined.Star,
+                    contentDescription = "Star level"
+                )
+
                 Spacer(modifier = Modifier.weight(1f))
-                Button(
+
+                BottomIconButton(
                     onClick = {
                         syncError.value = null
                         val handler = Handler(Looper.getMainLooper())
@@ -323,12 +332,9 @@ fun GameScreen(
                             }
                         }.start()
                     },
-                    modifier = Modifier
-                        .padding(start = 8.dp)
-                        .focusProperties { canFocus = false }
-                ) {
-                    Text("Sync")
-                }
+                    icon = Icons.Filled.Sync,
+                    contentDescription = "Sync"
+                )
             }
             if (syncError.value != null) {
                 Text(
