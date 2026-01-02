@@ -89,12 +89,13 @@ fun GameScreen(
 ) {
     gameController.revision.value
     val playerPosition = gameController.playerPosition
+    val displayedPlayerPosition = remember { mutableStateOf(playerPosition) }
+    val pendingPlayerPosition = remember { mutableStateOf<Position?>(null) }
+    val holdPlayerPosition = remember { mutableStateOf(false) }
     val syncError = remember { mutableStateOf<String?>(null) }
     val syncSuccess = remember { mutableStateOf(false) }
     val backDownTime = remember { mutableStateOf<Long?>(null) }
-    val boxPathProgress = remember { mutableStateOf(0f) }
     val boxPathShrink = remember { mutableStateOf(0f) }
-    val boxPathFade = remember { mutableStateOf(0f) }
     val boxPathActive = remember { mutableStateOf(false) }
     val boxPathTrigger = remember { mutableStateOf(0) }
     val boxPathPositions = remember { mutableStateOf<List<Position>>(emptyList()) }
@@ -114,27 +115,27 @@ fun GameScreen(
     }
 
     LaunchedEffect(boxPathTrigger.value) {
-        val durationMs = 200L
+        val durationMs = 100L
         val stepMs = 10L
         val steps = (durationMs / stepMs).coerceAtLeast(1)
         boxPathActive.value = true
-        boxPathProgress.value = 0f
         boxPathShrink.value = 0f
-        boxPathFade.value = 0f
-        val stepIncrement = 2f / steps.toFloat()
-        for (i in 1..steps) {
-            delay(stepMs)
-            boxPathProgress.value = min(1f, i.toFloat() * stepIncrement)
-        }
         for (i in 1..steps) {
             delay(stepMs)
             boxPathShrink.value = min(1f, i.toFloat() / steps.toFloat())
         }
-        for (i in 1..steps) {
-            delay(stepMs)
-            boxPathFade.value = min(1f, i.toFloat() / steps.toFloat())
-        }
         boxPathActive.value = false
+        pendingPlayerPosition.value?.let { pending ->
+            displayedPlayerPosition.value = pending
+            pendingPlayerPosition.value = null
+        }
+        holdPlayerPosition.value = false
+    }
+
+    LaunchedEffect(playerPosition, holdPlayerPosition.value) {
+        if (!holdPlayerPosition.value) {
+            displayedPlayerPosition.value = playerPosition
+        }
     }
 
     Box(
@@ -222,10 +223,14 @@ fun GameScreen(
                 }
             } else if (selectedBox != null) {
                 selectedBoxPosition.value = null
+                holdPlayerPosition.value = true
                 val boxPath = gameController.moveBoxTo(selectedBox, tappedPosition)
                 if (boxPath != null) {
+                    pendingPlayerPosition.value = gameController.playerPosition
                     boxPathPositions.value = boxPath
                     boxPathTrigger.value += 1
+                } else {
+                    holdPlayerPosition.value = false
                 }
             } else {
                 gameController.movePlayerTo(tappedPosition)
@@ -501,9 +506,7 @@ fun GameScreen(
 
                 drawBoxPathLine(
                     isActive = boxPathActive.value,
-                    progress = boxPathProgress.value,
                     shrink = boxPathShrink.value,
-                    fade = boxPathFade.value,
                     path = boxPathPositions.value,
                     cellSize = cellSize,
                     offsetX = offsetX,
@@ -522,7 +525,14 @@ fun GameScreen(
                     )
                 }
 
-                drawPlayer(Position(playerPosition.row + 1, playerPosition.col + 1), playerPainter, cellSize, offsetX, offsetY)
+                val drawnPlayerPosition = displayedPlayerPosition.value
+                drawPlayer(
+                    Position(drawnPlayerPosition.row + 1, drawnPlayerPosition.col + 1),
+                    playerPainter,
+                    cellSize,
+                    offsetX,
+                    offsetY
+                )
             }
 
             @Composable
@@ -672,9 +682,7 @@ fun GameScreen(
 
 private fun DrawScope.drawBoxPathLine(
     isActive: Boolean,
-    progress: Float,
     shrink: Float,
-    fade: Float,
     path: List<Position>,
     cellSize: Float,
     offsetX: Float,
@@ -682,7 +690,6 @@ private fun DrawScope.drawBoxPathLine(
 ) {
     if (!isActive) return
     if (path.size < 2) return
-    if (fade >= 1f) return
 
     val points = path.map { position ->
         Offset(
@@ -692,7 +699,7 @@ private fun DrawScope.drawBoxPathLine(
     }
 
     val totalSegments = points.size - 1
-    val endT = (progress.coerceIn(0f, 1f) * totalSegments.toFloat())
+    val endT = totalSegments.toFloat()
     val startT = endT * shrink.coerceIn(0f, 1f)
     val startSegment = startT.toInt().coerceIn(0, totalSegments - 1)
     val endSegment = endT.toInt().coerceIn(0, totalSegments)
@@ -725,7 +732,7 @@ private fun DrawScope.drawBoxPathLine(
     if (drawPoints.size >= 2) {
         for (index in 0 until drawPoints.size - 1) {
             drawLine(
-                color = Color.LightGray,
+                color = Color(0xFFD3D3D3),
                 start = drawPoints[index],
                 end = drawPoints[index + 1],
                 strokeWidth = strokeWidth,
@@ -733,10 +740,8 @@ private fun DrawScope.drawBoxPathLine(
             )
         }
     } else {
-        val fadeColor = lerp(Color.LightGray, Color.White, fade)
-            .copy(alpha = 1f - fade)
         drawCircle(
-            color = fadeColor,
+            color = Color(0xFFD3D3D3),
             radius = strokeWidth / 2,
             center = drawPoints.first()
         )
