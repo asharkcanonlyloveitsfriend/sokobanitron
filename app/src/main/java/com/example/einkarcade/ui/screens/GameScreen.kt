@@ -85,7 +85,8 @@ fun GameScreen(
     val boxPainter = painterResource(id = R.drawable.box)
     val playerPainter = painterResource(id = R.drawable.player_slime)
     val focusRequester = remember { FocusRequester() }
-    val flashingWall = remember { mutableStateOf<Position?>(null) }
+    data class VanishState(val position: Position, val step: Int)
+    val vanishingTile = remember { mutableStateOf<VanishState?>(null) }
 
     BackHandler(enabled = true) {
         // handled manually via key events below
@@ -137,13 +138,25 @@ fun GameScreen(
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
         )
+        fun advanceVanish(step: Int, position: Position) {
+            if (step >= 4) {
+                vanishingTile.value = null
+                return
+            }
+
+            vanishingTile.value = VanishState(position, step + 1)
+
+            Handler(Looper.getMainLooper()).postDelayed(
+                { advanceVanish(step + 1, position) },
+                100
+            )
+        }
+
         fun handleTap(tappedPosition: Position) {
             val tile = gameController.tiles[tappedPosition.row][tappedPosition.col]
             if (tile == Tile.WALL) {
-                flashingWall.value = tappedPosition
-                Handler(Looper.getMainLooper()).postDelayed({
-                    flashingWall.value = null
-                }, 120)
+                vanishingTile.value = VanishState(tappedPosition, 0)
+                advanceVanish(0, tappedPosition)
                 return
             }
             val selectedBox = selectedBoxPosition.value
@@ -343,18 +356,63 @@ fun GameScreen(
                             Tile.GOAL -> drawGoal(Position(paddedRow, paddedCol), cellSize, offsetX, offsetY)
                             Tile.FLOOR -> drawFloor(Position(paddedRow, paddedCol), cellSize, offsetX, offsetY)
                             Tile.WALL -> {
-                                val isFlashing = flashingWall.value == Position(rowIndex, colIndex)
-                                if (isFlashing) {
-                                    drawRect(
-                                        color = Color.White,
-                                        topLeft = androidx.compose.ui.geometry.Offset(
-                                            offsetX + paddedCol * cellSize,
-                                            offsetY + paddedRow * cellSize
-                                        ),
-                                        size = androidx.compose.ui.geometry.Size(cellSize, cellSize)
-                                    )
+                                val vanish = vanishingTile.value
+                                if (vanish != null && vanish.position == Position(rowIndex, colIndex)) {
+                                    when (vanish.step) {
+                                        0 -> {
+                                            // normal-size dark box
+                                            drawRect(
+                                                color = Color.DarkGray,
+                                                topLeft = androidx.compose.ui.geometry.Offset(
+                                                    offsetX + paddedCol * cellSize + cellSize * 0.1f,
+                                                    offsetY + paddedRow * cellSize + cellSize * 0.1f
+                                                ),
+                                                size = androidx.compose.ui.geometry.Size(
+                                                    cellSize * 0.8f,
+                                                    cellSize * 0.8f
+                                                )
+                                            )
+                                        }
+                                        1 -> {
+                                            drawRect(
+                                                color = Color.DarkGray,
+                                                topLeft = androidx.compose.ui.geometry.Offset(
+                                                    offsetX + paddedCol * cellSize + cellSize * 0.2f,
+                                                    offsetY + paddedRow * cellSize + cellSize * 0.2f
+                                                ),
+                                                size = androidx.compose.ui.geometry.Size(
+                                                    cellSize * 0.6f,
+                                                    cellSize * 0.6f
+                                                )
+                                            )
+                                        }
+                                        2 -> {
+                                            drawRect(
+                                                color = Color.Black,
+                                                topLeft = androidx.compose.ui.geometry.Offset(
+                                                    offsetX + paddedCol * cellSize + cellSize * 0.3f,
+                                                    offsetY + paddedRow * cellSize + cellSize * 0.3f
+                                                ),
+                                                size = androidx.compose.ui.geometry.Size(
+                                                    cellSize * 0.4f,
+                                                    cellSize * 0.4f
+                                                )
+                                            )
+                                        }
+                                        3 -> {
+                                            // full-tile white flash
+                                            drawRect(
+                                                color = Color.White,
+                                                topLeft = androidx.compose.ui.geometry.Offset(
+                                                    offsetX + paddedCol * cellSize,
+                                                    offsetY + paddedRow * cellSize
+                                                ),
+                                                size = androidx.compose.ui.geometry.Size(cellSize, cellSize)
+                                            )
+                                        }
+                                    }
                                 } else {
-                                    // no-op: walls are invisible; background shows through
+                                    // no-op: wall is invisible, background shows through
                                 }
                             }
                         }
