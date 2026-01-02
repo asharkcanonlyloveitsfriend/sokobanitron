@@ -451,7 +451,13 @@ fun GameScreen(
         if (gameController.isGameWon) {
             Box(
                 modifier = Modifier
-                    .fillMaxSize(),
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        gameController.nextLevel()
+                    },
                 contentAlignment = Alignment.Center
             ) {
                 Box(
