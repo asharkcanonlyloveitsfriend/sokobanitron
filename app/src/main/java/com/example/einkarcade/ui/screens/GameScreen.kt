@@ -105,6 +105,13 @@ fun GameScreen(
     val isBlinking = remember { mutableStateOf(false) }
     val blinkPulse = remember { mutableStateOf(0) }
     val isFacingLeft = remember { mutableStateOf(false) }
+    val currentSetName = gameController.currentSetName
+    val currentLevelName = gameController.levelName
+
+    fun resetSelectionAndFacing() {
+        selectedBoxPosition.value = null
+        isFacingLeft.value = false
+    }
 
     BackHandler(enabled = true) {
         // handled manually via key events below
@@ -122,6 +129,10 @@ fun GameScreen(
         isBlinking.value = false
     }
 
+    LaunchedEffect(currentSetName, currentLevelName) {
+        resetSelectionAndFacing()
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -136,9 +147,11 @@ fun GameScreen(
                             val lastTap = lastBackTapTime.value
                             if (lastTap != null && now - lastTap <= doubleTapWindowMs) {
                                 lastBackTapTime.value = null
+                                resetSelectionAndFacing()
                                 gameController.restart()
                             } else {
                                 lastBackTapTime.value = now
+                                isFacingLeft.value = false
                                 gameController.undo()
                             }
                             true
@@ -221,7 +234,7 @@ fun GameScreen(
                         .clickable { setExpanded.value = true }
                 ) {
                     Text(
-                        text = gameController.currentSetName,
+                        text = currentSetName,
                         fontSize = 16.sp,
                         color = Color.LightGray,
                         modifier = Modifier
@@ -240,7 +253,7 @@ fun GameScreen(
                             modifier = Modifier.heightIn(max = 800.dp)
                         ) {
                             setOptions.forEach { (id, name) ->
-                                val isSelected = name == gameController.currentSetName
+                                val isSelected = name == currentSetName
                                 DropdownMenuItem(
                                     text = { Text(name) },
                                     onClick = {
@@ -264,7 +277,6 @@ fun GameScreen(
                 // --- Level (top-right, right-aligned) ---
                 val levelExpanded = remember { mutableStateOf(false) }
                 val levels = gameController.levels()
-                val currentLevelName = gameController.levelName
                 val selectedLevelIndex = levels.indexOfFirst { it.name == currentLevelName }
                 val levelScrollState = rememberScrollState()
                 val density = LocalDensity.current
@@ -275,7 +287,7 @@ fun GameScreen(
                         .clickable { levelExpanded.value = true }
                 ) {
                     Text(
-                        text = gameController.levelName,
+                        text = currentLevelName,
                         fontSize = 16.sp,
                         color = Color.LightGray,
                         modifier = Modifier
@@ -477,13 +489,17 @@ fun GameScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 BottomIconButton(
-                    onClick = { gameController.previousLevel() },
+                    onClick = {
+                        gameController.previousLevel()
+                    },
                     icon = Icons.Filled.ArrowBack,
                     contentDescription = "Previous level"
                 )
 
                 BottomIconButton(
-                    onClick = { gameController.nextLevel() },
+                    onClick = {
+                        gameController.nextLevel()
+                    },
                     icon = Icons.Filled.ArrowForward,
                     contentDescription = "Next level"
                 )

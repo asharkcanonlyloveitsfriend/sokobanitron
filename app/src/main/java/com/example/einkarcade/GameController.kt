@@ -124,10 +124,6 @@ class GameController(
         get() = level.name
 
     fun restart() {
-        if (isGameWon) {
-            nextLevel()
-            return
-        }
         gameEngine = GameEngine(level)
         markChanged()
     }
