@@ -21,7 +21,7 @@ internal fun DrawScope.drawVanishingBox(
     offsetY: Float
 ) {
     if (vanish == null || vanish.position != gridPosition) return
-    require(vanish.step in 0..6) { "Vanish step out of range: ${vanish.step}" }
+    require(vanish.step in 0..5) { "Vanish step out of range: ${vanish.step}" }
 
     when (vanish.step) {
         0, 1, 2, 3, 4 -> {
@@ -72,16 +72,6 @@ internal fun DrawScope.drawVanishingBox(
         }
         5 -> {
             // Invisible pause before flash.
-        }
-        6 -> {
-            drawRect(
-                color = Color.White,
-                topLeft = Offset(
-                    offsetX + paddedPosition.col * cellSize,
-                    offsetY + paddedPosition.row * cellSize
-                ),
-                size = Size(cellSize, cellSize)
-            )
         }
     }
 }

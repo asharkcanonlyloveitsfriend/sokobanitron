@@ -27,7 +27,7 @@ internal class VanishAnimationState(
             3 -> (VANISH_BASE_DELAY_MS * 0.36f).toLong()
             4 -> (VANISH_BASE_DELAY_MS * 0.2f).toLong()
             5 -> INVISIBLE_DELAY_MS
-            else -> WHITE_FLASH_DELAY_MS
+            else -> 0L
         }
 
         handler.postDelayed({
@@ -43,9 +43,8 @@ internal class VanishAnimationState(
 
     private companion object {
         const val VANISH_BASE_DELAY_MS = 170L
-        const val WHITE_FLASH_DELAY_MS = 100L
         const val INVISIBLE_DELAY_MS = 100L
-        const val TOTAL_STEPS = 7
+        const val TOTAL_STEPS = 6
     }
 }
 
