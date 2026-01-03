@@ -65,6 +65,7 @@ import com.example.einkarcade.R
 import com.example.einkarcade.sokoban.Position
 import com.example.einkarcade.ui.rendering.ComposeGameAssets
 import com.example.einkarcade.ui.rendering.ComposeGameBoard
+import com.example.einkarcade.ui.rendering.SurfaceGameBoard
 import com.example.einkarcade.ui.rendering.buildGameScene
 import kotlinx.coroutines.delay
 
@@ -75,6 +76,7 @@ fun GameScreen(
     gameController: GameController,
     selectedBoxPosition: MutableState<Position?>
 ) {
+    val useSurfaceView = false
     gameController.revision.value
     val animRevision = remember { mutableStateOf(0) }
     animRevision.value
@@ -318,27 +320,50 @@ fun GameScreen(
                 boxPathAnimation = boxPathAnimation,
                 vanishAnimation = vanishAnimation
             ).copy(selectedBox = selectedBoxPosition.value)
-            ComposeGameBoard(
-                scene = scene,
-                assets = assets,
-                isGameWon = gameController.isGameWon,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .testTag("gameCanvas"),
-                onTapCell = { pos ->
-                    val nowMs = SystemClock.elapsedRealtime()
-                    ui.selectedBox = selectedBoxPosition.value
-                    GameInputHandler.handleTap(
-                        tappedPosition = pos,
-                        nowMs = nowMs,
-                        gameController = gameController,
-                        ui = ui,
-                        anim = anim
-                    )
-                    selectedBoxPosition.value = ui.selectedBox
-                }
-            )
+            if (useSurfaceView) {
+                SurfaceGameBoard(
+                    scene = scene,
+                    isGameWon = gameController.isGameWon,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .testTag("gameCanvas"),
+                    onTapCell = { pos ->
+                        val nowMs = SystemClock.elapsedRealtime()
+                        ui.selectedBox = selectedBoxPosition.value
+                        GameInputHandler.handleTap(
+                            tappedPosition = pos,
+                            nowMs = nowMs,
+                            gameController = gameController,
+                            ui = ui,
+                            anim = anim
+                        )
+                        selectedBoxPosition.value = ui.selectedBox
+                    }
+                )
+            } else {
+                ComposeGameBoard(
+                    scene = scene,
+                    assets = assets,
+                    isGameWon = gameController.isGameWon,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .testTag("gameCanvas"),
+                    onTapCell = { pos ->
+                        val nowMs = SystemClock.elapsedRealtime()
+                        ui.selectedBox = selectedBoxPosition.value
+                        GameInputHandler.handleTap(
+                            tappedPosition = pos,
+                            nowMs = nowMs,
+                            gameController = gameController,
+                            ui = ui,
+                            anim = anim
+                        )
+                        selectedBoxPosition.value = ui.selectedBox
+                    }
+                )
+            }
 
             @Composable
             fun BottomIconButton(
