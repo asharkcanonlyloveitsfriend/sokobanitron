@@ -7,6 +7,7 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import com.example.einkarcade.sokoban.Position
+import com.example.einkarcade.ui.vanish.VanishSpec
 
 internal data class VanishState(val position: Position, val step: Int)
 
@@ -20,31 +21,17 @@ internal class VanishAnimationState(
     }
 
     private fun advance(step: Int, position: Position) {
-        val delay = when (step) {
-            0 -> VANISH_BASE_DELAY_MS
-            1 -> (VANISH_BASE_DELAY_MS * 0.75f).toLong()
-            2 -> (VANISH_BASE_DELAY_MS * 0.5f).toLong()
-            3 -> (VANISH_BASE_DELAY_MS * 0.36f).toLong()
-            4 -> (VANISH_BASE_DELAY_MS * 0.2f).toLong()
-            5 -> INVISIBLE_DELAY_MS
-            else -> 0L
-        }
+        val delay = VanishSpec.delayMs(step)
 
         handler.postDelayed({
             val nextStep = step + 1
-            if (nextStep >= TOTAL_STEPS) {
+            if (nextStep >= VanishSpec.TOTAL_STEPS) {
                 state.value = null
                 return@postDelayed
             }
             state.value = VanishState(position, nextStep)
             advance(nextStep, position)
         }, delay)
-    }
-
-    private companion object {
-        const val VANISH_BASE_DELAY_MS = 170L
-        const val INVISIBLE_DELAY_MS = 100L
-        const val TOTAL_STEPS = 6
     }
 }
 
