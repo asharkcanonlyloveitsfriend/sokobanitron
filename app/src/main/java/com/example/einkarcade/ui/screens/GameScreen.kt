@@ -4,13 +4,11 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
@@ -54,7 +52,6 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -66,16 +63,9 @@ import androidx.compose.ui.unit.sp
 import com.example.einkarcade.GameController
 import com.example.einkarcade.R
 import com.example.einkarcade.sokoban.Position
-import com.example.einkarcade.sokoban.Tile
-import com.example.einkarcade.ui.rendering.computeBoardViewport
+import com.example.einkarcade.ui.rendering.ComposeGameAssets
+import com.example.einkarcade.ui.rendering.ComposeGameBoard
 import com.example.einkarcade.ui.rendering.buildGameScene
-import com.example.einkarcade.ui.rendering.drawBox
-import com.example.einkarcade.ui.rendering.drawBoxPathLine
-import com.example.einkarcade.ui.rendering.drawFloor
-import com.example.einkarcade.ui.rendering.drawGoal
-import com.example.einkarcade.ui.rendering.drawPlayer
-import com.example.einkarcade.ui.rendering.drawVanishingBox
-import com.example.einkarcade.ui.rendering.screenToInnerCell
 import kotlinx.coroutines.delay
 
 
@@ -96,6 +86,13 @@ fun GameScreen(
     val playerPainter = painterResource(id = R.drawable.player_slime)
     val openEyesPainter = painterResource(id = R.drawable.player_eyes_open)
     val blinkEyesPainter = painterResource(id = R.drawable.player_eyes_blink)
+    val assets = ComposeGameAssets(
+        boxPainter = boxPainter,
+        selectedBoxPainter = selectedBoxPainter,
+        playerPainter = playerPainter,
+        openEyesPainter = openEyesPainter,
+        blinkEyesPainter = blinkEyesPainter
+    )
     val focusRequester = remember { FocusRequester() }
     val vanishAnimation = rememberVanishAnimationState()
     val ui = remember { GameUiState(selectedBox = selectedBoxPosition.value) }
@@ -171,6 +168,14 @@ fun GameScreen(
         )
 
         Column(modifier = Modifier.fillMaxSize()) {
+            val scene = buildGameScene(
+                gameController = gameController,
+                ui = ui,
+                displayedPlayerPosition = displayedPlayerPosition,
+                isBlinking = isBlinking.value,
+                boxPathAnimation = boxPathAnimation,
+                vanishAnimation = vanishAnimation
+            ).copy(selectedBox = selectedBoxPosition.value)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -293,115 +298,26 @@ fun GameScreen(
                 }
             }
 
-            Canvas(
+            ComposeGameBoard(
+                scene = scene,
+                assets = assets,
+                isGameWon = gameController.isGameWon,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .testTag("gameCanvas")
-                    .pointerInput(Unit) {
-                        detectTapGestures { offset ->
-                            val viewport = computeBoardViewport(
-                                surfaceWidth = size.width.toFloat(),
-                                surfaceHeight = size.height.toFloat(),
-                                innerRows = gameController.tiles.size,
-                                innerCols = gameController.tiles.first().size
-                            )
-                            val tappedPosition = viewport.screenToInnerCell(offset.x, offset.y)
-                            if (!gameController.isGameWon && tappedPosition != null) {
-                                ui.selectedBox = selectedBoxPosition.value
-                                GameInputHandler.handleTap(
-                                    tappedPosition = tappedPosition,
-                                    gameController = gameController,
-                                    ui = ui,
-                                    anim = anim
-                                )
-                                selectedBoxPosition.value = ui.selectedBox
-                                blinkPulseState.value = ui.blinkPulse
-                            }
-                        }
-                    }
-            ) {
-                val scene = buildGameScene(
-                    gameController = gameController,
-                    ui = ui,
-                    displayedPlayerPosition = displayedPlayerPosition,
-                    isBlinking = isBlinking.value,
-                    boxPathAnimation = boxPathAnimation,
-                    vanishAnimation = vanishAnimation
-                )
-                val viewport = computeBoardViewport(
-                    surfaceWidth = size.width,
-                    surfaceHeight = size.height,
-                    innerRows = scene.tiles.size,
-                    innerCols = scene.tiles.first().size
-                )
-                val cellSize = viewport.cellSize
-                val offsetX = viewport.offsetX
-                val offsetY = viewport.offsetY
-
-                for ((rowIndex, row) in scene.tiles.withIndex()) {
-                    for ((colIndex, tile) in row.withIndex()) {
-                        val paddedRow = rowIndex + 1
-                        val paddedCol = colIndex + 1
-                        when (tile) {
-                            Tile.GOAL -> drawGoal(Position(paddedRow, paddedCol), cellSize, offsetX, offsetY)
-                            Tile.FLOOR -> drawFloor(Position(paddedRow, paddedCol), cellSize, offsetX, offsetY)
-                            Tile.WALL -> {
-                                drawVanishingBox(
-                                    vanish = scene.vanish,
-                                    gridPosition = Position(rowIndex, colIndex),
-                                    paddedPosition = Position(paddedRow, paddedCol),
-                                    boxPainter = boxPainter,
-                                    selectedBoxPainter = selectedBoxPainter,
-                                    cellSize = cellSize,
-                                    offsetX = offsetX,
-                                    offsetY = offsetY
-                                )
-                            }
-                        }
-                    }
-                }
-
-                drawBoxPathLine(
-                    isActive = scene.boxPathActive,
-                    shrink = scene.boxPathShrink,
-                    path = scene.boxPath,
-                    cellSize = cellSize,
-                    offsetX = offsetX,
-                    offsetY = offsetY
-                )
-
-                for (position in scene.boxPositions) {
-                    drawBox(
-                        Position(position.row + 1, position.col + 1),
-                        boxPainter,
-                        selectedBoxPainter,
-                        position == scene.selectedBox,
-                        cellSize,
-                        offsetX,
-                        offsetY
+                    .testTag("gameCanvas"),
+                onTapCell = { pos ->
+                    ui.selectedBox = selectedBoxPosition.value
+                    GameInputHandler.handleTap(
+                        tappedPosition = pos,
+                        gameController = gameController,
+                        ui = ui,
+                        anim = anim
                     )
+                    selectedBoxPosition.value = ui.selectedBox
+                    blinkPulseState.value = ui.blinkPulse
                 }
-
-                val drawnPlayerPosition = scene.playerPosition
-                val flipPlayer = scene.isFacingLeft
-                drawPlayer(
-                    Position(drawnPlayerPosition.row + 1, drawnPlayerPosition.col + 1),
-                    playerPainter,
-                    flipPlayer,
-                    cellSize,
-                    offsetX,
-                    offsetY
-                )
-                drawPlayer(
-                    Position(drawnPlayerPosition.row + 1, drawnPlayerPosition.col + 1),
-                    if (scene.isBlinking) blinkEyesPainter else openEyesPainter,
-                    flipPlayer,
-                    cellSize,
-                    offsetX,
-                    offsetY
-                )
-            }
+            )
 
             @Composable
             fun BottomIconButton(
