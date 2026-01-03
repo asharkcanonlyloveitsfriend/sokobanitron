@@ -67,14 +67,15 @@ import com.example.einkarcade.GameController
 import com.example.einkarcade.R
 import com.example.einkarcade.sokoban.Position
 import com.example.einkarcade.sokoban.Tile
-import com.example.einkarcade.ui.rendering.drawBoxPathLine
+import com.example.einkarcade.ui.rendering.computeBoardViewport
 import com.example.einkarcade.ui.rendering.drawBox
-import com.example.einkarcade.ui.rendering.drawVanishingBox
+import com.example.einkarcade.ui.rendering.drawBoxPathLine
 import com.example.einkarcade.ui.rendering.drawFloor
 import com.example.einkarcade.ui.rendering.drawGoal
 import com.example.einkarcade.ui.rendering.drawPlayer
+import com.example.einkarcade.ui.rendering.drawVanishingBox
+import com.example.einkarcade.ui.rendering.screenToInnerCell
 import kotlinx.coroutines.delay
-import kotlin.math.min
 
 
 @Composable
@@ -348,47 +349,28 @@ fun GameScreen(
                     .testTag("gameCanvas")
                     .pointerInput(Unit) {
                         detectTapGestures { offset ->
-                            val rows = gameController.tiles.size + 2
-                            val cols = (gameController.tiles.firstOrNull()?.size ?: 0) + 2
-                            if (rows == 0 || cols == 0) return@detectTapGestures
-
-                            val tileSizeByWidth = size.width / cols
-                            val tileSizeByHeight = size.height / rows
-                            val cellSize = min(tileSizeByWidth, tileSizeByHeight)
-
-                            val renderedWidth = cellSize * cols
-                            val renderedHeight = cellSize * rows
-
-                            val offsetX = (size.width - renderedWidth) / 2f
-                            val offsetY = (size.height - renderedHeight) / 2f
-
-                            val col = ((offset.x - offsetX) / cellSize).toInt()
-                            val row = ((offset.y - offsetY) / cellSize).toInt()
-                            val innerRow = row - 1
-                            val innerCol = col - 1
-                            if (!gameController.isGameWon &&
-                                innerRow in gameController.tiles.indices &&
-                                innerCol in gameController.tiles[0].indices
-                            ) {
-                                handleTap(Position(innerRow, innerCol))
+                            val viewport = computeBoardViewport(
+                                surfaceWidth = size.width.toFloat(),
+                                surfaceHeight = size.height.toFloat(),
+                                innerRows = gameController.tiles.size,
+                                innerCols = gameController.tiles.first().size
+                            )
+                            val tappedPosition = viewport.screenToInnerCell(offset.x, offset.y)
+                            if (!gameController.isGameWon && tappedPosition != null) {
+                                handleTap(tappedPosition)
                             }
                         }
                     }
             ) {
-                val rows = gameController.tiles.size + 2
-                val cols = (gameController.tiles.firstOrNull()?.size ?: 0) + 2
-
-                if (rows == 0 || cols == 0) return@Canvas
-
-                val tileSizeByWidth = size.width / cols
-                val tileSizeByHeight = size.height / rows
-                val cellSize = min(tileSizeByWidth, tileSizeByHeight)
-
-                val renderedWidth = cellSize * cols
-                val renderedHeight = cellSize * rows
-
-                val offsetX = (size.width - renderedWidth) / 2f
-                val offsetY = (size.height - renderedHeight) / 2f
+                val viewport = computeBoardViewport(
+                    surfaceWidth = size.width,
+                    surfaceHeight = size.height,
+                    innerRows = gameController.tiles.size,
+                    innerCols = gameController.tiles.first().size
+                )
+                val cellSize = viewport.cellSize
+                val offsetX = viewport.offsetX
+                val offsetY = viewport.offsetY
 
                 for ((rowIndex, row) in gameController.tiles.withIndex()) {
                     for ((colIndex, tile) in row.withIndex()) {
