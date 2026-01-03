@@ -9,12 +9,22 @@ internal class GameUiState(
     var isFacingLeft: Boolean = false,
     var lastBackTapTimeMs: Long? = null,
     val doubleTapWindowMs: Long = 350L,
-    var blinkPulse: Int = 0
-)
+    var blinkStartMs: Long = 0L,
+    var blinkEndMs: Long = 0L
+) {
+    fun triggerBlink(nowMs: Long) {
+        val start = nowMs + 400L
+        blinkStartMs = start
+        blinkEndMs = start + 300L
+    }
+
+    fun isBlinking(nowMs: Long): Boolean =
+        nowMs in blinkStartMs until blinkEndMs
+}
 
 internal class GameAnimState(
-    val boxPathAnimation: BoxPathAnimationState,
-    val vanishAnimation: VanishAnimationState
+    val boxPathAnimation: BoxPathAnimator,
+    val vanishAnimation: VanishAnimator
 )
 
 internal object GameInputHandler {
@@ -38,6 +48,7 @@ internal object GameInputHandler {
 
     fun handleTap(
         tappedPosition: Position,
+        nowMs: Long,
         gameController: GameController,
         ui: GameUiState,
         anim: GameAnimState
@@ -45,7 +56,7 @@ internal object GameInputHandler {
         fun attemptBoxMove(selectedBox: Position) {
             val boxPath = gameController.moveBoxTo(selectedBox, tappedPosition)
             if (boxPath == null) {
-                ui.blinkPulse += 1
+                ui.triggerBlink(nowMs)
                 return
             }
             val previous = boxPath[boxPath.size - 2]
@@ -56,10 +67,10 @@ internal object GameInputHandler {
             }
             val lastPosition = boxPath.last()
             if (gameController.tiles[lastPosition.row][lastPosition.col] == Tile.WALL) {
-                anim.vanishAnimation.start(lastPosition)
-                ui.blinkPulse += 1
+                anim.vanishAnimation.start(lastPosition, nowMs)
+                ui.triggerBlink(nowMs)
             }
-            anim.boxPathAnimation.start(boxPath, gameController.playerPosition) {
+            anim.boxPathAnimation.start(boxPath, gameController.playerPosition, nowMs) {
                 ui.isFacingLeft = pushLeft
             }
         }

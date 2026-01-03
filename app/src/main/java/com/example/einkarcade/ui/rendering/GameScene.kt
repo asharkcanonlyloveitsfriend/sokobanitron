@@ -3,9 +3,9 @@ package com.example.einkarcade.ui.rendering
 import com.example.einkarcade.GameController
 import com.example.einkarcade.sokoban.Position
 import com.example.einkarcade.sokoban.Tile
-import com.example.einkarcade.ui.screens.BoxPathAnimationState
+import com.example.einkarcade.ui.screens.BoxPathAnimator
 import com.example.einkarcade.ui.screens.GameUiState
-import com.example.einkarcade.ui.screens.VanishAnimationState
+import com.example.einkarcade.ui.screens.VanishAnimator
 import com.example.einkarcade.ui.screens.VanishState
 
 internal data class GameScene(
@@ -26,8 +26,8 @@ internal fun buildGameScene(
     ui: GameUiState,
     displayedPlayerPosition: Position,
     isBlinking: Boolean,
-    boxPathAnimation: BoxPathAnimationState,
-    vanishAnimation: VanishAnimationState
+    boxPathAnimation: BoxPathAnimator,
+    vanishAnimation: VanishAnimator
 ): GameScene {
     return GameScene(
         tiles = gameController.tiles,
@@ -36,9 +36,9 @@ internal fun buildGameScene(
         selectedBox = ui.selectedBox,
         isFacingLeft = ui.isFacingLeft,
         isBlinking = isBlinking,
-        boxPath = boxPathAnimation.path.value,
-        boxPathActive = boxPathAnimation.isActive.value,
-        boxPathShrink = boxPathAnimation.shrink.value,
-        vanish = vanishAnimation.state.value
+        boxPath = boxPathAnimation.path,
+        boxPathActive = boxPathAnimation.isActive,
+        boxPathShrink = boxPathAnimation.shrink,
+        vanish = vanishAnimation.state
     )
 }

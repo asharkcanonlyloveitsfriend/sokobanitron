@@ -1,82 +1,71 @@
 package com.example.einkarcade.ui.screens
 
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import com.example.einkarcade.sokoban.Position
-import kotlinx.coroutines.delay
-import kotlin.math.min
 
-internal class BoxPathAnimationState(
-    val path: MutableState<List<Position>>,
-    val shrink: MutableState<Float>,
-    val isActive: MutableState<Boolean>,
-    private val trigger: MutableState<Int>,
-    private val pendingPlayerPosition: MutableState<Position?>,
-    private val holdPlayerPosition: MutableState<Boolean>,
-    private val displayedPlayerPosition: MutableState<Position>,
-    private val onArrive: MutableState<(() -> Unit)?>
+internal class BoxPathAnimator(
+    private val durationMs: Long = 100L
 ) {
-    fun start(path: List<Position>, pendingPlayer: Position, onArrive: (() -> Unit)? = null) {
+    var path: List<Position> = emptyList()
+        private set
+    var shrink: Float = 0f
+        private set
+    var isActive: Boolean = false
+        private set
+
+    private var startTimeMs: Long = 0L
+    private var pendingPlayerPosition: Position? = null
+    private var holdPlayerPosition: Boolean = false
+    private var displayedPlayerPosition: Position? = null
+    private var onArrive: (() -> Unit)? = null
+
+    fun start(
+        path: List<Position>,
+        pendingPlayer: Position,
+        nowMs: Long,
+        onArrive: (() -> Unit)? = null
+    ) {
         require(path.size >= 2) { "Box path requires at least two points." }
-        holdPlayerPosition.value = true
-        pendingPlayerPosition.value = pendingPlayer
-        this.path.value = path
-        this.onArrive.value = onArrive
-        trigger.value += 1
+        this.path = path
+        this.pendingPlayerPosition = pendingPlayer
+        this.onArrive = onArrive
+        this.startTimeMs = nowMs
+        this.shrink = 0f
+        this.isActive = true
+        this.holdPlayerPosition = true
+    }
+
+    fun update(nowMs: Long): Boolean {
+        if (!isActive) return false
+
+        val elapsed = nowMs - startTimeMs
+        val progress = (elapsed.toFloat() / durationMs.toFloat()).coerceAtMost(1f)
+        var changed = false
+
+        if (progress != shrink) {
+            shrink = progress
+            changed = true
+        }
+
+        if (elapsed >= durationMs) {
+            isActive = false
+            onArrive?.invoke()
+            onArrive = null
+            val pending = requireNotNull(pendingPlayerPosition) {
+                "Box path animation finished without a pending player position."
+            }
+            displayedPlayerPosition = pending
+            pendingPlayerPosition = null
+            holdPlayerPosition = false
+            changed = true
+        }
+
+        return changed
     }
 
     fun displayedPlayerPosition(currentPlayer: Position): Position {
-        if (!holdPlayerPosition.value) {
-            displayedPlayerPosition.value = currentPlayer
+        if (!holdPlayerPosition) {
+            displayedPlayerPosition = currentPlayer
         }
-        return displayedPlayerPosition.value
+        return displayedPlayerPosition ?: currentPlayer
     }
-}
-
-@Composable
-internal fun rememberBoxPathAnimationState(): BoxPathAnimationState {
-    val path = remember { mutableStateOf<List<Position>>(emptyList()) }
-    val shrink = remember { mutableStateOf(0f) }
-    val isActive = remember { mutableStateOf(false) }
-    val trigger = remember { mutableStateOf(0) }
-    val pendingPlayerPosition = remember { mutableStateOf<Position?>(null) }
-    val holdPlayerPosition = remember { mutableStateOf(false) }
-    val displayedPlayerPosition = remember { mutableStateOf(Position(0, 0)) }
-    val onArrive = remember { mutableStateOf<(() -> Unit)?>(null) }
-
-    LaunchedEffect(trigger.value) {
-        if (trigger.value == 0) return@LaunchedEffect
-        val durationMs = 100L
-        val stepMs = 10L
-        val steps = (durationMs / stepMs).coerceAtLeast(1)
-        isActive.value = true
-        shrink.value = 0f
-        for (i in 1..steps) {
-            delay(stepMs)
-            shrink.value = min(1f, i.toFloat() / steps.toFloat())
-        }
-        isActive.value = false
-        onArrive.value?.invoke()
-        onArrive.value = null
-        val pending = requireNotNull(pendingPlayerPosition.value) {
-            "Box path animation finished without a pending player position."
-        }
-        displayedPlayerPosition.value = pending
-        pendingPlayerPosition.value = null
-        holdPlayerPosition.value = false
-    }
-
-    return BoxPathAnimationState(
-        path = path,
-        shrink = shrink,
-        isActive = isActive,
-        trigger = trigger,
-        pendingPlayerPosition = pendingPlayerPosition,
-        holdPlayerPosition = holdPlayerPosition,
-        displayedPlayerPosition = displayedPlayerPosition,
-        onArrive = onArrive
-    )
 }

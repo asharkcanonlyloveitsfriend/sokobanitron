@@ -76,8 +76,10 @@ fun GameScreen(
     selectedBoxPosition: MutableState<Position?>
 ) {
     gameController.revision.value
+    val animRevision = remember { mutableStateOf(0) }
+    animRevision.value
     val playerPosition = gameController.playerPosition
-    val boxPathAnimation = rememberBoxPathAnimationState()
+    val boxPathAnimation = remember { BoxPathAnimator() }
     val displayedPlayerPosition = boxPathAnimation.displayedPlayerPosition(playerPosition)
     val syncError = remember { mutableStateOf<String?>(null) }
     val syncSuccess = remember { mutableStateOf(false) }
@@ -94,12 +96,9 @@ fun GameScreen(
         blinkEyesPainter = blinkEyesPainter
     )
     val focusRequester = remember { FocusRequester() }
-    val vanishAnimation = rememberVanishAnimationState()
+    val vanishAnimation = remember { VanishAnimator() }
     val ui = remember { GameUiState(selectedBox = selectedBoxPosition.value) }
     val anim = remember { GameAnimState(boxPathAnimation, vanishAnimation) }
-    val blinkPulseState = remember { mutableStateOf(0) }
-
-    val isBlinking = remember { mutableStateOf(false) }
     val currentSetName = gameController.currentSetName
     val currentLevelName = gameController.levelName
 
@@ -117,12 +116,30 @@ fun GameScreen(
         focusRequester.requestFocus()
     }
 
-    LaunchedEffect(blinkPulseState.value) {
-        if (blinkPulseState.value == 0) return@LaunchedEffect
-        delay(400L)
-        isBlinking.value = true
-        delay(300L)
-        isBlinking.value = false
+    LaunchedEffect(Unit) {
+        var wasActive = false
+        while (true) {
+            val now = SystemClock.elapsedRealtime()
+
+            boxPathAnimation.update(now)
+            vanishAnimation.update(now)
+
+            val blinkActive = now < ui.blinkEndMs
+            val active = boxPathAnimation.isActive || vanishAnimation.state != null || blinkActive
+
+            if (active) {
+                animRevision.value += 1
+                delay(16L)
+            } else {
+                if (wasActive) {
+                    // Ensure a final recomposition after an animation/blink completes.
+                    animRevision.value += 1
+                }
+                delay(100L)
+            }
+
+            wasActive = active
+        }
     }
 
     LaunchedEffect(currentSetName, currentLevelName) {
@@ -139,9 +156,10 @@ fun GameScreen(
                     when (event.type) {
                         KeyEventType.KeyDown -> true
                         KeyEventType.KeyUp -> {
+                            val nowMs = SystemClock.elapsedRealtime()
                             ui.selectedBox = selectedBoxPosition.value
                             GameInputHandler.handleBackKeyUp(
-                                nowMs = SystemClock.elapsedRealtime(),
+                                nowMs = nowMs,
                                 gameController = gameController,
                                 ui = ui,
                                 resetSelection = {
@@ -168,14 +186,6 @@ fun GameScreen(
         )
 
         Column(modifier = Modifier.fillMaxSize()) {
-            val scene = buildGameScene(
-                gameController = gameController,
-                ui = ui,
-                displayedPlayerPosition = displayedPlayerPosition,
-                isBlinking = isBlinking.value,
-                boxPathAnimation = boxPathAnimation,
-                vanishAnimation = vanishAnimation
-            ).copy(selectedBox = selectedBoxPosition.value)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -298,6 +308,16 @@ fun GameScreen(
                 }
             }
 
+            val nowForBlink = SystemClock.elapsedRealtime()
+            val blinking = ui.isBlinking(nowForBlink)
+            val scene = buildGameScene(
+                gameController = gameController,
+                ui = ui,
+                displayedPlayerPosition = displayedPlayerPosition,
+                isBlinking = blinking,
+                boxPathAnimation = boxPathAnimation,
+                vanishAnimation = vanishAnimation
+            ).copy(selectedBox = selectedBoxPosition.value)
             ComposeGameBoard(
                 scene = scene,
                 assets = assets,
@@ -307,15 +327,16 @@ fun GameScreen(
                     .fillMaxWidth()
                     .testTag("gameCanvas"),
                 onTapCell = { pos ->
+                    val nowMs = SystemClock.elapsedRealtime()
                     ui.selectedBox = selectedBoxPosition.value
                     GameInputHandler.handleTap(
                         tappedPosition = pos,
+                        nowMs = nowMs,
                         gameController = gameController,
                         ui = ui,
                         anim = anim
                     )
                     selectedBoxPosition.value = ui.selectedBox
-                    blinkPulseState.value = ui.blinkPulse
                 }
             )
 
