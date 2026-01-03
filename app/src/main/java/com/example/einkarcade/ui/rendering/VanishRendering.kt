@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.painter.Painter
 import com.example.einkarcade.sokoban.Position
 import com.example.einkarcade.ui.screens.VanishState
 import com.example.einkarcade.ui.vanish.VanishSpec
+import com.example.einkarcade.ui.vanish.VanishVisualSpec
 import kotlin.math.roundToInt
 
 internal fun DrawScope.drawVanishingBox(
@@ -25,33 +26,17 @@ internal fun DrawScope.drawVanishingBox(
     require(vanish.step in 0..VanishSpec.LAST_STEP) { "Vanish step out of range: ${vanish.step}" }
 
     // Steps 0..LAST_STEP all render using the same geometry; per-step differences are handled below.
-    run {
         val tileLeft = offsetX + paddedPosition.col * cellSize
         val tileTop = offsetY + paddedPosition.row * cellSize
-        val baseSize = (cellSize * 0.90f * 0.72f).roundToInt().toFloat()
+        val baseSize = (cellSize * VanishVisualSpec.BASE_SIZE_FACTOR).roundToInt().toFloat()
         val baseLeft = (tileLeft + (cellSize - baseSize) / 2).roundToInt().toFloat()
         val baseTop = (tileTop + (cellSize - baseSize) / 2).roundToInt().toFloat()
-        val scale = when (vanish.step) {
-            0 -> 1.0f
-            1 -> 0.75f
-            2 -> 0.5f
-            3 -> 0.3f
-            4 -> 0.18f
-            else -> 0.1f
-        }
+        val scale = VanishVisualSpec.scale(vanish.step)
         val size = baseSize * scale
         val left = baseLeft + (baseSize - size) / 2
         val top = baseTop + (baseSize - size) / 2
-        val innerRadius = size * (14f / 72f)
-
-        val shade = when (vanish.step) {
-            0 -> Color(0xFF6B7280)
-            1 -> Color(0xFF646C79)
-            2 -> Color(0xFF5E6672)
-            else -> Color(0xFF58616C)
-        }
-
-        if (vanish.step == 0) {
+        val innerRadius = size * VanishVisualSpec.CORNER_RADIUS_FACTOR
+        if (VanishVisualSpec.isSpriteStep(vanish.step)) {
             drawBox(
                 paddedPosition,
                 boxPainter,
@@ -62,6 +47,7 @@ internal fun DrawScope.drawVanishingBox(
                 offsetY
             )
         } else {
+            val shade = Color(VanishVisualSpec.colorArgb(vanish.step))
             drawRoundRect(
                 color = shade,
                 topLeft = Offset(left, top),
@@ -69,5 +55,4 @@ internal fun DrawScope.drawVanishingBox(
                 cornerRadius = CornerRadius(innerRadius, innerRadius)
             )
         }
-    }
 }

@@ -13,6 +13,7 @@ import com.example.einkarcade.R
 import com.example.einkarcade.sokoban.Position
 import com.example.einkarcade.sokoban.Tile
 import com.example.einkarcade.ui.vanish.VanishSpec
+import com.example.einkarcade.ui.vanish.VanishVisualSpec
 import kotlin.math.roundToInt
 
 @SuppressLint("ClickableViewAccessibility")
@@ -145,8 +146,7 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
                         if (vanish.step !in 0..VanishSpec.LAST_STEP) {
                             continue
                         }
-                        when (vanish.step) {
-                            0 -> {
+                        if (VanishVisualSpec.isSpriteStep(vanish.step)) {
                                 val targetSize = snapToWholePixel(cellSize * 0.90f)
                                 val sizePx = targetSize.toInt()
                                 require(sizePx > 0)
@@ -156,43 +156,29 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
                                     snapToWholePixel(tileTop + (cellSize - targetSize) / 2f)
                                 val bitmap = assets.getBitmap(R.drawable.box, sizePx)
                                 canvas.drawBitmap(bitmap, left, top, bitmapPaint)
-                            }
-                            1, 2, 3, 4, 5 -> {
-                                val baseSize =
-                                    (cellSize * 0.90f * 0.72f).roundToInt().toFloat()
-                                val baseLeft =
-                                    (tileLeft + (cellSize - baseSize) / 2f).roundToInt().toFloat()
-                                val baseTop =
-                                    (tileTop + (cellSize - baseSize) / 2f).roundToInt().toFloat()
-                                val scale = when (vanish.step) {
-                                    1 -> 0.75f
-                                    2 -> 0.5f
-                                    3 -> 0.3f
-                                    4 -> 0.18f
-                                    else -> 0.1f
-                                }
-                                val size = baseSize * scale
-                                val left = baseLeft + (baseSize - size) / 2f
-                                val top = baseTop + (baseSize - size) / 2f
-                                val cornerRadius = size * (14f / 72f)
-                                val color = when (vanish.step) {
-                                    1 -> 0xFF646C79.toInt()
-                                    2 -> 0xFF5E6672.toInt()
-                                    3 -> 0xFF58616C.toInt()
-                                    else -> 0xFF58616C.toInt()
-                                }
-                                vanishPaint.color = color
-                                canvas.drawRoundRect(
-                                    left,
-                                    top,
-                                    left + size,
-                                    top + size,
-                                    cornerRadius,
-                                    cornerRadius,
-                                    vanishPaint
-                                )
-                            }
-                            else -> Unit
+                        } else {
+                            val baseSize =
+                                (cellSize * VanishVisualSpec.BASE_SIZE_FACTOR).roundToInt().toFloat()
+                            val baseLeft =
+                                (tileLeft + (cellSize - baseSize) / 2f).roundToInt().toFloat()
+                            val baseTop =
+                                (tileTop + (cellSize - baseSize) / 2f).roundToInt().toFloat()
+                            val scale = VanishVisualSpec.scale(vanish.step)
+                            val size = baseSize * scale
+                            val left = baseLeft + (baseSize - size) / 2f
+                            val top = baseTop + (baseSize - size) / 2f
+                            val cornerRadius = size * VanishVisualSpec.CORNER_RADIUS_FACTOR
+                            val color = VanishVisualSpec.colorArgb(vanish.step)
+                            vanishPaint.color = color
+                            canvas.drawRoundRect(
+                                left,
+                                top,
+                                left + size,
+                                top + size,
+                                cornerRadius,
+                                cornerRadius,
+                                vanishPaint
+                            )
                         }
                     }
                 }
