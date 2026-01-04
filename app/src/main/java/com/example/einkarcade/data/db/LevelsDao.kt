@@ -24,7 +24,7 @@ interface LevelsDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertPuzzles(puzzles: List<PuzzleEntity>)
 
-    @Query("SELECT * FROM puzzles WHERE rating != 0 OR last_completed_at IS NOT NULL")
+    @Query("SELECT * FROM puzzles WHERE is_locally_edited = 1")
     fun getPuzzlesForSync(): List<PuzzleEntity>
 
     @Query("DELETE FROM levels")
@@ -36,9 +36,9 @@ interface LevelsDao {
     @Query("DELETE FROM puzzles")
     fun clearPuzzles()
 
-    @Query("UPDATE puzzles SET rating = :rating WHERE id = :puzzleId")
+    @Query("UPDATE puzzles SET rating = :rating, is_locally_edited = 1 WHERE id = :puzzleId")
     fun updatePuzzleRating(puzzleId: Int, rating: Int)
 
-    @Query("UPDATE puzzles SET last_completed_at = :lastCompletedAt WHERE id = :puzzleId")
+    @Query("UPDATE puzzles SET last_completed_at = :lastCompletedAt, is_locally_edited = 1 WHERE id = :puzzleId")
     fun updatePuzzleLastCompletedAt(puzzleId: Int, lastCompletedAt: String?)
 }
