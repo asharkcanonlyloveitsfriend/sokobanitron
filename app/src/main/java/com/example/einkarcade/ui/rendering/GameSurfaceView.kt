@@ -172,57 +172,11 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
             return
         }
 
-        val prevVanish = prevSnap?.vanish
-        val curVanish = curSnap.vanish
-        val canEraseRing = prevVanish != null &&
-            curVanish != null &&
-            prevVanish.position == curVanish.position &&
-            curVanish.step > prevVanish.step
-        val vanishRingRects: Set<Rect> = if (canEraseRing) {
-            val rowIndex = curVanish!!.position.row
-            val colIndex = curVanish.position.col
-            val tileLeft = viewport.offsetX + (colIndex + 1) * viewport.cellSize
-            val tileTop = viewport.offsetY + (rowIndex + 1) * viewport.cellSize
-            val outer = vanishRectForStep(prevVanish!!.step, tileLeft, tileTop, viewport.cellSize)
-            val inner = vanishRectForStep(curVanish.step, tileLeft, tileTop, viewport.cellSize)
-            ringBandDirtyRects(outer, inner).mapNotNull { toIntRect(it) }.toSet()
-        } else {
-            emptySet()
-        }
-        var didRingErase = false
-
         for (dirtyRect in dirtyRects) {
-            val useRingErase = canEraseRing && dirtyRect in vanishRingRects
-
-            if (useRingErase) {
-                if (!didRingErase) {
-                    val rowIndex = curVanish!!.position.row
-                    val colIndex = curVanish.position.col
-                    val tileLeft = viewport.offsetX + (colIndex + 1) * viewport.cellSize
-                    val tileTop = viewport.offsetY + (rowIndex + 1) * viewport.cellSize
-                    var outer =
-                        vanishRectForStep(prevVanish!!.step, tileLeft, tileTop, viewport.cellSize)
-                    for (s in (prevVanish.step + 1)..curVanish.step) {
-                        val inner = vanishRectForStep(s, tileLeft, tileTop, viewport.cellSize)
-                        eraseRing(
-                            canvas = bufferCanvas,
-                            viewport = viewport,
-                            scene = scene,
-                            rowIndex = rowIndex,
-                            colIndex = colIndex,
-                            outer = outer,
-                            inner = inner
-                        )
-                        outer = inner
-                    }
-                    didRingErase = true
-                }
-            } else {
-                bufferCanvas.save()
-                bufferCanvas.clipRect(dirtyRect)
-                drawScene(bufferCanvas, viewport, scene)
-                bufferCanvas.restore()
-            }
+            bufferCanvas.save()
+            bufferCanvas.clipRect(dirtyRect)
+            drawScene(bufferCanvas, viewport, scene)
+            bufferCanvas.restore()
 
             val canvas = holder.lockCanvas(dirtyRect) ?: continue
             try {
@@ -476,29 +430,10 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
             cur.selectedBox?.let { dirty.add(cellDirtyRect(it, viewport)) }
         }
 
-        // Vanish: prefer ring-band dirty rects so we update only the shrinking border area.
+        // Vanish: update the affected cell(s) when vanish state changes.
         if (prev.vanish != cur.vanish) {
-            val pv = prev.vanish
-            val cv = cur.vanish
-            val canUseRingBands = pv != null &&
-                cv != null &&
-                pv.position == cv.position &&
-                cv.step > pv.step
-
-            if (canUseRingBands) {
-                val row = cv.position.row
-                val col = cv.position.col
-                val tileLeft = viewport.offsetX + (col + 1) * viewport.cellSize
-                val tileTop = viewport.offsetY + (row + 1) * viewport.cellSize
-                val outer = vanishRectForStep(pv.step, tileLeft, tileTop, viewport.cellSize)
-                val inner = vanishRectForStep(cv.step, tileLeft, tileTop, viewport.cellSize)
-                for (band in ringBandDirtyRects(outer, inner)) {
-                    dirty.add(band)
-                }
-            } else {
-                pv?.let { dirty.add(cellDirtyRect(it.position, viewport)) }
-                cv?.let { dirty.add(cellDirtyRect(it.position, viewport)) }
-            }
+            prev.vanish?.let { dirty.add(cellDirtyRect(it.position, viewport)) }
+            cur.vanish?.let { dirty.add(cellDirtyRect(it.position, viewport)) }
         }
 
         // Box path: if anything about the path changes, redraw a single bounding rect for the path.
@@ -593,24 +528,6 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
         }
     }
 
-    private fun ringBandDirtyRects(outer: FRect, inner: FRect): List<DirtyRect> {
-        val bands = arrayOf(
-            DirtyRect(outer.l, outer.t, outer.r, inner.t),
-            DirtyRect(outer.l, inner.b, outer.r, outer.b),
-            DirtyRect(outer.l, inner.t, inner.l, inner.b),
-            DirtyRect(inner.r, inner.t, outer.r, inner.b)
-        )
-        return bands
-            .filter { it.right > it.left && it.bottom > it.top }
-            .map {
-                DirtyRect(
-                    left = it.left - 2f,
-                    top = it.top - 2f,
-                    right = it.right + 2f,
-                    bottom = it.bottom + 2f
-                )
-            }
-    }
 
     private fun eraseRing(
         canvas: Canvas,
