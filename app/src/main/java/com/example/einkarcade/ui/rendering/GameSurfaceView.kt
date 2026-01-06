@@ -54,6 +54,7 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
     private var vanishStep: Int? = null
     private val assets = AndroidGameAssets(context)
     private var backgroundBitmap: Bitmap? = null
+    private var staticFrameBitmap: Bitmap? = null
     private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
     private val backgroundSrcRect = Rect()
     private val backgroundDstRect = Rect()
@@ -165,6 +166,7 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
         vanishStep = null
         vanishStartMs = 0L
         isInitialized = true
+        rebuildStaticFrameIfPossible()
         render()
     }
 
@@ -178,9 +180,27 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
 
     fun onPlayerMoved(to: Position) {
         if (!isInitialized) return
+
+        val from = playerPosition
         resetFacing()
         playerPosition = to
         displayedPlayerPosition = to
+
+        // Phase 1: player teleports -> redraw only old+new player sprite regions.
+        // If we don't have a cached static frame / viewport (or animations are active), fall back.
+        if (from != null && !boxPathActive) {
+            val viewport = lastViewport
+            val staticFrame = staticFrameBitmap
+            if (viewport != null && staticFrame != null && !staticFrame.isRecycled) {
+                val fromParams = spriteDrawParams(viewport, from, 0.80f)
+                val toParams = spriteDrawParams(viewport, to, 0.80f)
+                val dirty = Rect(fromParams.dirtyRect)
+                dirty.union(toParams.dirtyRect)
+                renderDirty(dirty)
+                return
+            }
+        }
+
         render()
     }
 
@@ -224,18 +244,22 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         if (isInitialized) {
+            rebuildStaticFrameIfPossible()
             render()
         }
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
         if (isInitialized) {
+            rebuildStaticFrameIfPossible()
             render()
         }
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         removeCallbacks(animationFrameRunnable)
+        staticFrameBitmap?.recycle()
+        staticFrameBitmap = null
         backgroundBitmap?.recycle()
         backgroundBitmap = null
     }
@@ -267,6 +291,175 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
             )
         } finally {
             holder.unlockCanvasAndPost(canvas)
+        }
+    }
+
+    private data class SpriteDrawParams(
+        val left: Float,
+        val top: Float,
+        val sizePx: Int,
+        val dirtyRect: Rect
+    )
+
+    private fun spriteDrawParams(
+        viewport: BoardViewport,
+        position: Position,
+        sizeFactor: Float
+    ): SpriteDrawParams {
+        val cellSize = viewport.cellSize
+        val offsetX = viewport.offsetX
+        val offsetY = viewport.offsetY
+
+        val origin = Position(position.row + 1, position.col + 1)
+            .toRenderPoint(cellSize, offsetX, offsetY)
+
+        val targetSize = snapToWholePixel(cellSize * sizeFactor)
+        val sizePx = targetSize.toInt().coerceAtLeast(1)
+        val left = snapToWholePixel(origin.x + (cellSize - targetSize) / 2f)
+        val top = snapToWholePixel(origin.y + (cellSize - targetSize) / 2f)
+
+        // Padding accounts for bitmap filtering, anti-aliasing, and pixel rounding.
+        val paddingPx = 6
+        val dirtyRect = Rect(
+            left.toInt() - paddingPx,
+            top.toInt() - paddingPx,
+            (left + sizePx).toInt() + paddingPx,
+            (top + sizePx).toInt() + paddingPx
+        )
+
+        return SpriteDrawParams(left = left, top = top, sizePx = sizePx, dirtyRect = dirtyRect)
+    }
+
+    private fun rebuildStaticFrameIfPossible() {
+        if (width <= 0 || height <= 0) return
+        if (!isInitialized) return
+        if (tiles.isEmpty()) return
+        val firstRow = tiles.firstOrNull() ?: return
+        if (firstRow.isEmpty()) return
+
+        val existing = staticFrameBitmap
+        if (existing != null && !existing.isRecycled && existing.width == width && existing.height == height) {
+            return
+        }
+
+        existing?.recycle()
+
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val bitmapCanvas = Canvas(bitmap)
+
+        val innerRows = tiles.size
+        val innerCols = tiles.first().size
+        val viewport = computeBoardViewport(width.toFloat(), height.toFloat(), innerRows, innerCols)
+        // Keep this consistent with full render so touch mapping stays correct.
+        lastViewport = viewport
+
+        drawBackground(bitmapCanvas)
+
+        val cellSize = viewport.cellSize
+        val offsetX = viewport.offsetX
+        val offsetY = viewport.offsetY
+        val halfStroke = floorStrokePaint.strokeWidth / 2f
+
+        for ((rowIndex, row) in tiles.withIndex()) {
+            for ((colIndex, tile) in row.withIndex()) {
+                val tileLeft = offsetX + (colIndex + 1) * cellSize
+                val tileTop = offsetY + (rowIndex + 1) * cellSize
+                val tileRight = tileLeft + cellSize
+                val tileBottom = tileTop + cellSize
+                drawTileCell(bitmapCanvas, tile, tileLeft, tileTop, tileRight, tileBottom, halfStroke)
+            }
+        }
+
+        staticFrameBitmap = bitmap
+    }
+
+    private fun renderDirty(requestedDirtyRect: Rect) {
+        if (width <= 0 || height <= 0) return
+        if (!isInitialized) return
+
+        // Phase 1 scope: don't attempt partial redraws during path/vanish animations.
+        if (boxPathActive || vanishPosition != null) {
+            render()
+            return
+        }
+
+        // Ensure we have a valid static frame to restore from.
+        if (staticFrameBitmap == null || staticFrameBitmap?.isRecycled == true) {
+            rebuildStaticFrameIfPossible()
+        }
+        val staticFrame = staticFrameBitmap
+        val viewport = lastViewport
+        if (staticFrame == null || staticFrame.isRecycled || viewport == null) {
+            render()
+            return
+        }
+        if (staticFrame.width != width || staticFrame.height != height) {
+            rebuildStaticFrameIfPossible()
+        }
+        val frame = staticFrameBitmap
+        if (frame == null || frame.isRecycled) {
+            render()
+            return
+        }
+
+        val dirtyRect = Rect(requestedDirtyRect)
+        if (!dirtyRect.intersect(0, 0, width, height)) return
+        if (!holder.surface.isValid) return
+
+        val playerPos = playerPosition ?: return
+
+        val canvas = holder.lockCanvas(dirtyRect) ?: return
+        try {
+            canvas.save()
+            canvas.clipRect(dirtyRect)
+
+            // Restore static pixels (background + tiles) for this region.
+            val src = Rect(dirtyRect)
+            val dst = Rect(dirtyRect)
+            canvas.drawBitmap(frame, src, dst, null)
+
+            // Draw dynamic overlays that intersect the dirty region.
+            drawDynamicScene(
+                canvas = canvas,
+                viewport = viewport,
+                dirtyRect = dirtyRect,
+                playerPosition = playerPos
+            )
+        } finally {
+            canvas.restore()
+            holder.unlockCanvasAndPost(canvas)
+        }
+    }
+
+    private fun drawDynamicScene(
+        canvas: Canvas,
+        viewport: BoardViewport,
+        dirtyRect: Rect,
+        playerPosition: Position
+    ) {
+        val bitmapPaint = assets.bitmapPaint()
+
+        // Boxes
+        for (position in boxPositions) {
+            val params = spriteDrawParams(viewport, position, 0.90f)
+            if (!Rect.intersects(dirtyRect, params.dirtyRect)) continue
+            val resId = if (selectedBox == position) R.drawable.box_selected else R.drawable.box
+            val bitmap = assets.getBitmap(resId, params.sizePx)
+            canvas.drawBitmap(bitmap, params.left, params.top, bitmapPaint)
+        }
+
+        // Player
+        val playerParams = spriteDrawParams(viewport, playerPosition, 0.80f)
+        if (Rect.intersects(dirtyRect, playerParams.dirtyRect)) {
+            val body = assets.getBitmap(R.drawable.player_slime, playerParams.sizePx)
+            val eyesRes = if (isBlinking(SystemClock.elapsedRealtime())) {
+                R.drawable.player_eyes_blink
+            } else {
+                R.drawable.player_eyes_open
+            }
+            val eyes = assets.getBitmap(eyesRes, playerParams.sizePx)
+            drawSprite(canvas, body, playerParams.left, playerParams.top, playerParams.sizePx, isFacingLeft, bitmapPaint)
+            drawSprite(canvas, eyes, playerParams.left, playerParams.top, playerParams.sizePx, isFacingLeft, bitmapPaint)
         }
     }
 
