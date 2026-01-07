@@ -49,6 +49,7 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
     private var boxPathNeedsFinalClear: Boolean = false
     private val boxPathDurationMs: Long = 125L
     private val boxPathDelayMs: Long = 200L
+    private var boxPathSuppressLine: Boolean = false
     private var playerSilhouettePosition: Position? = null
     private var playerSilhouetteStartMs: Long = 0L
     private var playerFlashPosition: Position? = null
@@ -235,6 +236,7 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
         boxPathShrink = 0f
         boxPathDirtyRect = null
         boxPathNeedsFinalClear = false
+        boxPathSuppressLine = false
         boxFlashPosition = null
         boxFlashStartMs = 0L
         playerSilhouettePosition = null
@@ -339,6 +341,7 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
         playerSilhouetteStartMs = SystemClock.elapsedRealtime()
         boxFlashPosition = from
         boxFlashStartMs = playerSilhouetteStartMs
+        boxPathSuppressLine = path.size == 2
         startBoxPathAnimation(path, playerPosition ?: path[path.size - 2])
         renderBoxPathOrFull()
     }
@@ -973,23 +976,25 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
                 val tileRight = tileLeft + cellSize
                 val tileBottom = tileTop + cellSize
                 drawTileCell(canvas, tile, tileLeft, tileTop, tileRight, tileBottom, halfStroke)
-                if (tile == Tile.WALL) {
-                    drawVanishingBox(
-                        canvas = canvas,
-                        viewport = viewport,
-                        gridPosition = Position(rowIndex, colIndex),
-                        paddedPosition = Position(rowIndex + 1, colIndex + 1)
-                    )
-                }
             }
         }
 
-        if (boxPathActive) {
+        if (boxPathActive && !boxPathSuppressLine) {
             drawBoxPathLine(
                 canvas = canvas,
                 viewport = viewport,
                 path = boxPath,
                 shrink = boxPathShrink
+            )
+        }
+
+        val vanishPos = vanishPosition
+        if (vanishPos != null) {
+            drawVanishingBox(
+                canvas = canvas,
+                viewport = viewport,
+                gridPosition = vanishPos,
+                paddedPosition = Position(vanishPos.row + 1, vanishPos.col + 1)
             )
         }
 
@@ -1074,16 +1079,20 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
         if (!boxPathActive) return false
         val elapsed = nowMs - boxPathStartMs
         if (elapsed < boxPathDelayMs) return false
-        val progress =
+        val progress = if (boxPathSuppressLine) {
+            1f
+        } else {
             ((elapsed - boxPathDelayMs).toFloat() / boxPathDurationMs.toFloat()).coerceAtMost(1f)
+        }
         var changed = false
         if (progress != boxPathShrink) {
             boxPathShrink = progress
             changed = true
         }
-        if (elapsed >= boxPathDurationMs + boxPathDelayMs) {
+        if (elapsed >= boxPathDelayMs + if (boxPathSuppressLine) 0L else boxPathDurationMs) {
             boxPathActive = false
             boxPathNeedsFinalClear = true
+            boxPathSuppressLine = false
             val pending = pendingPlayerPosition
             if (pending != null) {
                 displayedPlayerPosition = pending
@@ -1134,6 +1143,7 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
         shrink: Float
     ) {
         if (path.size < 2) return
+        if (boxPathSuppressLine) return
         val nowMs = SystemClock.elapsedRealtime()
         if (nowMs - boxPathStartMs < boxPathDelayMs) return
         val cellSize = viewport.cellSize
