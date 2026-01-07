@@ -1,7 +1,7 @@
-package com.example.einkarcade.ui.vanish
+package com.example.einkarcade.ui.rendering
 
 /**
- * Single source of truth for vanish step timing and step count.
+ * SurfaceView-only vanish timing + geometry.
  *
  * Steps are 0..LAST_STEP inclusive.
  */
@@ -20,5 +20,16 @@ internal object VanishSpec {
         5 -> (VANISH_BASE_DELAY_MS * 0.14f).toLong()
         6 -> (VANISH_BASE_DELAY_MS * 0.1f).toLong()
         else -> 0L
+    }
+
+    fun scale(step: Int): Float = when (step) {
+        0 -> 1.0f
+        1 -> 0.75f
+        2 -> 0.5f
+        3 -> 0.3f
+        4 -> 0.18f
+        5 -> 0.14f
+        6 -> 0.1f
+        else -> error("Unsupported vanish step: $step")
     }
 }

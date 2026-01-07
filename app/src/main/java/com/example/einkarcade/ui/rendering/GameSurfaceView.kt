@@ -17,8 +17,6 @@ import com.example.einkarcade.GameController
 import com.example.einkarcade.R
 import com.example.einkarcade.sokoban.Position
 import com.example.einkarcade.sokoban.Tile
-import com.example.einkarcade.ui.vanish.VanishSpec
-import com.example.einkarcade.ui.vanish.VanishVisualSpec
 import kotlin.math.roundToInt
 import androidx.core.graphics.withTranslation
 
@@ -1016,7 +1014,7 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
         require(sizePx > 0)
         val leftPx = snapToWholePixel(origin.x + (cellSize - targetSize) / 2f)
         val topPx = snapToWholePixel(origin.y + (cellSize - targetSize) / 2f)
-        val scale = VanishVisualSpec.scale(step)
+        val scale = VanishSpec.scale(step)
         val size = targetSize * scale
         if (size <= 0f) return
         val left = leftPx + (targetSize - size) / 2f
