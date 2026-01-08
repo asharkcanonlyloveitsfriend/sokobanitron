@@ -36,6 +36,7 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
     private val useAnimations = false
     private val useBlinkAnimation = true
     private val useFlashAnimation = true
+    private val useBoxFlashAnimation = true
     private val renderState = RenderState()
     private val transitionState = TransitionState()
     private var onTapCell: ((Position) -> Unit)? = null
@@ -53,7 +54,7 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
     private val renderer = GameRenderer(backgroundDrawer, tileDrawer, entityDrawer, effectsDrawer)
     private val animationFrameRunnable = object : Runnable {
         override fun run() {
-            if (!useAnimations && !useBlinkAnimation && !useFlashAnimation) return
+            if (!useAnimations && !useBlinkAnimation && !useFlashAnimation && !useBoxFlashAnimation) return
             val now = SystemClock.elapsedRealtime()
             val tick = animator.tick(now, lastViewport, renderState)
             val transitionActive = transitionState.transition?.let { !it.isComplete(now) } == true
@@ -217,6 +218,12 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
             val from = path.first()
             val to = path.last()
             val prevPlayer = renderState.playerPosition
+            if (useBoxFlashAnimation) {
+                val nowMs = SystemClock.elapsedRealtime()
+                animator.startBoxFlash(from, nowMs)
+                removeCallbacks(animationFrameRunnable)
+                postOnAnimation(animationFrameRunnable)
+            }
             if (renderState.tiles[to.row][to.col] == Tile.WALL) {
                 renderState.boxPositions -= from
             } else {
@@ -369,6 +376,10 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
                         isFacingLeft = renderState.isFacingLeft
                     )
                 }
+                if (useBoxFlashAnimation) {
+                    val overlay = buildOverlayState(nowMs)
+                    effectsDrawer.drawBoxFlash(canvas, viewport, overlay, nowMs)
+                }
             }
         } finally {
             holder.unlockCanvasAndPost(canvas)
@@ -413,6 +424,7 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
         requestedDirtyRect: Rect,
         blinkActive: Boolean = false,
         flashActive: Boolean = false,
+        boxFlashActive: Boolean = false,
         nowMsOverride: Long? = null
     ) {
         if (width <= 0 || height <= 0) return
@@ -475,6 +487,10 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
                         isFacingLeft = renderState.isFacingLeft
                     )
                 }
+                if (useBoxFlashAnimation && boxFlashActive) {
+                    val overlay = buildOverlayState(nowMs)
+                    effectsDrawer.drawBoxFlash(canvas, viewport, overlay, nowMs)
+                }
             }
         } finally {
             canvas.restore()
@@ -483,7 +499,7 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
     }
 
     private fun renderAnimatorTick(tick: TickResult, transitionActive: Boolean, nowMs: Long) {
-        if (!useAnimations && !useBlinkAnimation && !useFlashAnimation) return
+        if (!useAnimations && !useBlinkAnimation && !useFlashAnimation && !useBoxFlashAnimation) return
         if (tick.forceFullRender) {
             render()
             return
@@ -498,6 +514,7 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
                     requestedDirtyRect = dirty,
                     blinkActive = useBlinkAnimation && animator.isBlinking(nowMs),
                     flashActive = useFlashAnimation,
+                    boxFlashActive = useBoxFlashAnimation,
                     nowMsOverride = nowMs
                 )
             }

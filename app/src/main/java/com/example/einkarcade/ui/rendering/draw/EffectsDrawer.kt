@@ -157,7 +157,7 @@ internal class EffectsDrawer(private val assets: AndroidGameAssets) {
         overlay: OverlayState,
         nowMs: Long
     ) {
-        if (!overlay.boxPathActive || overlay.boxFlashPosition == null) return
+        if (overlay.boxFlashPosition == null) return
         val elapsedMs = nowMs - overlay.boxFlashStartMs
         if (elapsedMs > RenderTimings.FLASH_DURATION_MS) return
         val params = spriteDrawParams(viewport, overlay.boxFlashPosition, 0.90f)

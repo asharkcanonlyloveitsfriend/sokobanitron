@@ -128,6 +128,9 @@ internal class GameAnimator(private val assets: AndroidGameAssets) {
         val playerFlashActive =
             state.playerFlashPosition != null &&
                 (nowMs - state.playerFlashStartMs) <= RenderTimings.FLASH_DURATION_MS
+        val boxFlashActive =
+            state.boxFlashPosition != null &&
+                (nowMs - state.boxFlashStartMs) <= RenderTimings.FLASH_DURATION_MS
 
         var dirtyRect: Rect? = null
         var requestedRender = false
@@ -163,6 +166,14 @@ internal class GameAnimator(private val assets: AndroidGameAssets) {
             dirtyRect = union(dirtyRect, computePlayerFlashDirtyRect(viewport))
         }
 
+        if (!changed && !vanishChanged && !blinkActive && boxFlashActive && !state.boxPathActive) {
+            requestedRender = true
+            val position = state.boxFlashPosition
+            if (position != null && viewport != null) {
+                dirtyRect = union(dirtyRect, spriteDrawParams(viewport, position, 0.90f).dirtyRect)
+            }
+        }
+
         if (!playerFlashActive && state.playerFlashPosition != null && !state.boxPathActive) {
             requestedRender = true
             val clearedPos = state.playerFlashPosition
@@ -170,6 +181,16 @@ internal class GameAnimator(private val assets: AndroidGameAssets) {
             state.playerFlashStartMs = 0L
             if (clearedPos != null && viewport != null) {
                 dirtyRect = union(dirtyRect, spriteDrawParams(viewport, clearedPos, 0.80f).dirtyRect)
+            }
+        }
+
+        if (!boxFlashActive && state.boxFlashPosition != null && !state.boxPathActive) {
+            requestedRender = true
+            val clearedPos = state.boxFlashPosition
+            state.boxFlashPosition = null
+            state.boxFlashStartMs = 0L
+            if (clearedPos != null && viewport != null) {
+                dirtyRect = union(dirtyRect, spriteDrawParams(viewport, clearedPos, 0.90f).dirtyRect)
             }
         }
 
@@ -186,7 +207,8 @@ internal class GameAnimator(private val assets: AndroidGameAssets) {
         }
 
         val vanishActive = state.vanishPosition != null
-        var needsNextFrame = state.boxPathActive || blinkActive || vanishActive || playerFlashActive
+        var needsNextFrame =
+            state.boxPathActive || blinkActive || vanishActive || playerFlashActive || boxFlashActive
         var nextFrameDelayMs: Long? = null
 
         if (!needsNextFrame && pendingBlink) {
