@@ -210,7 +210,9 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
         val prevPlayer = renderState.playerPosition
         val isWall = renderState.tiles[to.row][to.col] == Tile.WALL
         val nowMs = SystemClock.elapsedRealtime()
-        animator.startBoxFlash(from, nowMs)
+        if (path.size > 2) {
+            animator.startBoxFlash(from, nowMs)
+        }
         animator.startPlayerFlash(prevPlayer, nowMs)
         if (isWall) {
             animator.startVanish(at = to, nowMs = nowMs)
@@ -266,7 +268,9 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
                 nowMs = SystemClock.elapsedRealtime(),
                 renderState = renderState
             )
-            animator.startPlayerSilhouette(from, nowMs)
+            if (path.size > 2) {
+                animator.startPlayerSilhouette(from, nowMs)
+            }
         }
 
         if (viewport != null && prevPlayer != null) {
