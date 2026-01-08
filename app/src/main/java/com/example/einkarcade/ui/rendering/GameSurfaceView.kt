@@ -221,6 +221,9 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
             if (useBoxFlashAnimation) {
                 val nowMs = SystemClock.elapsedRealtime()
                 animator.startBoxFlash(from, nowMs)
+                if (useFlashAnimation) {
+                    animator.startPlayerFlash(prevPlayer, nowMs)
+                }
                 removeCallbacks(animationFrameRunnable)
                 postOnAnimation(animationFrameRunnable)
             }
@@ -267,7 +270,8 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
         val nowMs = SystemClock.elapsedRealtime()
         renderState.displayedPlayerPosition = renderState.playerPosition
         renderState.playerPosition = path[path.size - 2]
-        animator.startPlayerSilhouette(renderState.displayedPlayerPosition, nowMs)
+        animator.startPlayerFlash(renderState.displayedPlayerPosition, nowMs)
+        animator.startPlayerSilhouette(from, nowMs)
         animator.startBoxFlash(from, nowMs)
         val viewport = lastViewport
             ?: run {

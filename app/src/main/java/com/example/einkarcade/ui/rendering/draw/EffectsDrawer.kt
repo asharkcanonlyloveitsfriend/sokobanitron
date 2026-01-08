@@ -183,19 +183,9 @@ internal class EffectsDrawer(private val assets: AndroidGameAssets) {
         if (!overlay.boxPathActive || overlay.playerSilhouettePosition == null) return
         val elapsedMs = nowMs - overlay.playerSilhouetteStartMs
         if (elapsedMs > RenderTimings.FLASH_DURATION_MS) return
-        val params = spriteDrawParams(viewport, overlay.playerSilhouettePosition, 0.80f)
-        val body = assets.getBitmap(R.drawable.player_slime, params.sizePx)
-        drawFlashedSprite(
-            canvas = canvas,
-            bitmap = body,
-            left = params.left,
-            top = params.top,
-            sizePx = params.sizePx,
-            flipX = isFacingLeft,
-            elapsedMs = elapsedMs,
-            darkPaint = playerSilhouetteDarkPaint,
-            lightPaint = playerSilhouetteLightPaint
-        )
+        val params = spriteDrawParams(viewport, overlay.playerSilhouettePosition, 0.90f)
+        val bitmap = assets.getBitmap(R.drawable.box, params.sizePx)
+        canvas.drawBitmap(bitmap, params.left, params.top, boxFlashLightPaint)
     }
 
     fun drawPlayerFlash(
@@ -205,7 +195,7 @@ internal class EffectsDrawer(private val assets: AndroidGameAssets) {
         nowMs: Long,
         isFacingLeft: Boolean
     ) {
-        if (overlay.boxPathActive || overlay.playerFlashPosition == null) return
+        if (overlay.playerFlashPosition == null) return
         val elapsedMs = nowMs - overlay.playerFlashStartMs
         if (elapsedMs > RenderTimings.FLASH_DURATION_MS) return
         val params = spriteDrawParams(viewport, overlay.playerFlashPosition, 0.80f)

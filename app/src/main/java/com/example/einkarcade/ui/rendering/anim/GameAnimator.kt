@@ -161,12 +161,12 @@ internal class GameAnimator(private val assets: AndroidGameAssets) {
             }
         }
 
-        if (!changed && !vanishChanged && !blinkActive && playerFlashActive && !state.boxPathActive) {
+        if (!changed && !vanishChanged && !blinkActive && playerFlashActive) {
             requestedRender = true
             dirtyRect = union(dirtyRect, computePlayerFlashDirtyRect(viewport))
         }
 
-        if (!changed && !vanishChanged && !blinkActive && boxFlashActive && !state.boxPathActive) {
+        if (!changed && !vanishChanged && !blinkActive && boxFlashActive) {
             requestedRender = true
             val position = state.boxFlashPosition
             if (position != null && viewport != null) {
@@ -174,7 +174,7 @@ internal class GameAnimator(private val assets: AndroidGameAssets) {
             }
         }
 
-        if (!playerFlashActive && state.playerFlashPosition != null && !state.boxPathActive) {
+        if (!playerFlashActive && state.playerFlashPosition != null) {
             requestedRender = true
             val clearedPos = state.playerFlashPosition
             state.playerFlashPosition = null
@@ -184,7 +184,7 @@ internal class GameAnimator(private val assets: AndroidGameAssets) {
             }
         }
 
-        if (!boxFlashActive && state.boxFlashPosition != null && !state.boxPathActive) {
+        if (!boxFlashActive && state.boxFlashPosition != null) {
             requestedRender = true
             val clearedPos = state.boxFlashPosition
             state.boxFlashPosition = null
