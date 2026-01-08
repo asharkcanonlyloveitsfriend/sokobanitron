@@ -37,6 +37,7 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
     private val useBlinkAnimation = true
     private val useFlashAnimation = true
     private val useBoxFlashAnimation = true
+    private val useVanishAnimation = true
     private val renderState = RenderState()
     private val transitionState = TransitionState()
     private var onTapCell: ((Position) -> Unit)? = null
@@ -54,7 +55,14 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
     private val renderer = GameRenderer(backgroundDrawer, tileDrawer, entityDrawer, effectsDrawer)
     private val animationFrameRunnable = object : Runnable {
         override fun run() {
-            if (!useOldAnimations && !useBlinkAnimation && !useFlashAnimation && !useBoxFlashAnimation) return
+            if (!useOldAnimations &&
+                !useBlinkAnimation &&
+                !useFlashAnimation &&
+                !useBoxFlashAnimation &&
+                !useVanishAnimation
+            ) {
+                return
+            }
             val now = SystemClock.elapsedRealtime()
             val tick = animator.tick(now, lastViewport, renderState)
             val transitionActive = transitionState.transition?.let { !it.isComplete(now) } == true
@@ -218,12 +226,17 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
             val from = path.first()
             val to = path.last()
             val prevPlayer = renderState.playerPosition
+            val nowMs = SystemClock.elapsedRealtime()
             if (useBoxFlashAnimation) {
-                val nowMs = SystemClock.elapsedRealtime()
                 animator.startBoxFlash(from, nowMs)
-                if (useFlashAnimation) {
-                    animator.startPlayerFlash(prevPlayer, nowMs)
-                }
+            }
+            if (useFlashAnimation) {
+                animator.startPlayerFlash(prevPlayer, nowMs)
+            }
+            if (useVanishAnimation && renderState.tiles[to.row][to.col] == Tile.WALL) {
+                animator.startVanish(at = to, nowMs = nowMs)
+            }
+            if (useBoxFlashAnimation || useFlashAnimation || useVanishAnimation) {
                 removeCallbacks(animationFrameRunnable)
                 postOnAnimation(animationFrameRunnable)
             }
@@ -389,9 +402,12 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
             } else {
                 rebuildStaticFrameIfPossible()
                 drawStaticFrame(canvas, viewport)
+                val overlay = buildOverlayState(nowMs)
                 if (animationState.boxPathActive || animationState.boxPathNeedsFinalClear) {
-                    val overlay = buildOverlayState(nowMs)
                     effectsDrawer.drawBoxPathLine(canvas, viewport, overlay, nowMs)
+                }
+                if (useVanishAnimation && overlay.vanishPosition != null) {
+                    effectsDrawer.drawVanishingBox(canvas, viewport, overlay)
                 }
                 renderer.drawEntities(
                     canvas = canvas,
@@ -401,7 +417,6 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
                     blinkActive = useBlinkAnimation && animator.isBlinking(nowMs)
                 )
                 if (useFlashAnimation) {
-                    val overlay = buildOverlayState(nowMs)
                     effectsDrawer.drawPlayerFlash(
                         canvas = canvas,
                         viewport = viewport,
@@ -411,7 +426,6 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
                     )
                 }
                 if (useBoxFlashAnimation) {
-                    val overlay = buildOverlayState(nowMs)
                     effectsDrawer.drawBoxFlash(canvas, viewport, overlay, nowMs)
                 }
             }
@@ -504,6 +518,10 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
             } else {
                 rebuildStaticFrameIfPossible()
                 drawStaticFrame(canvas, viewport)
+                val overlay = buildOverlayState(nowMs)
+                if (useVanishAnimation && overlay.vanishPosition != null) {
+                    effectsDrawer.drawVanishingBox(canvas, viewport, overlay)
+                }
                 renderer.drawEntities(
                     canvas = canvas,
                     viewport = viewport,
@@ -512,7 +530,6 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
                     blinkActive = blinkActive
                 )
                 if (useFlashAnimation && flashActive) {
-                    val overlay = buildOverlayState(nowMs)
                     effectsDrawer.drawPlayerFlash(
                         canvas = canvas,
                         viewport = viewport,
@@ -522,7 +539,6 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
                     )
                 }
                 if (useBoxFlashAnimation && boxFlashActive) {
-                    val overlay = buildOverlayState(nowMs)
                     effectsDrawer.drawBoxFlash(canvas, viewport, overlay, nowMs)
                 }
             }
@@ -533,7 +549,14 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
     }
 
     private fun renderAnimatorTick(tick: TickResult, transitionActive: Boolean, nowMs: Long) {
-        if (!useOldAnimations && !useBlinkAnimation && !useFlashAnimation && !useBoxFlashAnimation) return
+        if (!useOldAnimations &&
+            !useBlinkAnimation &&
+            !useFlashAnimation &&
+            !useBoxFlashAnimation &&
+            !useVanishAnimation
+        ) {
+            return
+        }
         if (tick.forceFullRender) {
             render()
             return
@@ -610,6 +633,9 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
 
                 val overlay = buildOverlayState(nowMs)
                 effectsDrawer.drawBoxPathLine(canvas, viewport, overlay, nowMs)
+                if (useVanishAnimation && overlay.vanishPosition != null) {
+                    effectsDrawer.drawVanishingBox(canvas, viewport, overlay)
+                }
 
                 renderer.drawEntities(
                     canvas = canvas,
