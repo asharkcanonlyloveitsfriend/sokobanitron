@@ -3,7 +3,6 @@ package com.example.einkarcade.ui.rendering.anim
 class QueuedAnimator(
     private val tickDelayMs: Long,
     private val postTick: (Runnable, Long) -> Unit,
-    private val cancelTicks: (Runnable) -> Unit
 ) {
 
     private val queue: ArrayDeque<Animation> = ArrayDeque()
@@ -40,9 +39,4 @@ class QueuedAnimator(
         }
     }
 
-    fun clear() {
-        queue.clear()
-        cancelTicks(tickRunnable)
-        ticking = false
-    }
 }

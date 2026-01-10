@@ -19,6 +19,8 @@ import com.example.einkarcade.ui.rendering.anim.GameAnimator
 import com.example.einkarcade.ui.rendering.anim.TickResult
 import com.example.einkarcade.ui.rendering.anim.QueuedAnimator
 import com.example.einkarcade.ui.rendering.anim.BlinkAnimation
+import com.example.einkarcade.ui.rendering.anim.PlayerFlashAnimation
+import com.example.einkarcade.ui.rendering.anim.BoxVanishAnimation
 import com.example.einkarcade.ui.rendering.draw.BackgroundDrawer
 import com.example.einkarcade.ui.rendering.draw.EffectsDrawer
 import com.example.einkarcade.ui.rendering.draw.EntityDrawer
@@ -28,6 +30,7 @@ import com.example.einkarcade.ui.rendering.draw.RenderStateSnapshot
 import com.example.einkarcade.ui.rendering.draw.TileDrawer
 import com.example.einkarcade.ui.rendering.geom.BoardViewport
 import com.example.einkarcade.ui.rendering.geom.computeBoardViewport
+import com.example.einkarcade.ui.rendering.geom.computeVanishDirtyRect
 import com.example.einkarcade.ui.rendering.geom.screenToInnerCell
 import com.example.einkarcade.ui.rendering.geom.spriteDrawParams
 import com.example.einkarcade.ui.rendering.model.LevelInit
@@ -44,8 +47,7 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
     private val animator = GameAnimator(assets)
     private val queuedAnimator = QueuedAnimator(
         tickDelayMs = RenderTimings.TICK_MS,
-        postTick = { runnable, delayMs -> postDelayed(runnable, delayMs) },
-        cancelTicks = { runnable -> removeCallbacks(runnable) }
+        postTick = { runnable, delayMs -> postDelayed(runnable, delayMs) }
     )
     private val animationState: AnimationState
         get() = animator.state
@@ -132,7 +134,7 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
         val newTiles = init.tiles.map { it.toList() }
         val isSameLayout = renderState.isReady && renderState.tiles == newTiles
         val shouldAnimate = init.tiles.isNotEmpty() && !isSameLayout
-        if (shouldAnimate) {
+        if (shouldAnimate && !useQueuedAnimator) {
             transitionState.transition = LevelTransition(
                 oldTiles = renderState.tiles,
                 newTiles = newTiles,
@@ -189,9 +191,13 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
         renderState.playerPosition = to
         renderState.displayedPlayerPosition = to
         val nowMs = SystemClock.elapsedRealtime()
-        animator.startPlayerFlash(from, nowMs)
-        removeCallbacks(animationFrameRunnable)
-        postDelayed(animationFrameRunnable, nextTickDelayMs(nowMs))
+        if (useQueuedAnimator) {
+            enqueuePlayerFlash(from)
+        } else {
+            animator.startPlayerFlash(from, nowMs)
+            removeCallbacks(animationFrameRunnable)
+            postDelayed(animationFrameRunnable, nextTickDelayMs(nowMs))
+        }
 
         val viewport = checkNotNull(lastViewport) { "Dirty render requested without viewport." }
         val fromParams = spriteDrawParams(viewport, from, 0.80f)
@@ -226,15 +232,17 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
         val prevPlayer = renderState.playerPosition
         val isWall = renderState.tiles[to.row][to.col] == Tile.WALL
         val nowMs = SystemClock.elapsedRealtime()
-        if (path.size > 2) {
-            animator.startBoxFlash(from, nowMs)
+        if (!useQueuedAnimator) {
+            if (path.size > 2) {
+                animator.startBoxFlash(from, nowMs)
+            }
+            animator.startPlayerFlash(prevPlayer, nowMs)
+            if (isWall) {
+                animator.startVanish(at = to, nowMs = nowMs)
+            }
+            removeCallbacks(animationFrameRunnable)
+            postDelayed(animationFrameRunnable, nextTickDelayMs(nowMs))
         }
-        animator.startPlayerFlash(prevPlayer, nowMs)
-        if (isWall) {
-            animator.startVanish(at = to, nowMs = nowMs)
-        }
-        removeCallbacks(animationFrameRunnable)
-        postDelayed(animationFrameRunnable, nextTickDelayMs(nowMs))
         if (isWall) {
             renderState.boxPositions -= from
         } else {
@@ -263,7 +271,11 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
             "BoxMoved received without viewport"
         }
 
-        if (!isWall) {
+        if (useQueuedAnimator && isWall) {
+            enqueueBoxVanish(to, viewport)
+        }
+
+        if (!isWall && !useQueuedAnimator) {
             animator.startBoxPath(
                 path = path,
                 pendingPlayer = renderState.playerPosition ?: path[path.size - 2],
@@ -483,7 +495,44 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
         }
     }
 
-    private fun renderDirty(requestedDirtyRect: Rect, blinkActive: Boolean) {
+    private fun renderBlinkDirty(rect: Rect, blinkActive: Boolean) {
+        if (width <= 0 || height <= 0) return
+
+        val viewport = lastViewport
+        checkNotNull(viewport) { "Dirty render requested without viewport." }
+
+        val dirtyRect = Rect(rect)
+        if (!dirtyRect.intersect(0, 0, width, height)) return
+        if (!holder.surface.isValid) return
+
+        val playerPos = renderState.playerPosition ?: return
+        val canvas = holder.lockCanvas(dirtyRect) ?: return
+        try {
+            canvas.save()
+            canvas.clipRect(dirtyRect)
+
+            rebuildStaticFrameIfPossible()
+            drawStaticFrame(canvas, viewport)
+            renderer.drawEntities(
+                canvas = canvas,
+                viewport = viewport,
+                renderState = buildRenderSnapshot(playerPos),
+                drawPlayer = true,
+                blinkActive = blinkActive
+            )
+        } finally {
+            canvas.restore()
+            holder.unlockCanvasAndPost(canvas)
+        }
+    }
+
+    private fun renderPlayerFlashDirty(
+        requestedDirtyRect: Rect,
+        flashPosition: Position,
+        flashStartTick: Long,
+        nowMs: Long,
+        drawFlash: Boolean
+    ) {
         if (width <= 0 || height <= 0) return
 
         val viewport = lastViewport
@@ -506,7 +555,85 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
                 viewport = viewport,
                 renderState = buildRenderSnapshot(playerPos),
                 drawPlayer = true,
-                blinkActive = blinkActive
+                blinkActive = false
+            )
+            if (drawFlash) {
+                val overlay = OverlayState(
+                    boxPathActive = false,
+                    boxPath = emptyList(),
+                    boxPathShrink = 0f,
+                    boxPathStartTick = 0L,
+                    vanishPosition = null,
+                    vanishStep = null,
+                    boxFlashPosition = null,
+                    boxFlashStartTick = 0L,
+                    playerSilhouettePosition = null,
+                    playerSilhouetteStartTick = 0L,
+                    playerFlashPosition = flashPosition,
+                    playerFlashStartTick = flashStartTick,
+                    blinkActive = false
+                )
+                effectsDrawer.drawPlayerFlash(
+                    canvas = canvas,
+                    viewport = viewport,
+                    overlay = overlay,
+                    nowMs = nowMs,
+                    isFacingLeft = renderState.isFacingLeft
+                )
+            }
+        } finally {
+            canvas.restore()
+            holder.unlockCanvasAndPost(canvas)
+        }
+    }
+
+    private fun renderVanishDirty(
+        requestedDirtyRect: Rect,
+        vanishPosition: Position,
+        vanishStep: Int,
+        drawVanish: Boolean
+    ) {
+        if (width <= 0 || height <= 0) return
+
+        val viewport = lastViewport
+        checkNotNull(viewport) { "Dirty render requested without viewport." }
+
+        val dirtyRect = Rect(requestedDirtyRect)
+        if (!dirtyRect.intersect(0, 0, width, height)) return
+        if (!holder.surface.isValid) return
+
+        val playerPos = renderState.playerPosition ?: return
+        val canvas = holder.lockCanvas(dirtyRect) ?: return
+        try {
+            canvas.save()
+            canvas.clipRect(dirtyRect)
+
+            rebuildStaticFrameIfPossible()
+            drawStaticFrame(canvas, viewport)
+            if (drawVanish) {
+                val overlay = OverlayState(
+                    boxPathActive = false,
+                    boxPath = emptyList(),
+                    boxPathShrink = 0f,
+                    boxPathStartTick = 0L,
+                    vanishPosition = vanishPosition,
+                    vanishStep = vanishStep,
+                    boxFlashPosition = null,
+                    boxFlashStartTick = 0L,
+                    playerSilhouettePosition = null,
+                    playerSilhouetteStartTick = 0L,
+                    playerFlashPosition = null,
+                    playerFlashStartTick = 0L,
+                    blinkActive = false
+                )
+                effectsDrawer.drawVanishingBox(canvas, viewport, overlay)
+            }
+            renderer.drawEntities(
+                canvas = canvas,
+                viewport = viewport,
+                renderState = buildRenderSnapshot(playerPos),
+                drawPlayer = true,
+                blinkActive = false
             )
         } finally {
             canvas.restore()
@@ -660,7 +787,35 @@ internal class GameSurfaceView(context: Context) : SurfaceView(context), Surface
                 delayTicks = RenderTimings.BLINK_DELAY_TICKS,
                 blinkTicks = RenderTimings.BLINK_DURATION_TICKS,
                 dirtyRect = blinkDirtyRect,
-                renderBlinkDirty = ::renderDirty
+                renderBlinkDirty = ::renderBlinkDirty
+            )
+        )
+    }
+
+    private fun enqueuePlayerFlash(position: Position) {
+        val viewport = lastViewport ?: return
+        val dirtyRect = spriteDrawParams(viewport, position, 0.80f).dirtyRect
+        val nowMs = SystemClock.elapsedRealtime()
+        val startTick = RenderTimings.nowTick(nowMs)
+
+        queuedAnimator.enqueue(
+            PlayerFlashAnimation(
+                flashPosition = position,
+                dirtyRect = Rect(dirtyRect),
+                flashStartTick = startTick,
+                renderPlayerFlashDirty = ::renderPlayerFlashDirty
+            )
+        )
+    }
+
+    private fun enqueueBoxVanish(position: Position, viewport: BoardViewport) {
+        val dirtyRect = computeVanishDirtyRect(viewport, position)
+
+        queuedAnimator.enqueue(
+            BoxVanishAnimation(
+                vanishPosition = position,
+                dirtyRect = Rect(dirtyRect),
+                renderVanishDirty = ::renderVanishDirty
             )
         )
     }
