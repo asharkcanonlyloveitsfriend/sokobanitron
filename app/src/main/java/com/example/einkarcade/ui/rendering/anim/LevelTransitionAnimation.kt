@@ -13,21 +13,31 @@ import com.example.einkarcade.ui.rendering.geom.BoardViewport
 
 internal class LevelTransitionAnimation(
     private val renderer: GameRenderer,
-    private val viewport: BoardViewport,
+    private val oldViewport: BoardViewport,
+    private val newViewport: BoardViewport,
     private val oldTiles: List<List<Tile>>,
     private val newTiles: List<List<Tile>>,
-    private val boxPositions: Set<Position>,
-    private val playerPosition: Position,
+    private val oldBoxPositions: Set<Position>,
+    private val oldPlayerPosition: Position,
+    private val newBoxPositions: Set<Position>,
+    private val newPlayerPosition: Position,
     private val viewWidth: Int,
     private val viewHeight: Int
 ) : Animation {
 
     private val viewRect = Rect(0, 0, viewWidth, viewHeight)
     private val startTick = nowTick(SystemClock.elapsedRealtime())
-    private val rows: Int = newTiles.size
-    private val cols: Int = newTiles.firstOrNull()?.size ?: 0
-    private val maxIndex: Int =
-        if (rows == 0 || cols == 0) 0 else (rows - 1) + (cols - 1)
+    private val oldRows: Int = oldTiles.size
+    private val oldCols: Int = oldTiles.firstOrNull()?.size ?: 0
+    private val newRows: Int = newTiles.size
+    private val newCols: Int = newTiles.firstOrNull()?.size ?: 0
+    private val oldMaxIndex: Int =
+        if (oldRows == 0 || oldCols == 0) 0 else (oldRows - 1) + (oldCols - 1)
+    private val newMaxIndex: Int =
+        if (newRows == 0 || newCols == 0) 0 else (newRows - 1) + (newCols - 1)
+    private val oldTotalDurationTicks: Long =
+        oldMaxIndex * PER_TILE_DELAY_TICKS + totalDurationTicks()
+    private val newStartTick: Long = startTick + oldTotalDurationTicks / 2L
 
     private val flashBlackPaint = Paint().apply {
         color = Color.BLACK
@@ -45,6 +55,7 @@ internal class LevelTransitionAnimation(
     override fun drawOverEntities(canvas: Canvas) {
         val nowMs = SystemClock.elapsedRealtime()
         renderer.drawBackground(canvas, viewWidth, viewHeight)
+        drawOldTiles(canvas, nowMs)
         drawTransitionTiles(canvas, nowMs)
         drawTransitionFlashOverlay(canvas, nowMs)
         drawTransitionEntities(canvas, nowMs)
@@ -56,9 +67,29 @@ internal class LevelTransitionAnimation(
 
     override fun hidesBoard(): Boolean = true
 
+    private fun drawOldTiles(canvas: Canvas, nowMs: Long) {
+        for (rowIndex in 0 until oldRows) {
+            for (colIndex in 0 until oldCols) {
+                val oldTile = tileAt(oldTiles, rowIndex, colIndex)
+                if (oldTile == Tile.WALL) continue
+                val shrinkScale = shrinkScale(nowMs, rowIndex, colIndex) ?: continue
+                val alpha = fadeOutAlpha(nowMs, rowIndex, colIndex) ?: continue
+                renderer.drawScaledTileWithAlpha(
+                    canvas = canvas,
+                    viewport = oldViewport,
+                    tile = oldTile,
+                    rowIndex = rowIndex,
+                    colIndex = colIndex,
+                    scale = shrinkScale,
+                    alpha = alpha
+                )
+            }
+        }
+    }
+
     private fun drawTransitionTiles(canvas: Canvas, nowMs: Long) {
-        for (rowIndex in 0 until rows) {
-            for (colIndex in 0 until cols) {
+        for (rowIndex in 0 until newRows) {
+            for (colIndex in 0 until newCols) {
                 val newTile = tileAt(newTiles, rowIndex, colIndex)
                 val growScale = if (newTile != Tile.WALL) {
                     growScale(nowMs, rowIndex, colIndex)
@@ -68,7 +99,7 @@ internal class LevelTransitionAnimation(
                 if (growScale != null) {
                     renderer.drawScaledTile(
                         canvas = canvas,
-                        viewport = viewport,
+                        viewport = newViewport,
                         tile = newTile,
                         rowIndex = rowIndex,
                         colIndex = colIndex,
@@ -80,11 +111,11 @@ internal class LevelTransitionAnimation(
     }
 
     private fun drawTransitionFlashOverlay(canvas: Canvas, nowMs: Long) {
-        val cellSize = viewport.cellSize
-        val offsetX = viewport.offsetX
-        val offsetY = viewport.offsetY
-        for (rowIndex in 0 until rows) {
-            for (colIndex in 0 until cols) {
+        val cellSize = newViewport.cellSize
+        val offsetX = newViewport.offsetX
+        val offsetY = newViewport.offsetY
+        for (rowIndex in 0 until newRows) {
+            for (colIndex in 0 until newCols) {
                 val newTile = tileAt(newTiles, rowIndex, colIndex)
                 if (newTile == Tile.WALL) continue
 
@@ -104,27 +135,29 @@ internal class LevelTransitionAnimation(
     }
 
     private fun drawTransitionEntities(canvas: Canvas, nowMs: Long) {
-        val readyBoxes = boxPositions.filter {
+        val newBoxes = newBoxPositions.filter {
             isCellReady(nowMs, it.row, it.col)
         }.toSet()
-        if (readyBoxes.isNotEmpty()) {
-            renderer.drawBoxes(canvas, viewport, readyBoxes, selectedBox = null)
+        if (newBoxes.isNotEmpty()) {
+            renderer.drawBoxes(canvas, newViewport, newBoxes, selectedBox = null)
         }
 
-        if (isCellReady(nowMs, playerPosition.row, playerPosition.col)) {
-            renderer.drawPlayer(canvas, viewport, playerPosition)
+        if (isCellReady(nowMs, newPlayerPosition.row, newPlayerPosition.col)) {
+            renderer.drawPlayer(canvas, newViewport, newPlayerPosition)
         }
     }
 
     private fun isComplete(nowMs: Long): Boolean {
         val nowTick = nowTick(nowMs)
-        val endTick = startTick + maxIndex * PER_TILE_DELAY_TICKS +
+        val oldEndTick = startTick + oldTotalDurationTicks
+        val newEndTick = newStartTick + newMaxIndex * PER_TILE_DELAY_TICKS +
             totalDurationTicks() + FLASH_TOTAL_TICKS
+        val endTick = maxOf(oldEndTick, newEndTick)
         return nowTick >= endTick
     }
 
     private fun growScale(nowMs: Long, row: Int, col: Int): Float? {
-        val local = localElapsedTicks(nowMs, row, col)
+        val local = localElapsedTicks(nowMs, row, col, newStartTick, newRows)
         if (local < 0) return null
         val total = totalDurationTicks()
         if (local >= total) return 1.0f
@@ -135,8 +168,29 @@ internal class LevelTransitionAnimation(
         return GROW_SCALES[stepIndex]
     }
 
+    private fun shrinkScale(nowMs: Long, row: Int, col: Int): Float? {
+        val local = localElapsedTicks(nowMs, row, col, startTick, oldRows)
+        if (local < 0) return 1.0f
+        val total = totalDurationTicks()
+        if (local >= total) return null
+        val stepCount = SHRINK_SCALES.size
+        if (stepCount <= 1) return 1.0f
+        val stepDuration = total.toFloat() / (stepCount - 1).toFloat()
+        val stepIndex = (local.toFloat() / stepDuration).toInt().coerceIn(0, stepCount - 2)
+        return SHRINK_SCALES[stepIndex]
+    }
+
+    private fun fadeOutAlpha(nowMs: Long, row: Int, col: Int): Float? {
+        val local = localElapsedTicks(nowMs, row, col, startTick, oldRows)
+        if (local < 0) return 1.0f
+        val total = totalDurationTicks()
+        if (local >= total) return null
+        val progress = (local.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+        return 1.0f - progress
+    }
+
     private fun flashPhase(nowMs: Long, row: Int, col: Int): FlashPhase? {
-        val local = localElapsedTicks(nowMs, row, col)
+        val local = localElapsedTicks(nowMs, row, col, newStartTick, newRows)
         if (local < 0) return null
         val growDone = totalDurationTicks()
         if (local < growDone) return null
@@ -149,10 +203,16 @@ internal class LevelTransitionAnimation(
         }
     }
 
-    private fun localElapsedTicks(nowMs: Long, row: Int, col: Int): Long {
+    private fun localElapsedTicks(
+        nowMs: Long,
+        row: Int,
+        col: Int,
+        baseTick: Long,
+        rowCount: Int
+    ): Long {
         val nowTick = nowTick(nowMs)
-        val index = (rows - 1 - row) + col
-        return nowTick - (startTick + index * PER_TILE_DELAY_TICKS)
+        val index = (rowCount - 1 - row) + col
+        return nowTick - (baseTick + index * PER_TILE_DELAY_TICKS)
     }
 
     private fun totalDurationTicks(): Long {
@@ -168,8 +228,8 @@ internal class LevelTransitionAnimation(
     }
 
     private fun isCellReady(nowMs: Long, row: Int, col: Int): Boolean {
-        if (row < 0 || col < 0 || row >= rows || col >= cols) return false
-        val local = localElapsedTicks(nowMs, row, col)
+        if (row < 0 || col < 0 || row >= newRows || col >= newCols) return false
+        val local = localElapsedTicks(nowMs, row, col, newStartTick, newRows)
         return local >= totalDurationTicks() + FLASH_TOTAL_TICKS
     }
 
@@ -183,5 +243,6 @@ internal class LevelTransitionAnimation(
         const val FLASH_TOTAL_TICKS: Long = 2L
         const val FLASH_BLACK_TICKS: Long = 1L
         val GROW_SCALES = floatArrayOf(0.18f, 0.32f, 0.50f, 0.70f, 1.00f)
+        val SHRINK_SCALES = floatArrayOf(1.00f, 0.70f, 0.50f, 0.32f, 0.18f)
     }
 }

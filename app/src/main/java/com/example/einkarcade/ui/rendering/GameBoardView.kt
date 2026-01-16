@@ -150,6 +150,8 @@ internal class GameBoardView(
         playerPosition: Position
     ) {
         val previousTiles = this.tiles
+        val previousBoxes = this.boxPositions
+        val previousPlayer = this.playerPosition
         val tilesChanged = previousTiles != tiles
 
         this.tiles = tiles
@@ -158,17 +160,23 @@ internal class GameBoardView(
         selectedBox = null
 
         if (tilesChanged) {
+            val oldViewport = lastViewport
             rebuildStaticLayout()
             if (previousTiles.isNotEmpty() && tiles.isNotEmpty()) {
-                val viewport = lastViewport ?: return
+                val newViewport = lastViewport ?: return
+                val oldPlayer = previousPlayer ?: return
+                val previousViewport = oldViewport ?: return
                 animationRunner.enqueue(
                     LevelTransitionAnimation(
                         renderer = renderer,
-                        viewport = viewport,
+                        oldViewport = previousViewport,
+                        newViewport = newViewport,
                         oldTiles = previousTiles,
                         newTiles = tiles,
-                        boxPositions = boxPositions,
-                        playerPosition = playerPosition,
+                        oldBoxPositions = previousBoxes,
+                        oldPlayerPosition = oldPlayer,
+                        newBoxPositions = boxPositions,
+                        newPlayerPosition = playerPosition,
                         viewWidth = width,
                         viewHeight = height
                     )

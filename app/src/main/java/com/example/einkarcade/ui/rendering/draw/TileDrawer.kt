@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import com.example.einkarcade.sokoban.Tile
 import com.example.einkarcade.ui.rendering.geom.BoardViewport
+import kotlin.math.roundToInt
 
 internal class TileDrawer {
     private val floorFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
@@ -80,6 +81,39 @@ internal class TileDrawer {
                 )
             }
             else -> Unit
+        }
+    }
+
+    fun drawScaledTileWithAlpha(
+        canvas: Canvas,
+        tile: Tile,
+        rowIndex: Int,
+        colIndex: Int,
+        scale: Float,
+        alpha: Float,
+        cellSize: Float,
+        offsetX: Float,
+        offsetY: Float
+    ) {
+        val clampedAlpha = alpha.coerceIn(0f, 1f)
+        val floorFillAlpha = floorFillPaint.alpha
+        val floorStrokeAlpha = floorStrokePaint.alpha
+        val goalFillAlpha = goalFillPaint.alpha
+        val goalStrokeAlpha = goalStrokePaint.alpha
+        val scaledAlpha = (255f * clampedAlpha).roundToInt().coerceIn(0, 255)
+
+        floorFillPaint.alpha = scaledAlpha
+        floorStrokePaint.alpha = scaledAlpha
+        goalFillPaint.alpha = scaledAlpha
+        goalStrokePaint.alpha = scaledAlpha
+
+        try {
+            drawScaledTile(canvas, tile, rowIndex, colIndex, scale, cellSize, offsetX, offsetY)
+        } finally {
+            floorFillPaint.alpha = floorFillAlpha
+            floorStrokePaint.alpha = floorStrokeAlpha
+            goalFillPaint.alpha = goalFillAlpha
+            goalStrokePaint.alpha = goalStrokeAlpha
         }
     }
 

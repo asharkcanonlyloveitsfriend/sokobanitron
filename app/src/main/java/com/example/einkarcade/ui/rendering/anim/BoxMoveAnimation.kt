@@ -12,7 +12,7 @@ import com.example.einkarcade.ui.rendering.geom.BoardViewport
 import kotlin.math.ceil
 import kotlin.math.floor
 
-private const val FLASH_LIGHT_TICKS = 2
+private const val FLASH_LIGHT_TICKS = 1
 private const val FLASH_DARK_TICKS = 1
 // Number of path segments consumed per tick (may be fractional)
 private const val PATH_SEGMENTS_PER_TICK = 2.6f
