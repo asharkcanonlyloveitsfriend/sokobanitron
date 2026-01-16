@@ -4,14 +4,15 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Rect
 import androidx.core.graphics.createBitmap
-import androidx.core.graphics.withClip
 import com.example.einkarcade.R
 import com.example.einkarcade.sokoban.Position
 import com.example.einkarcade.sokoban.Tile
 import com.example.einkarcade.ui.rendering.AndroidGameAssets
+import com.example.einkarcade.ui.rendering.anim.AnimationRequirements
 import com.example.einkarcade.ui.rendering.geom.BoardViewport
 import com.example.einkarcade.ui.rendering.geom.ResolvedEntityGeometry
 import com.example.einkarcade.ui.rendering.geom.toRenderPoint
+import kotlin.math.roundToInt
 
 internal class GameRenderer(
     private val assets: AndroidGameAssets,
@@ -26,12 +27,14 @@ internal class GameRenderer(
         viewWidth: Int,
         viewHeight: Int,
         viewport: BoardViewport,
-        tiles: List<List<Tile>>
+        tiles: List<List<Tile>>,
+        animationRequirements: AnimationRequirements
     ) {
         geometry = ResolvedEntityGeometry.compute(
             viewport.cellSize,
             assets = assets
         )
+        prewarmBoxBitmaps(animationRequirements.boxScaleFactors)
 
         val bitmap = createBitmap(viewWidth, viewHeight)
         val canvas = Canvas(bitmap)
@@ -132,25 +135,32 @@ internal class GameRenderer(
         return assets.getBitmap(R.drawable.player_eyes_blink, geometry.playerSizePx)
     }
 
+    fun prewarmBoxBitmaps(scales: Collection<Float>) {
+        for (scale in scales) {
+            val sizePx = (geometry.boxSizePx * scale).roundToInt().coerceAtLeast(1)
+            assets.getBitmap(R.drawable.box, sizePx)
+        }
+    }
+
     fun drawVanishingBox(
         canvas: Canvas,
         viewport: BoardViewport,
         position: Position,
         scale: Float
     ) {
+        if (scale <= 0f) return
         val origin = Position(position.row + 1, position.col + 1)
             .toRenderPoint(viewport.cellSize, viewport.offsetX, viewport.offsetY)
         val bounds = geometry.boxBoundsPx
         val left = origin.x + bounds.left
         val top = origin.y + bounds.top
         val size = geometry.boxSizePx.toFloat()
-        val clippedSize = size * scale
-        val clipLeft = left + (size - clippedSize) / 2f
-        val clipTop = top + (size - clippedSize) / 2f
+        val scaledSize = (geometry.boxSizePx * scale).roundToInt().coerceAtLeast(1)
+        val scaledSizeF = scaledSize.toFloat()
+        val drawLeft = left + (size - scaledSizeF) / 2f
+        val drawTop = top + (size - scaledSizeF) / 2f
 
-        val bitmap = assets.getBitmap(R.drawable.box, geometry.boxSizePx)
-        canvas.withClip(clipLeft, clipTop, clipLeft + clippedSize, clipTop + clippedSize) {
-            drawBitmap(bitmap, left, top, assets.bitmapPaint())
-        }
+        val bitmap = assets.getBitmap(R.drawable.box, scaledSize)
+        canvas.drawBitmap(bitmap, drawLeft, drawTop, assets.bitmapPaint())
     }
 }

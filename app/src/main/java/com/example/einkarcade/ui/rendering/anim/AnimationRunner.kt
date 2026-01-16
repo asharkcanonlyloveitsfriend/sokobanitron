@@ -16,6 +16,9 @@ internal class AnimationRunner(
 
     private val queue = ArrayDeque<Animation>()
     private var active: Animation? = null
+    private val requirements: AnimationRequirements by lazy { buildRequirements() }
+
+    fun requirements(): AnimationRequirements = requirements
 
     /** Enqueue an animation and start immediately if idle. */
     fun enqueue(animation: Animation) {
@@ -64,5 +67,10 @@ internal class AnimationRunner(
     private fun advance() {
         active?.dirtyRect()?.let { invalidateRect(it) }
         scheduleNextStep()
+    }
+
+    private fun buildRequirements(): AnimationRequirements {
+        val boxScales = BoxVanishAnimation.phaseScales().toSet()
+        return AnimationRequirements(boxScaleFactors = boxScales)
     }
 }

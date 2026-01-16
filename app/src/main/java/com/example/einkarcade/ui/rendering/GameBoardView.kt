@@ -219,7 +219,8 @@ internal class GameBoardView(
             viewWidth = width,
             viewHeight = height,
             viewport = viewport,
-            tiles = tiles
+            tiles = tiles,
+            animationRequirements = animationRunner.requirements()
         )
     }
 

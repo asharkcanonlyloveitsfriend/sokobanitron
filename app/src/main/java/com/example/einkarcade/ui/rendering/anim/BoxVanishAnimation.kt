@@ -30,9 +30,9 @@ internal class BoxVanishAnimation(
 
     private data class Phase(val scale: Float, val ticks: Int)
 
-    private companion object {
+    companion object {
         // Edit this list to change vanish phase scales/timing in one place.
-        val PHASES = listOf(
+        private val PHASES = listOf(
             Phase(scale = 1.0f, ticks = 4),
             Phase(scale = 0.75f, ticks = 4),
             Phase(scale = 0.5f, ticks = 3),
@@ -41,5 +41,7 @@ internal class BoxVanishAnimation(
             Phase(scale = 0.14f, ticks = 1),
             Phase(scale = 0.1f, ticks = 1)
         )
+
+        fun phaseScales(): List<Float> = PHASES.map { it.scale }
     }
 }
