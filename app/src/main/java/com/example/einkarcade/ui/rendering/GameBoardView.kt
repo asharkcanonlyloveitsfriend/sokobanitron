@@ -9,6 +9,7 @@ import com.example.einkarcade.sokoban.Position
 import com.example.einkarcade.sokoban.Tile
 import com.example.einkarcade.ui.rendering.anim.AnimationRunner
 import com.example.einkarcade.ui.rendering.anim.BlinkAnimation
+import com.example.einkarcade.ui.rendering.anim.BoxVanishAnimation
 import com.example.einkarcade.ui.rendering.anim.PlayerFlashAnimation
 import com.example.einkarcade.ui.rendering.draw.BackgroundDrawer
 import com.example.einkarcade.ui.rendering.draw.EntityDrawer
@@ -168,8 +169,13 @@ internal class GameBoardView(
         val boxFrom = path.first()
         val boxTo = path.last()
         val newPlayer = path[path.size - 2]
+        val isWall = tiles[boxTo.row][boxTo.col] == Tile.WALL
 
-        boxPositions = boxPositions - boxFrom + boxTo
+        boxPositions = if (isWall) {
+            boxPositions - boxFrom
+        } else {
+            boxPositions - boxFrom + boxTo
+        }
         playerPosition = newPlayer
 
         var rect = renderer.computeBoxRect(viewport, boxFrom)
@@ -183,6 +189,11 @@ internal class GameBoardView(
 
         rect = renderer.computePlayerRect(viewport, newPlayer)
         invalidateRectOnAnimation(rect)
+
+        if (isWall) {
+            animationRunner.enqueue(BoxVanishAnimation(renderer, viewport, boxTo))
+            animationRunner.enqueue(BlinkAnimation(renderer, viewport, newPlayer))
+        }
     }
 
     private fun onMoveRejected() {

@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Rect
 import androidx.core.graphics.createBitmap
+import androidx.core.graphics.withClip
 import com.example.einkarcade.R
 import com.example.einkarcade.sokoban.Position
 import com.example.einkarcade.sokoban.Tile
@@ -129,5 +130,27 @@ internal class GameRenderer(
 
     fun getPlayerEyesBlinkBitmap(): Bitmap {
         return assets.getBitmap(R.drawable.player_eyes_blink, geometry.playerSizePx)
+    }
+
+    fun drawVanishingBox(
+        canvas: Canvas,
+        viewport: BoardViewport,
+        position: Position,
+        scale: Float
+    ) {
+        val origin = Position(position.row + 1, position.col + 1)
+            .toRenderPoint(viewport.cellSize, viewport.offsetX, viewport.offsetY)
+        val bounds = geometry.boxBoundsPx
+        val left = origin.x + bounds.left
+        val top = origin.y + bounds.top
+        val size = geometry.boxSizePx.toFloat()
+        val clippedSize = size * scale
+        val clipLeft = left + (size - clippedSize) / 2f
+        val clipTop = top + (size - clippedSize) / 2f
+
+        val bitmap = assets.getBitmap(R.drawable.box, geometry.boxSizePx)
+        canvas.withClip(clipLeft, clipTop, clipLeft + clippedSize, clipTop + clippedSize) {
+            drawBitmap(bitmap, left, top, assets.bitmapPaint())
+        }
     }
 }
