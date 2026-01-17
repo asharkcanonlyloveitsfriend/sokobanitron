@@ -51,33 +51,6 @@ internal class GameRenderer(
         backgroundDrawer.draw(canvas, viewWidth, viewHeight)
     }
 
-    fun drawEntities(
-        canvas: Canvas,
-        viewport: BoardViewport,
-        boxPositions: Set<Position>,
-        playerPosition: Position,
-        selectedBox: Position?
-    ) {
-        entityDrawer.drawBoxes(canvas, viewport, geometry, boxPositions)
-
-        if (selectedBox != null) {
-            entityDrawer.drawBox(
-                canvas = canvas,
-                viewport = viewport,
-                geometry = geometry,
-                position = selectedBox,
-                resId = R.drawable.box_selected
-            )
-        }
-
-        entityDrawer.drawPlayer(
-            canvas = canvas,
-            viewport = viewport,
-            geometry = geometry,
-            playerPosition = playerPosition
-        )
-    }
-
     fun drawBoxes(
         canvas: Canvas,
         viewport: BoardViewport,

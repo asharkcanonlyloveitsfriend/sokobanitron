@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
 import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.graphics.createBitmap
 
 internal class AndroidGameAssets(private val context: Context) {
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -23,7 +24,7 @@ internal class AndroidGameAssets(private val context: Context) {
         return bySize.getOrPut(sizePx) {
             val drawable = AppCompatResources.getDrawable(context, resId)
             requireNotNull(drawable) { "Missing drawable: $resId" }
-            val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+            val bitmap = createBitmap(sizePx, sizePx)
             val canvas = Canvas(bitmap)
             drawable.setBounds(0, 0, sizePx, sizePx)
             drawable.draw(canvas)

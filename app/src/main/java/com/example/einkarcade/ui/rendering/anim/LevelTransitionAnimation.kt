@@ -7,7 +7,6 @@ import android.graphics.Rect
 import android.os.SystemClock
 import com.example.einkarcade.sokoban.Position
 import com.example.einkarcade.sokoban.Tile
-import com.example.einkarcade.ui.rendering.VanishSpec
 import com.example.einkarcade.ui.rendering.draw.GameRenderer
 import com.example.einkarcade.ui.rendering.geom.BoardViewport
 
@@ -217,7 +216,7 @@ internal class LevelTransitionAnimation(
 
     private fun totalDurationTicks(): Long {
         return kotlin.math.ceil(
-            VanishSpec.totalDurationTicks().toDouble() * TRANSITION_DURATION_MULT
+            TRANSITION_BASE_TICKS.toDouble() * TRANSITION_DURATION_MULT
         ).toLong()
     }
 
@@ -238,6 +237,7 @@ internal class LevelTransitionAnimation(
     private enum class FlashPhase { BLACK, WHITE }
 
     private companion object {
+        const val TRANSITION_BASE_TICKS: Long = 19L
         const val TRANSITION_DURATION_MULT: Float = 0.08f
         const val PER_TILE_DELAY_TICKS: Long = 2L
         const val FLASH_TOTAL_TICKS: Long = 2L
