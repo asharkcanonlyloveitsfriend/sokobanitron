@@ -10,7 +10,7 @@ import com.example.einkarcade.ui.rendering.draw.GameRenderer
 import com.example.einkarcade.ui.rendering.geom.BoardViewport
 
 /**
- * Two-phase player flash: light then dark, then cleanup.
+ * Two-phase player flash: dark then light, then cleanup.
  */
 internal class PlayerFlashAnimation(
     private val renderer: GameRenderer,
@@ -29,12 +29,12 @@ internal class PlayerFlashAnimation(
     }
 
     private enum class Phase {
-        LIGHT,
         DARK,
+        LIGHT,
         CLEANUP
     }
 
-    private var phase: Phase = Phase.LIGHT
+    private var phase: Phase = Phase.DARK
 
     override fun dirtyRect(): Rect? {
         return spriteRect
@@ -42,12 +42,12 @@ internal class PlayerFlashAnimation(
 
     override fun drawOverEntities(canvas: Canvas) {
         when (phase) {
-            Phase.LIGHT -> {
-                canvas.drawBitmap(bodyBitmap, null, spriteRect, lightPaint)
-                phase = Phase.DARK
-            }
             Phase.DARK -> {
                 canvas.drawBitmap(bodyBitmap, null, spriteRect, darkPaint)
+                phase = Phase.LIGHT
+            }
+            Phase.LIGHT -> {
+                canvas.drawBitmap(bodyBitmap, null, spriteRect, lightPaint)
                 phase = Phase.CLEANUP
             }
             Phase.CLEANUP -> {}
@@ -56,8 +56,8 @@ internal class PlayerFlashAnimation(
 
     override fun ticksUntilNextStep(): Int? {
         return when (phase) {
-            Phase.LIGHT -> 2
-            Phase.DARK -> 1
+            Phase.DARK -> 2
+            Phase.LIGHT -> 1
             Phase.CLEANUP -> null
         }
     }

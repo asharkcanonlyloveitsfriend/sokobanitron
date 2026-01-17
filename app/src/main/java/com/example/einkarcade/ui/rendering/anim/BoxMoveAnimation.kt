@@ -43,13 +43,13 @@ internal class BoxMoveAnimation(
     }
 
     private enum class Phase {
-        FLASH_LIGHT,
         FLASH_DARK,
+        FLASH_LIGHT,
         PATH,
         CLEANUP
     }
 
-    private var phase: Phase = Phase.FLASH_LIGHT
+    private var phase: Phase = Phase.FLASH_DARK
     private var pathProgressSegments: Float = 0f
 
     override fun dirtyRect(): Rect {
@@ -71,12 +71,12 @@ internal class BoxMoveAnimation(
 
     override fun drawOverEntities(canvas: Canvas) {
         when (phase) {
-            Phase.FLASH_LIGHT -> {
-                drawFlashes(canvas, lightPaint)
-                phase = Phase.FLASH_DARK
-            }
             Phase.FLASH_DARK -> {
                 drawFlashes(canvas, darkPaint)
+                phase = Phase.FLASH_LIGHT
+            }
+            Phase.FLASH_LIGHT -> {
+                drawFlashes(canvas, lightPaint)
                 phase = Phase.PATH
             }
             Phase.PATH,
@@ -86,8 +86,8 @@ internal class BoxMoveAnimation(
 
     override fun ticksUntilNextStep(): Int? {
         return when (phase) {
-            Phase.FLASH_LIGHT -> FLASH_LIGHT_TICKS
             Phase.FLASH_DARK -> FLASH_DARK_TICKS
+            Phase.FLASH_LIGHT -> FLASH_LIGHT_TICKS
             Phase.PATH -> 1
             Phase.CLEANUP -> null
         }
