@@ -6,6 +6,12 @@ import android.graphics.Rect
 const val ANIMATION_TICK_MS: Long = 50L
 
 interface Animation {
+    /** Return true when the animation should hide the entire board. */
+    fun hidesBoard(): Boolean = false
+
+    /** Return true when the animation should hide the player sprite. */
+    fun hidesPlayer(): Boolean = false
+
     /** Regions affected at the current state. Null entries are ignored. */
     fun dirtyRects(): Array<Rect?>
 
@@ -14,12 +20,6 @@ interface Animation {
 
     /** Draw elements that should appear above entities. */
     fun drawOverEntities(canvas: Canvas) {}
-
-    /** Return true when the animation should hide the player sprite. */
-    fun hidesPlayer(): Boolean = false
-
-    /** Return true when the animation should hide the entire board. */
-    fun hidesBoard(): Boolean = false
 
     /**
      * Number of animation ticks until the next state change.

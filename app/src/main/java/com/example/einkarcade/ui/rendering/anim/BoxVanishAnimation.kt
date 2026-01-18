@@ -6,6 +6,18 @@ import com.example.einkarcade.sokoban.Position
 import com.example.einkarcade.ui.rendering.draw.GameRenderer
 import com.example.einkarcade.ui.rendering.geom.BoardViewport
 
+private data class BoxVanishPhase(val scale: Float, val ticks: Int)
+
+private val BOX_VANISH_PHASES = listOf(
+    BoxVanishPhase(scale = 1.0f, ticks = 4),
+    BoxVanishPhase(scale = 0.75f, ticks = 3),
+    BoxVanishPhase(scale = 0.5f, ticks = 3),
+    BoxVanishPhase(scale = 0.3f, ticks = 2),
+    BoxVanishPhase(scale = 0.18f, ticks = 2),
+    BoxVanishPhase(scale = 0.14f, ticks = 1),
+    BoxVanishPhase(scale = 0.1f, ticks = 1)
+)
+
 internal class BoxVanishAnimation(
     private val renderer: GameRenderer,
     private val viewport: BoardViewport,
@@ -14,32 +26,16 @@ internal class BoxVanishAnimation(
     override fun dirtyRects(): Array<Rect?> = arrayOf(boxRect)
 
     override fun drawOverEntities(canvas: Canvas) {
-        if (phaseIndex >= PHASES.size) return
-        val phase = PHASES[phaseIndex]
+        if (phaseIndex >= BOX_VANISH_PHASES.size) return
+        val phase = BOX_VANISH_PHASES[phaseIndex]
         renderer.drawVanishingBox(canvas, viewport, position, phase.scale)
         phaseIndex++
     }
 
     override fun ticksUntilNextStep(): Int? {
-        return if (phaseIndex < PHASES.size) PHASES[phaseIndex].ticks else null
+        return if (phaseIndex < BOX_VANISH_PHASES.size) BOX_VANISH_PHASES[phaseIndex].ticks else null
     }
 
     private val boxRect: Rect by lazy { renderer.computeBoxRect(viewport, position) }
     private var phaseIndex = 0
-
-    private data class Phase(val scale: Float, val ticks: Int)
-
-    companion object {
-        // Edit this list to change vanish phase scales/timing in one place.
-        private val PHASES = listOf(
-            Phase(scale = 1.0f, ticks = 4),
-            Phase(scale = 0.75f, ticks = 3),
-            Phase(scale = 0.5f, ticks = 3),
-            Phase(scale = 0.3f, ticks = 2),
-            Phase(scale = 0.18f, ticks = 2),
-            Phase(scale = 0.14f, ticks = 1),
-            Phase(scale = 0.1f, ticks = 1)
-        )
-
-    }
 }

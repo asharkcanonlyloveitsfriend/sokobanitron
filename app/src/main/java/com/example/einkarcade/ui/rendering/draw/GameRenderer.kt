@@ -103,28 +103,6 @@ internal class GameRenderer(
         )
     }
 
-    fun drawScaledTileWithAlpha(
-        canvas: Canvas,
-        viewport: BoardViewport,
-        tile: Tile,
-        rowIndex: Int,
-        colIndex: Int,
-        scale: Float,
-        alpha: Float
-    ) {
-        tileDrawer.drawScaledTileWithAlpha(
-            canvas = canvas,
-            tile = tile,
-            rowIndex = rowIndex,
-            colIndex = colIndex,
-            scale = scale,
-            alpha = alpha,
-            cellSize = viewport.cellSize,
-            offsetX = viewport.offsetX,
-            offsetY = viewport.offsetY
-        )
-    }
-
     fun computeBoxRect(
         viewport: BoardViewport,
         position: Position

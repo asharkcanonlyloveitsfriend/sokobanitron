@@ -1,7 +1,11 @@
 package com.example.einkarcade.ui.rendering
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Rect
 import android.view.MotionEvent
 import android.view.View
 import com.example.einkarcade.GameController
@@ -63,7 +67,7 @@ internal class GameBoardView(
 
     override fun asView(): View = this
 
-    override fun onDraw(canvas: android.graphics.Canvas) {
+    override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         drawInternal(canvas)
     }
@@ -108,7 +112,7 @@ internal class GameBoardView(
         }
     }
 
-    private fun drawInternal(canvas: android.graphics.Canvas) {
+    private fun drawInternal(canvas: Canvas) {
         val playerPos = playerPosition ?: return
         val viewport = lastViewport ?: return
 
@@ -145,8 +149,6 @@ internal class GameBoardView(
         playerPosition: Position
     ) {
         val previousTiles = this.tiles
-        val previousBoxes = this.boxPositions
-        val previousPlayer = this.playerPosition
         val tilesChanged = previousTiles != tiles
 
         this.tiles = tiles
@@ -155,31 +157,51 @@ internal class GameBoardView(
         selectedBox = null
 
         if (tilesChanged) {
-            val oldViewport = lastViewport
+            val previousViewport = lastViewport
+            val oldBitmap: Bitmap? = if (width > 0 && height > 0) {
+                val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bmp)
+                renderer.drawStaticFrame(canvas)
+                bmp
+            } else {
+                null
+            }
+
             rebuildStaticLayout()
-            if (previousTiles.isNotEmpty() && tiles.isNotEmpty()) {
-                val newViewport = lastViewport ?: return
-                val oldPlayer = previousPlayer ?: return
-                val previousViewport = oldViewport ?: return
+
+            val newViewport = lastViewport
+
+            // Capture new bitmap after mutating state and layout
+            val newBitmap: Bitmap? = if (width > 0 && height > 0) {
+                val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bmp)
+                renderer.drawStaticFrame(canvas)
+                bmp
+            } else {
+                null
+            }
+            if (
+                previousTiles.isNotEmpty() &&
+                tiles.isNotEmpty() &&
+                oldBitmap != null &&
+                newBitmap != null &&
+                previousViewport != null &&
+                newViewport != null
+            ) {
                 animationRunner.enqueue(
                     LevelTransitionAnimation(
-                        renderer = renderer,
+                        oldBitmap = oldBitmap,
+                        newBitmap = newBitmap,
                         oldViewport = previousViewport,
                         newViewport = newViewport,
                         oldTiles = previousTiles,
-                        newTiles = tiles,
-                        oldBoxPositions = previousBoxes,
-                        oldPlayerPosition = oldPlayer,
-                        newBoxPositions = boxPositions,
-                        newPlayerPosition = playerPosition,
-                        viewWidth = width,
-                        viewHeight = height
+                        newTiles = tiles
                     )
                 )
             }
+        } else {
+            invalidate()
         }
-
-        invalidate()
     }
 
     private fun onPlayerMoved(to: Position) {
@@ -276,18 +298,18 @@ internal class GameBoardView(
         )
     }
 
-    private fun invalidateRects(vararg rects: android.graphics.Rect?) {
+    private fun invalidateRects(vararg rects: Rect?) {
         val nonNull = rects.filterNotNull()
         if (nonNull.isEmpty()) return
 
-        val dirty = android.graphics.Rect(nonNull[0])
+        val dirty = Rect(nonNull[0])
         for (i in 1 until nonNull.size) {
             dirty.union(nonNull[i])
         }
         invalidateRectOnAnimation(dirty)
     }
 
-    private fun invalidateRectOnAnimation(rect: android.graphics.Rect) {
+    private fun invalidateRectOnAnimation(rect: Rect) {
         postInvalidateOnAnimation(rect.left, rect.top, rect.right, rect.bottom)
     }
 }
