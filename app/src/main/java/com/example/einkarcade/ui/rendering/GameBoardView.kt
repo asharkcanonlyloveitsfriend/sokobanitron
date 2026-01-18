@@ -24,6 +24,7 @@ import com.example.einkarcade.ui.rendering.draw.TileDrawer
 import com.example.einkarcade.ui.rendering.geom.BoardViewport
 import com.example.einkarcade.ui.rendering.geom.computeBoardViewport
 import com.example.einkarcade.ui.rendering.geom.screenToInnerCell
+import androidx.core.graphics.createBitmap
 
 @SuppressLint("ClickableViewAccessibility")
 internal class GameBoardView(
@@ -149,13 +150,14 @@ internal class GameBoardView(
         playerPosition: Position
     ) {
         val previousTiles = this.tiles
+        val previousViewport = lastViewport
 
         this.tiles = tiles
         this.boxPositions = boxPositions
         this.playerPosition = playerPosition
         selectedBox = null
 
-        if (width <= 0 || height <= 0) {
+        if (width <= 0 || height <= 0 || previousViewport == null) {
             return
         }
 
@@ -164,12 +166,8 @@ internal class GameBoardView(
             return
         }
 
-        val backgroundBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
+        val backgroundBitmap = createBitmap(width, height).also {
             renderer.drawBackground(Canvas(it), width, height)
-        }
-
-        val oldBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
-            renderer.drawStaticFrame(Canvas(it))
         }
 
         // Rebuild layout for new tiles
@@ -180,16 +178,17 @@ internal class GameBoardView(
             return
         }
 
-        val newBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
+        val newBitmap = createBitmap(width, height).also {
             renderer.drawStaticFrame(Canvas(it))
         }
 
         animationRunner.enqueue(
             LevelTransitionAnimation(
                 backgroundBitmap = backgroundBitmap,
-                oldBitmap = oldBitmap,
                 newBitmap = newBitmap,
+                oldViewport = previousViewport,
                 newViewport = newViewport,
+                oldTiles = previousTiles,
                 newTiles = tiles
             )
         )

@@ -2,6 +2,8 @@ package com.example.einkarcade.ui.rendering.geom
 
 import com.example.einkarcade.sokoban.Position
 import kotlin.math.min
+import android.graphics.Rect
+import kotlin.math.roundToInt
 
 internal data class BoardViewport(
     val rows: Int,
