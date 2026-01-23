@@ -57,9 +57,25 @@ class LevelsRepository(private val context: Context) {
         dao.updatePuzzleRating(level.puzzleId, level.rating)
     }
 
-    fun updateLastCompletedAt(level: Level): String {
+    fun recordCompletion(level: Level, solutionHistory: List<List<com.example.einkarcade.sokoban.Position>>): String {
         val timestamp = utcFormatter.format(Instant.now())
-        dao.updatePuzzleLastCompletedAt(level.puzzleId, timestamp)
+        val userSolutionJson = if (solutionHistory.isEmpty()) {
+            null
+        } else {
+            val outerArray = JSONArray()
+            for (path in solutionHistory) {
+                val pathArray = JSONArray()
+                for (pos in path) {
+                    val posArray = JSONArray()
+                    posArray.put(pos.row)
+                    posArray.put(pos.col)
+                    pathArray.put(posArray)
+                }
+                outerArray.put(pathArray)
+            }
+            outerArray.toString()
+        }
+        dao.updatePuzzleCompletion(level.puzzleId, timestamp, userSolutionJson)
         return timestamp
     }
 
@@ -87,6 +103,11 @@ class LevelsRepository(private val context: Context) {
                 puzzleJson.put("last_completed_at", JSONObject.NULL)
             } else {
                 puzzleJson.put("last_completed_at", puzzle.lastCompletedAt)
+            }
+            if (puzzle.userSolution == null) {
+                puzzleJson.put("user_solution", JSONObject.NULL)
+            } else {
+                puzzleJson.put("user_solution", puzzle.userSolution)
             }
             puzzleArray.put(puzzleJson)
         }
@@ -127,12 +148,18 @@ class LevelsRepository(private val context: Context) {
             } else {
                 item.getString("last_completed_at")
             }
+            val userSolution = if (item.isNull("user_solution")) {
+                null
+            } else {
+                item.getString("user_solution")
+            }
             puzzles.add(
                 PuzzleEntity(
                     id = item.getInt("id"),
                     grid = item.getString("grid"),
                     rating = item.getInt("rating"),
-                    lastCompletedAt = lastCompletedAt
+                    lastCompletedAt = lastCompletedAt,
+                    userSolution = userSolution
                 )
             )
         }

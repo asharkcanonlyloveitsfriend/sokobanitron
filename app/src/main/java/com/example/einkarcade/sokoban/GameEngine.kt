@@ -4,7 +4,8 @@ import kotlin.math.abs
 
 class GameEngine(private val level: Level) {
     private var gameState = GameState.fromLevel(level)
-    private var lastBoxPath: List<Position>? = null
+    private val boxMoveHistory: MutableList<List<Position>> = mutableListOf()
+    private var hasUndoneOnce: Boolean = false
 
     val playerPosition: Position
         get() = gameState.playerPosition
@@ -22,12 +23,17 @@ class GameEngine(private val level: Level) {
         get() = gameState.playerPosition == level.playerStart &&
             gameState.boxPositions == level.boxPositions
 
+    fun getBoxMoveHistory(): List<List<Position>> {
+        return boxMoveHistory.toList()
+    }
+
     private fun hasBoxAt(position: Position): Boolean {
         return gameState.boxPositions.contains(position)
     }
 
     fun undo(): List<Position>? {
-        val path = lastBoxPath ?: return null
+        if (hasUndoneOnce) return null
+        val path = boxMoveHistory.removeLastOrNull() ?: return null
 
         val boxFrom = path.first()
         val boxTo = path.last()
@@ -43,7 +49,7 @@ class GameEngine(private val level: Level) {
         gameState.removeBox(boxTo)
         gameState.boxPositions.add(boxFrom)
         gameState.movePlayer(newPlayerPosition)
-        lastBoxPath = null
+        hasUndoneOnce = true
         return path
     }
 
@@ -60,7 +66,8 @@ class GameEngine(private val level: Level) {
             level.grid[to.row][to.col] == Tile.WALL
 
         if (pushedIntoWall) {
-            lastBoxPath = listOf(from, to)
+            boxMoveHistory.add(listOf(from, to))
+            hasUndoneOnce = false
             gameState.removeBox(from)
             gameState.movePlayer(from)
             return listOf(from, to)
@@ -80,7 +87,8 @@ class GameEngine(private val level: Level) {
         }
 
         // Apply the planned move.
-        lastBoxPath = boxPath
+        boxMoveHistory.add(boxPath)
+        hasUndoneOnce = false
         gameState.moveBox(from, to)
         gameState.movePlayer(finalPlayerPosition)
         return boxPath

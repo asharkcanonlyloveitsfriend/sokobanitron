@@ -13,7 +13,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         LevelEntity::class,
         PuzzleEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class LevelsDatabase : RoomDatabase() {
@@ -28,6 +28,14 @@ abstract class LevelsDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE puzzles ADD COLUMN user_solution TEXT"
+                )
+            }
+        }
+
         @Volatile
         private var instance: LevelsDatabase? = null
         fun getInstance(context: Context): LevelsDatabase {
@@ -38,7 +46,7 @@ abstract class LevelsDatabase : RoomDatabase() {
                     "einkarcade.db"
                 )
                     .allowMainThreadQueries()
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                     .also { instance = it }
             }

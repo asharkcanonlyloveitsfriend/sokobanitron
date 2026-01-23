@@ -87,7 +87,10 @@ class GameController(
 
     private fun recordCompletionIfWon() {
         if (gameEngine.isCleanWin) {
-            val timestamp = repository.updateLastCompletedAt(level)
+            val timestamp = repository.recordCompletion(
+                level,
+                gameEngine.getBoxMoveHistory()
+            )
             level.markCompleted(timestamp)
         }
     }
@@ -160,6 +163,7 @@ class GameController(
     }
 
     fun restart() {
+        markChanged()
         gameEngine = GameEngine(level)
         onRenderDelta?.invoke(
             RenderDelta.Restart(
@@ -191,6 +195,7 @@ class GameController(
 
     fun undo(): Boolean {
         if (gameEngine.undo() == null) return false
+        markChanged()
         onRenderDelta?.invoke(
             RenderDelta.Undo(
                 playerPosition = gameEngine.playerPosition,
