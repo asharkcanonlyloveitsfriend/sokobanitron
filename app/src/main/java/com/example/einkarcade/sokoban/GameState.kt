@@ -22,9 +22,6 @@ data class GameState(
     }
 
     fun removeBox(position: Position) {
-        if (!boxPositions.contains(position)) {
-            error("No box at position $position")
-        }
         boxPositions.remove(position)
     }
 
