@@ -47,4 +47,7 @@ interface LevelsDao {
         lastCompletedAt: String?,
         userSolution: String?
     )
+
+    @Query("SELECT user_solution FROM puzzles WHERE id = :puzzleId")
+    fun getUserSolution(puzzleId: Int): String?
 }
