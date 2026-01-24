@@ -5,7 +5,7 @@ class BoxMover(
 ) {
     private data class State(val box: Position, val player: Position)
 
-    fun canMoveBox(from: Position, to: Position, playerStart: Position): List<Position>? {
+    fun findBoxPath(from: Position, to: Position, playerStart: Position): List<Position>? {
         if (from == to) return null
         val numRows = staticGrid.size
         val numCols = staticGrid[0].size

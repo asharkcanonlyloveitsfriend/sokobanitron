@@ -8,7 +8,7 @@ class BoxMoverTest {
     data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
     @Test
-    fun testCanMoveBox_StraightLineWithPlayerAccess() {
+    fun testFindBoxPath_StraightLineWithPlayerAccess() {
         val asciiMap = """
             #######
             #@    #
@@ -17,11 +17,18 @@ class BoxMoverTest {
         """.trimIndent()
         val (mover, playerPosition, to, boxPosition) = parseBoxMoverWithEndpoints(asciiMap)
 
-        val expectedFinalPlayerPos = Position(2, 4) // left of 'x'
-        assertEquals(expectedFinalPlayerPos, mover.canMoveBox(boxPosition, to, playerPosition))
+        val expectedPath = listOf(
+            Position(2, 2),
+            Position(2, 3),
+            Position(2, 4),
+            Position(2, 5)
+        )
+        val path = mover.findBoxPath(boxPosition, to, playerPosition)
+        assertNotNull(path)
+        assertEquals(expectedPath, path)
     }
     @Test
-    fun testCanMoveBox_NotStraightLine() {
+    fun testFindBoxPath_NotStraightLine() {
         val asciiMap = """
             #####
             #@  #
@@ -31,11 +38,17 @@ class BoxMoverTest {
         """.trimIndent()
         val (mover, playerPosition, to, boxPosition) = parseBoxMoverWithEndpoints(asciiMap)
 
-        val expectedFinalPlayerPos = Position(3, 2) // left of 'x'
-        assertEquals(expectedFinalPlayerPos, mover.canMoveBox(boxPosition, to, playerPosition))
+        val expectedPath = listOf(
+            Position(2, 2),
+            Position(3, 2),
+            Position(3, 3)
+        )
+        val path = mover.findBoxPath(boxPosition, to, playerPosition)
+        assertNotNull(path)
+        assertEquals(expectedPath, path)
     }
     @Test
-    fun testCanMoveBox_ComplexPath() {
+    fun testFindBoxPath_ComplexPath() {
         val asciiMap = """
             ###################
             # ###   ##        #
@@ -48,11 +61,14 @@ class BoxMoverTest {
         """.trimIndent()
         val (mover, playerPosition, to, boxPosition) = parseBoxMoverWithEndpoints(asciiMap)
 
-        val expectedFinalPlayerPos = Position(6, 16) // last push was from left of x
-        assertEquals(expectedFinalPlayerPos, mover.canMoveBox(boxPosition, to, playerPosition))
+        val path = mover.findBoxPath(boxPosition, to, playerPosition)
+        assertNotNull(path)
+        assertTrue(path!!.isNotEmpty())
+        assertEquals(boxPosition, path.first())
+        assertEquals(to, path.last())
     }
     @Test
-    fun testCanMoveBox_Blocked() {
+    fun testFindBoxPath_Blocked() {
         val asciiMap = """
             #####
             #   #
@@ -63,7 +79,7 @@ class BoxMoverTest {
         """.trimIndent()
         val (mover, playerPosition, to, boxPosition) = parseBoxMoverWithEndpoints(asciiMap)
 
-        assertNull(mover.canMoveBox(boxPosition, to, playerPosition))
+        assertNull(mover.findBoxPath(boxPosition, to, playerPosition))
     }
 
     private fun parseBoxMoverWithEndpoints(asciiMap: String): Quadruple<BoxMover, Position, Position, Position> {

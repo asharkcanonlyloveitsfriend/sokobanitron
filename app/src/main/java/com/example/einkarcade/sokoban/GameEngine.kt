@@ -75,7 +75,7 @@ class GameEngine(private val level: Level) {
         gridCopy[from.row][from.col] = true
 
         val boxMover = BoxMover(gridCopy)
-        val boxPath = boxMover.canMoveBox(from, to, playerPosition) ?: return null
+        val boxPath = boxMover.findBoxPath(from, to, playerPosition) ?: return null
         val finalPlayerPosition = if (boxPath.size >= 2) {
             boxPath[boxPath.size - 2]
         } else {
