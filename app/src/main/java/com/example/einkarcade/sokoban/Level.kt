@@ -18,11 +18,13 @@ data class Level(
     val isCompleted: Boolean
         get() = completedAt != null
 
+    val tileMap: TileMap
+        get() = TileMap(grid)
+
 
     fun setRating(value: Int) {
         rating = value
     }
-
 
     fun markCompleted(timestamp: String) {
         completedAt = timestamp
@@ -42,7 +44,6 @@ data class Level(
         return rating
     }
 
-
     companion object {
         fun fromAscii(name: String, ascii: String, puzzleId: Int = -1): Level {
             val parsed = parseAscii(ascii)
@@ -55,7 +56,7 @@ data class Level(
             val boxes: Set<Position>
         )
 
-        /** Parses Sokoban ASCII into a base grid (EMPTY/FLOOR/GOAL) and extracts player + boxes. */
+        /** Parses Sokoban ASCII into a base grid (VOID/FLOOR/GOAL) and extracts player + boxes. */
         private fun parseAscii(ascii: String): ParsedAscii {
             val lines = ascii.lines()
             val maxWidth = lines.maxOfOrNull { it.length } ?: 0
@@ -95,8 +96,5 @@ data class Level(
             return ParsedAscii(grid, start, boxes)
         }
     }
-
-    fun isGoal(position: Position): Boolean {
-        return grid.getOrNull(position.row)?.getOrNull(position.col) == Tile.GOAL
-    }
 }
+

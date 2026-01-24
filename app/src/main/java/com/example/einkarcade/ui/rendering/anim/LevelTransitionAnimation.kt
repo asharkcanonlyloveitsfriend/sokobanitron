@@ -9,6 +9,7 @@ import android.graphics.Region
 import android.graphics.RegionIterator
 import androidx.core.graphics.withSave
 import com.example.einkarcade.sokoban.Tile
+import com.example.einkarcade.sokoban.TileMap
 import com.example.einkarcade.ui.rendering.geom.BoardViewport
 import kotlin.math.max
 import kotlin.math.min
@@ -37,8 +38,8 @@ internal class LevelTransitionAnimation(
     private val newBitmap: Bitmap,
     private val oldViewport: BoardViewport,
     private val newViewport: BoardViewport,
-    private val oldTiles: List<List<Tile>>,
-    private val newTiles: List<List<Tile>>
+    private val oldTileMap: TileMap,
+    private val newTileMap: TileMap
 ) : Animation {
 
     override fun hidesBoard(): Boolean = true
@@ -238,10 +239,10 @@ internal class LevelTransitionAnimation(
     private val oldInteriorRect by lazy { interiorBoardRect(oldViewport) }
     private val newInteriorRect by lazy { interiorBoardRect(newViewport) }
 
-    // Compute a Region for walls given a viewport and tiles.
+    // Compute a Region for walls given a viewport and tileMap.
     private fun computeWallRegion(
         viewport: BoardViewport,
-        tiles: List<List<Tile>>,
+        tileMap: TileMap,
         interiorRect: Rect
     ): Region {
         val region = Region()
@@ -251,10 +252,9 @@ internal class LevelTransitionAnimation(
         region.op(interiorRect, Region.Op.DIFFERENCE)
 
         // 2) Explicit wall tiles inside the interior
-        for (r in tiles.indices) {
-            val row = tiles[r]
-            for (c in row.indices) {
-                if (row[c] == Tile.VOID) {
+        for (r in 0 until tileMap.rowCount) {
+            for (c in 0 until tileMap.columnCount) {
+                if (tileMap.isVoid(r, c)) {
                     val left = (viewport.offsetX + (c + 1) * viewport.cellSize).roundToInt()
                     val top = (viewport.offsetY + (r + 1) * viewport.cellSize).roundToInt()
                     val right = (viewport.offsetX + (c + 2) * viewport.cellSize).roundToInt()
@@ -271,12 +271,11 @@ internal class LevelTransitionAnimation(
     }
 
     // Compute a Region for floors/goals (not walls) in the new level, for the final flash.
-    private fun computeNewFloorGoalRegion(viewport: BoardViewport, tiles: List<List<Tile>>): Region {
+    private fun computeNewFloorGoalRegion(viewport: BoardViewport, tileMap: TileMap): Region {
         val region = Region()
-        for (r in tiles.indices) {
-            val row = tiles[r]
-            for (c in row.indices) {
-                val t = row[c]
+        for (r in 0 until tileMap.rowCount) {
+            for (c in 0 until tileMap.columnCount) {
+                val t = tileMap.tileAt(r, c)
                 if (t == Tile.FLOOR || t == Tile.GOAL) {
                     val left = (viewport.offsetX + (c + 1) * viewport.cellSize).roundToInt()
                     val top = (viewport.offsetY + (r + 1) * viewport.cellSize).roundToInt()
@@ -291,8 +290,8 @@ internal class LevelTransitionAnimation(
 
     // The region of stable walls (intersection of old and new wall regions).
     private val stableWallRegion: Region by lazy {
-        val oldWalls = computeWallRegion(oldViewport, oldTiles, oldInteriorRect)
-        val newWalls = computeWallRegion(newViewport, newTiles, newInteriorRect)
+        val oldWalls = computeWallRegion(oldViewport, oldTileMap, oldInteriorRect)
+        val newWalls = computeWallRegion(newViewport, newTileMap, newInteriorRect)
         oldWalls.apply { op(newWalls, Region.Op.INTERSECT) }
     }
 
@@ -307,7 +306,7 @@ internal class LevelTransitionAnimation(
 
     // Region of all new level floors/goals (excluding walls).
     private val newFloorGoalRegion: Region by lazy {
-        computeNewFloorGoalRegion(newViewport, newTiles)
+        computeNewFloorGoalRegion(newViewport, newTileMap)
     }
 
     // Region of newFloorGoalRegion clipped to unionBoardRect.
@@ -320,10 +319,9 @@ internal class LevelTransitionAnimation(
     private val flashTiles: List<FlashTile> by lazy {
         val out = mutableListOf<FlashTile>()
 
-        for (r in newTiles.indices) {
-            val row = newTiles[r]
-            for (c in row.indices) {
-                // Second-wave flash should touch every tile in newTiles.
+        for (r in 0 until newTileMap.rowCount) {
+            for (c in 0 until newTileMap.columnCount) {
+                // Second-wave flash should touch every tile in newTileMap.
                 val left = newViewport.offsetX + (c + 1) * newViewport.cellSize
                 val top = newViewport.offsetY + (r + 1) * newViewport.cellSize
                 val right = newViewport.offsetX + (c + 2) * newViewport.cellSize

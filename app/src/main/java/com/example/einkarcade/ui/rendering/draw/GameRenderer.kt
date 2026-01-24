@@ -6,7 +6,7 @@ import android.graphics.Rect
 import androidx.core.graphics.createBitmap
 import com.example.einkarcade.R
 import com.example.einkarcade.sokoban.Position
-import com.example.einkarcade.sokoban.Tile
+import com.example.einkarcade.sokoban.TileMap
 import com.example.einkarcade.ui.rendering.AndroidGameAssets
 import com.example.einkarcade.ui.rendering.geom.BoardViewport
 import com.example.einkarcade.ui.rendering.geom.ResolvedEntityGeometry
@@ -26,7 +26,7 @@ internal class GameRenderer(
         viewWidth: Int,
         viewHeight: Int,
         viewport: BoardViewport,
-        tiles: List<List<Tile>>
+        tileMap: TileMap
     ) {
         geometry = ResolvedEntityGeometry.compute(
             viewport.cellSize,
@@ -37,7 +37,7 @@ internal class GameRenderer(
         val canvas = Canvas(bitmap)
 
         backgroundDrawer.draw(canvas, viewWidth, viewHeight)
-        tileDrawer.drawTiles(canvas, viewport, tiles)
+        tileDrawer.drawTiles(canvas, viewport, tileMap)
 
         staticFrameBitmap = bitmap
     }
@@ -80,26 +80,6 @@ internal class GameRenderer(
             viewport = viewport,
             geometry = geometry,
             playerPosition = playerPosition
-        )
-    }
-
-    fun drawScaledTile(
-        canvas: Canvas,
-        viewport: BoardViewport,
-        tile: Tile,
-        rowIndex: Int,
-        colIndex: Int,
-        scale: Float
-    ) {
-        tileDrawer.drawScaledTile(
-            canvas = canvas,
-            tile = tile,
-            rowIndex = rowIndex,
-            colIndex = colIndex,
-            scale = scale,
-            cellSize = viewport.cellSize,
-            offsetX = viewport.offsetX,
-            offsetY = viewport.offsetY
         )
     }
 

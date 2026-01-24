@@ -1,14 +1,15 @@
 package com.example.einkarcade.ui.rendering
 
-import android.graphics.Canvas
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Rect
 import android.view.MotionEvent
 import android.view.View
+import androidx.core.graphics.createBitmap
 import com.example.einkarcade.GameController
 import com.example.einkarcade.sokoban.Position
-import com.example.einkarcade.sokoban.Tile
+import com.example.einkarcade.sokoban.TileMap
 import com.example.einkarcade.ui.rendering.anim.AnimationRunner
 import com.example.einkarcade.ui.rendering.anim.BlinkAnimation
 import com.example.einkarcade.ui.rendering.anim.BoxPathAnimation
@@ -22,7 +23,6 @@ import com.example.einkarcade.ui.rendering.draw.TileDrawer
 import com.example.einkarcade.ui.rendering.geom.BoardViewport
 import com.example.einkarcade.ui.rendering.geom.computeBoardViewport
 import com.example.einkarcade.ui.rendering.geom.screenToInnerCell
-import androidx.core.graphics.createBitmap
 
 @SuppressLint("ClickableViewAccessibility")
 internal class GameBoardView(
@@ -36,7 +36,7 @@ internal class GameBoardView(
         entityDrawer = EntityDrawer(AndroidGameAssets(context))
     )
 
-    private var tiles: List<List<Tile>> = emptyList()
+    private var tileMap: TileMap? = null
     private var boxPositions: Set<Position> = emptySet()
     private var playerPosition: Position? = null
 
@@ -120,7 +120,7 @@ internal class GameBoardView(
         when (delta) {
             is GameController.RenderDelta.LevelLoaded -> {
                 onLevelLoaded(
-                    tiles = delta.tiles,
+                    tileMap = delta.tileMap,
                     boxPositions = delta.boxPositions,
                     playerPosition = delta.playerPosition
                 )
@@ -175,14 +175,14 @@ internal class GameBoardView(
     }
 
     private fun onLevelLoaded(
-        tiles: List<List<Tile>>,
+        tileMap: TileMap,
         boxPositions: Set<Position>,
         playerPosition: Position
     ) {
-        val previousTiles = this.tiles
+        val previousTileMap = this.tileMap
         val previousViewport = lastViewport
 
-        this.tiles = tiles
+        this.tileMap = tileMap
         this.boxPositions = boxPositions
         this.playerPosition = playerPosition
         selectedBox = null
@@ -191,7 +191,7 @@ internal class GameBoardView(
             return
         }
 
-        if (previousTiles == tiles) {
+        if (previousTileMap === tileMap) {
             invalidate()
             return
         }
@@ -218,8 +218,8 @@ internal class GameBoardView(
                 newBitmap = newBitmap,
                 oldViewport = previousViewport,
                 newViewport = newViewport,
-                oldTiles = previousTiles,
-                newTiles = tiles
+                oldTileMap = previousTileMap!!,
+                newTileMap = tileMap
             )
         )
     }
@@ -252,7 +252,7 @@ internal class GameBoardView(
         val boxFrom = path.first()
         val boxTo = path.last()
         val newPlayer = path[path.size - 2]
-        val isVoid = tiles[boxTo.row][boxTo.col] == Tile.VOID
+        val isVoid = tileMap!!.isVoid(boxTo)
         val isLongMove = path.size > 2
 
         boxPositions = if (isVoid) {
@@ -340,13 +340,13 @@ internal class GameBoardView(
 
     private fun rebuildStaticLayout() {
         if (width <= 0 || height <= 0) return
-        if (tiles.isEmpty()) return
+        if (tileMap == null) return
 
         val viewport = computeBoardViewport(
             surfaceWidth = width.toFloat(),
             surfaceHeight = height.toFloat(),
-            innerRows = tiles.size,
-            innerCols = tiles[0].size
+            innerRows = tileMap!!.rowCount,
+            innerCols = tileMap!!.columnCount
         )
         lastViewport = viewport
 
@@ -354,7 +354,7 @@ internal class GameBoardView(
             viewWidth = width,
             viewHeight = height,
             viewport = viewport,
-            tiles = tiles
+            tileMap = tileMap!!
         )
     }
 

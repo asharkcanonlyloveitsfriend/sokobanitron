@@ -9,7 +9,7 @@ import com.example.einkarcade.data.LevelsRepository
 import com.example.einkarcade.sokoban.GameEngine
 import com.example.einkarcade.sokoban.Level
 import com.example.einkarcade.sokoban.Position
-import com.example.einkarcade.sokoban.Tile
+import com.example.einkarcade.sokoban.TileMap
 
 class GameController(
     context: Context,
@@ -48,15 +48,15 @@ class GameController(
     val isAtStart: Boolean
         get() = gameEngine.isAtStart
 
-    val tiles: List<List<Tile>>
-        get() = level.grid
+    val tileMap: TileMap
+        get() = level.tileMap
 
     val levelName: String
         get() = level.name
 
     sealed interface RenderDelta {
         data class LevelLoaded(
-            val tiles: List<List<Tile>>,
+            val tileMap: TileMap,
             val playerPosition: Position,
             val boxPositions: Set<Position>
         ) : RenderDelta
@@ -70,7 +70,7 @@ class GameController(
     }
 
     private fun currentLevelLoadedDelta(): RenderDelta.LevelLoaded = RenderDelta.LevelLoaded(
-        tiles = tiles,
+        tileMap = tileMap,
         playerPosition = playerPosition,
         boxPositions = boxPositions
     )
@@ -82,7 +82,7 @@ class GameController(
         }
 
     private fun markChanged() {
-        revisionState.value = revisionState.value + 1L
+        revisionState.longValue = revisionState.longValue + 1L
     }
 
     private fun recordCompletionIfWon() {

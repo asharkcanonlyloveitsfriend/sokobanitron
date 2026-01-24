@@ -2,7 +2,6 @@ package com.example.einkarcade.ui.screens
 
 import com.example.einkarcade.GameController
 import com.example.einkarcade.sokoban.Position
-import com.example.einkarcade.sokoban.Tile
 internal object GameInputHandler {
     interface BoxSelection {
         fun getSelectedBox(): Position?
@@ -28,9 +27,8 @@ internal object GameInputHandler {
         gameController: GameController,
         selection: BoxSelection
     ) {
-        val tile = gameController.tiles[tappedPosition.row][tappedPosition.col]
         val selectedBox = selection.getSelectedBox()
-        if (tile == Tile.VOID) {
+        if (gameController.tileMap.isVoid(tappedPosition)) {
             if (selectedBox != null) {
                 selection.setSelectedBox(null)
                 gameController.moveBoxTo(selectedBox, tappedPosition)

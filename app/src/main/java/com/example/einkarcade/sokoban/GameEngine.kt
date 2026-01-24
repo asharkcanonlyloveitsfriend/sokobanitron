@@ -14,7 +14,7 @@ class GameEngine(private val level: Level) {
         get() = gameState.boxPositions
 
     val isGameWon: Boolean
-        get() = gameState.boxPositions.all { level.isGoal(it) }
+        get() = gameState.boxPositions.all { level.tileMap.isGoal(it) }
 
     val isCleanWin: Boolean
         get() = isGameWon && gameState.boxPositions.size == level.boxPositions.size
@@ -59,7 +59,7 @@ class GameEngine(private val level: Level) {
         val pushedTo = Position(from.row + dirRow, from.col + dirCol)
         val pushedIntoVoid = isAdjacentPush &&
             pushedTo == to &&
-            level.grid[to.row][to.col] == Tile.VOID
+            level.tileMap.isVoid(to)
 
         if (pushedIntoVoid) {
             boxMoveHistory.add(listOf(from, to))
@@ -102,10 +102,10 @@ class GameEngine(private val level: Level) {
     }
 
     private val walkableGrid: Array<Array<Boolean>>
-        get() = Array(level.grid.size) { row ->
-            Array(level.grid[0].size) { col ->
+        get() = Array(level.tileMap.rowCount) { row ->
+            Array(level.tileMap.columnCount) { col ->
                 val pos = Position(row, col)
-                level.grid[row][col] != Tile.VOID && !gameState.hasBoxAt(pos)
+                level.tileMap.isWalkable(pos) && !gameState.hasBoxAt(pos)
             }
         }
 }
