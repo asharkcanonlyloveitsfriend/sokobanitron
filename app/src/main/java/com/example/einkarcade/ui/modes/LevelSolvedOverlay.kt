@@ -135,7 +135,7 @@ class LevelSolvedOverlay
 
             // Set right icon hit rect - expand to cover larger tap area
             // Compute text end X (right side of text)
-            val textCenterX = box.left + horizontalPadding + iconSize + iconSpacing + textWidth / 2f
+            val textCenterX = textStartX + textWidth / 2f
             val textEndX = textCenterX + textWidth / 2f
             rightIconHitRect.set(
                 textEndX,
@@ -154,7 +154,7 @@ class LevelSolvedOverlay
             rightIconToDraw.draw(canvas)
 
             // Draw text centered vertically and horizontally between icons
-            val textX = box.left + horizontalPadding + iconSize + iconSpacing + textWidth / 2f
+            val textX = textStartX + textWidth / 2f
             val textY = box.centerY() - (fontMetrics.descent + fontMetrics.ascent) / 2f
             canvas.drawText(text, textX, textY, textPaint)
         }

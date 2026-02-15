@@ -12,9 +12,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -38,50 +38,47 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.einkarcade.R
 import com.example.einkarcade.catalog.LevelBoardGeometry
 import com.example.einkarcade.catalog.LevelBoardTile
-import com.example.einkarcade.catalog.LevelCatalog
 import com.example.einkarcade.catalog.LevelSummary
 import com.example.einkarcade.ui.rendering.AndroidGameAssets
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-private val LevelCardHeight: Dp = 200.dp
-private val LevelPreviewMaxTileSize: Dp = 32.dp
-
 @Composable
 fun LevelPickerOverlay(
-    catalog: LevelCatalog,
-    selectedSetId: Int,
+    levels: List<LevelSummary>,
     selectedPuzzleId: Int,
     onPickLevel: (puzzleId: Int) -> Unit,
     onToggleLike: (puzzleId: Int) -> Unit,
+    onToggleStar: (puzzleId: Int) -> Unit,
     onToggleDislike: (puzzleId: Int) -> Unit,
+    refreshNonce: Long,
     onDismiss: () -> Unit,
 ) {
     BackHandler { onDismiss() }
 
-    var refreshNonce by remember { mutableIntStateOf(0) }
     var gridReady by remember { mutableIntStateOf(0) } // 0 = not ready, 1 = ready
-    val levels =
-        remember(selectedSetId, refreshNonce) {
-            catalog.getLevelSummaries(selectedSetId)
-        }
 
     val gridState = rememberLazyGridState()
     val selectedIndex = levels.indexOfFirst { it.puzzleId == selectedPuzzleId }
     val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    // Compose's Modifier.aspectRatio() expects width / height.
+    // Using screenWidth/screenHeight yields portrait cards on a portrait screen.
+    val cardAspect =
+        configuration.screenWidthDp.toFloat() / configuration.screenHeightDp.toFloat()
 
-    LaunchedEffect(selectedIndex) {
+    LaunchedEffect(selectedIndex, refreshNonce) {
         if (selectedIndex < 0) return@LaunchedEffect
 
         // Wait until the grid has measured so we know spanCount and viewport height.
@@ -89,12 +86,19 @@ fun LevelPickerOverlay(
             val viewportWidthPx = gridState.layoutInfo.viewportSize.width
             val viewportHeightPx = gridState.layoutInfo.viewportSize.height
             if (viewportWidthPx > 0 && viewportHeightPx > 0) {
-                val minCellPx = with(density) { 200.dp.roundToPx() }
                 val spacingPx = with(density) { 10.dp.roundToPx() }
-                val spanCount =
-                    ((viewportWidthPx + spacingPx) / (minCellPx + spacingPx)).coerceAtLeast(1)
-                val itemStepPx =
-                    with(density) { (LevelCardHeight + 10.dp).roundToPx() } // card height + vertical spacing
+
+                // We now use fixed columns: GridCells.Fixed(3).
+                val spanCount = 3
+
+                // Compute the actual item height from the measured viewport width and the card aspect ratio.
+                val cellWidthPx =
+                    ((viewportWidthPx - (spacingPx * (spanCount - 1))) / spanCount)
+                        .coerceAtLeast(1)
+                val cellHeightPx = (cellWidthPx / cardAspect).roundToInt().coerceAtLeast(1)
+
+                // One row's vertical step is the card height plus the vertical spacing.
+                val itemStepPx = cellHeightPx + spacingPx
                 val rowsPerScreen = (viewportHeightPx / itemStepPx).coerceAtLeast(1)
                 val selectedRow = selectedIndex / spanCount
                 val targetTopRow = (selectedRow - (rowsPerScreen / 2)).coerceAtLeast(0)
@@ -164,7 +168,7 @@ fun LevelPickerOverlay(
 
             LazyVerticalGrid(
                 state = gridState,
-                columns = GridCells.Adaptive(minSize = 200.dp),
+                columns = GridCells.Fixed(3),
                 modifier =
                     Modifier
                         .fillMaxWidth()
@@ -178,16 +182,20 @@ fun LevelPickerOverlay(
                     LevelCard(
                         level = level,
                         isSelected = isSelected,
+                        aspectRatio = cardAspect,
                         onToggleDislike = {
                             onToggleDislike(level.puzzleId)
-                            refreshNonce++
                         },
                         onToggleLike = {
                             onToggleLike(level.puzzleId)
-                            refreshNonce++
+                        },
+                        onToggleStar = {
+                            onToggleStar(level.puzzleId)
                         },
                         onClick = {
-                            onPickLevel(level.puzzleId)
+                            if (!isSelected) {
+                                onPickLevel(level.puzzleId)
+                            }
                             onDismiss()
                         },
                     )
@@ -201,8 +209,10 @@ fun LevelPickerOverlay(
 private fun LevelCard(
     level: LevelSummary,
     isSelected: Boolean,
+    aspectRatio: Float,
     onToggleDislike: () -> Unit,
     onToggleLike: () -> Unit,
+    onToggleStar: () -> Unit,
     onClick: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -229,12 +239,18 @@ private fun LevelCard(
         } else {
             R.drawable.ic_heart
         }
+    val starIcon =
+        if (level.isStarred) {
+            R.drawable.ic_star_filled
+        } else {
+            R.drawable.ic_star
+        }
 
     Box(
         modifier =
             Modifier
-                .height(LevelCardHeight)
                 .fillMaxWidth()
+                .aspectRatio(aspectRatio)
                 .clip(cardShape)
                 .clickable(onClick = onClick),
     ) {
@@ -289,7 +305,7 @@ private fun LevelCard(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.End,
+                horizontalArrangement = Arrangement.Start,
                 modifier =
                     Modifier
                         .padding(horizontal = 6.dp, vertical = 3.dp),
@@ -300,7 +316,7 @@ private fun LevelCard(
                     color = Color.LightGray,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.End,
+                    textAlign = TextAlign.Start,
                     modifier = Modifier,
                 )
             }
@@ -357,6 +373,48 @@ private fun LevelCard(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                             onClick = onToggleDislike,
+                        ),
+            )
+        }
+
+        // Star in the top-right corner
+        Box(
+            modifier =
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                    .clip(RoundedCornerShape(6.dp)),
+        ) {
+            Canvas(
+                modifier = Modifier.matchParentSize(),
+            ) {
+                drawRoundRect(
+                    brush =
+                        androidx.compose.ui.graphics.Brush.radialGradient(
+                            colors =
+                                listOf(
+                                    Color.Black.copy(alpha = 0.35f),
+                                    Color.Black.copy(alpha = 0.25f),
+                                    Color.Black.copy(alpha = 0.01f),
+                                    Color.Transparent,
+                                ),
+                            center = center,
+                            radius = size.maxDimension * 1.15f,
+                        ),
+                )
+            }
+            Image(
+                painter = painterResource(starIcon),
+                contentDescription = "Star",
+                colorFilter = ColorFilter.tint(Color.LightGray),
+                modifier =
+                    Modifier
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                        .size(24.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onToggleStar,
                         ),
             )
         }
@@ -420,14 +478,19 @@ private fun LevelMapPreview(
     ) {
         if (board.rowCount == 0 || board.columnCount == 0) return@Canvas
 
-        val unconstrainedCellSize =
-            min(size.width / board.columnCount.toFloat(), size.height / board.rowCount.toFloat())
-        val maxTilePx = LevelPreviewMaxTileSize.toPx()
-        val cellSize = min(unconstrainedCellSize, maxTilePx)
+        // Add one cell of padding on each side.
+        val paddedCols = board.columnCount + 2
+        val paddedRows = board.rowCount + 2
+
+        val cellSize =
+            min(size.width / paddedCols.toFloat(), size.height / paddedRows.toFloat())
+
         val boardWidth = cellSize * board.columnCount
         val boardHeight = cellSize * board.rowCount
-        val startX = (size.width - boardWidth) / 2f
-        val startY = (size.height - boardHeight) / 2f
+
+        // Board starts after one cell of padding.
+        val startX = cellSize
+        val startY = cellSize
 
         val floorFillColor = Color.White
         val goalFillColor = Color(0xFFE4E4E4)

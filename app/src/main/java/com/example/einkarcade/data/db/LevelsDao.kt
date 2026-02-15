@@ -42,6 +42,12 @@ interface LevelsDao {
         rating: Int,
     )
 
+    @Query("UPDATE puzzles SET is_starred = :isStarred, is_locally_edited = 1 WHERE id = :puzzleId")
+    fun updatePuzzleStarred(
+        puzzleId: Int,
+        isStarred: Boolean,
+    )
+
     @Query(
         "UPDATE puzzles SET last_completed_at = :lastCompletedAt, user_solution = :userSolution, is_locally_edited = 1 WHERE id = :puzzleId",
     )

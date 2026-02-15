@@ -49,6 +49,7 @@ class LevelsRepository(
                             levelWithPuzzle.level.puzzleId,
                         )
                     level.setRating(levelWithPuzzle.puzzle.rating)
+                    level.setStarred(levelWithPuzzle.puzzle.isStarred)
                     level.setCompletedAt(levelWithPuzzle.puzzle.lastCompletedAt)
                     level
                 }
@@ -62,6 +63,10 @@ class LevelsRepository(
 
     fun updateRating(level: Level) {
         dao.updatePuzzleRating(level.puzzleId, level.rating)
+    }
+
+    fun updateStarred(level: Level) {
+        dao.updatePuzzleStarred(level.puzzleId, level.isStarred)
     }
 
     fun recordCompletion(
@@ -152,6 +157,7 @@ class LevelsRepository(
             val puzzleJson = JSONObject()
             puzzleJson.put("puzzle_id", puzzle.id)
             puzzleJson.put("rating", puzzle.rating)
+            puzzleJson.put("is_starred", puzzle.isStarred)
             if (puzzle.lastCompletedAt == null) {
                 puzzleJson.put("last_completed_at", JSONObject.NULL)
             } else {
@@ -213,6 +219,7 @@ class LevelsRepository(
                     id = item.getInt("id"),
                     grid = item.getString("grid"),
                     rating = item.getInt("rating"),
+                    isStarred = parseBooleanField(item, "is_starred"),
                     lastCompletedAt = lastCompletedAt,
                     userSolution = userSolution,
                 ),
@@ -232,6 +239,19 @@ class LevelsRepository(
             )
         }
         return SyncResponseData(levelSets = levelSets, levels = levels, puzzles = puzzles)
+    }
+
+    private fun parseBooleanField(
+        item: JSONObject,
+        key: String,
+    ): Boolean {
+        val raw = item.opt(key)
+        return when (raw) {
+            is Boolean -> raw
+            is Number -> raw.toInt() != 0
+            is String -> raw.equals("true", ignoreCase = true) || raw == "1"
+            else -> false
+        }
     }
 
     @Throws(Exception::class)

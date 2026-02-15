@@ -15,11 +15,7 @@ internal object GameInputHandler {
         if (undone) {
             return
         }
-        if (gameController.isAtStart) {
-            gameController.previousLevel()
-        } else {
-            gameController.restart()
-        }
+        gameController.restart()
     }
 
     fun handleTap(

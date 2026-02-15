@@ -11,6 +11,8 @@ data class Level(
     // -1 = thumbs down, 0 = none, 1 = thumbs up. Not part of equality/hashCode.
     var rating: Int = 0
         private set
+    var isStarred: Boolean = false
+        private set
     var completedAt: String? = null
         private set
 
@@ -22,6 +24,10 @@ data class Level(
 
     fun setRating(value: Int) {
         rating = value
+    }
+
+    fun setStarred(value: Boolean) {
+        isStarred = value
     }
 
     fun markCompleted(timestamp: String) {

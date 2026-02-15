@@ -2,47 +2,30 @@
 
 package com.example.einkarcade.ui.screens
 
-import android.os.Handler
-import android.os.Looper
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.einkarcade.GameController
 import com.example.einkarcade.catalog.RepositoryLevelCatalog
 import com.example.einkarcade.sokoban.Position
+import com.example.einkarcade.ui.GameHud
+import com.example.einkarcade.ui.GameTitleBar
+import com.example.einkarcade.ui.SideControlsOverlay
 import com.example.einkarcade.sokoban.TileMap
 import com.example.einkarcade.ui.modes.LevelPickerOverlay
 import com.example.einkarcade.ui.modes.LevelSetPickerOverlay
@@ -51,6 +34,8 @@ import com.example.einkarcade.ui.modes.LevelTransitionView
 import com.example.einkarcade.ui.rendering.GameBoardPresenter
 import com.example.einkarcade.ui.rendering.GameBoardView
 import com.example.einkarcade.ui.rendering.geom.computeBoardViewport
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private fun createGameSurface(context: android.content.Context): GameBoardPresenter = GameBoardView(context)
 
@@ -59,11 +44,10 @@ fun GameScreen(
     modifier: Modifier = Modifier,
     gameController: GameController,
 ) {
-    gameController.revision.value
+    val screenState = requireNotNull(gameController.screenState.value) { "Game screen state is not initialized" }
     val uiMode = gameController.uiMode
-    val currentTileMap: TileMap = gameController.tileMap
-    val syncError = remember { mutableStateOf<String?>(null) }
-    val syncSuccess = remember { mutableStateOf(false) }
+    val transitionSnapshot = gameController.transitionSnapshot.value
+    val currentTileMap: TileMap = screenState.tileMap
     val surfaceRef = remember { mutableStateOf<GameBoardPresenter?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val surface =
@@ -74,13 +58,15 @@ fun GameScreen(
         surfaceRef.value = surface
     }
     val levelCatalog = remember(context) { RepositoryLevelCatalog(context = context) }
-    val currentSetName = gameController.currentSetName
-    val currentLevelName = gameController.levelName
+    val currentSetName = screenState.setName
+    val currentLevelName = screenState.levelName
+    val currentPuzzleId = screenState.puzzleId
     val boardWidth = remember { mutableIntStateOf(0) }
     val boardHeight = remember { mutableIntStateOf(0) }
-    val hasEmittedLevelLoaded = remember { mutableStateOf(false) }
+    val loadedPuzzleId = remember { mutableStateOf<Int?>(null) }
     var showLevelPicker by remember { mutableStateOf(false) }
     var showLevelSetPicker by remember { mutableStateOf(false) }
+    var pickerRefreshNonce by remember { mutableLongStateOf(0L) }
 
     DisposableEffect(surfaceRef.value) {
         val surface = surfaceRef.value
@@ -111,11 +97,11 @@ fun GameScreen(
         onDispose { }
     }
 
-    LaunchedEffect(boardWidth.value, boardHeight.value, uiMode) {
+    LaunchedEffect(boardWidth.value, boardHeight.value, uiMode, currentPuzzleId) {
         if (uiMode == GameController.UiMode.GAMEPLAY &&
             boardWidth.value > 0 &&
             boardHeight.value > 0 &&
-            !hasEmittedLevelLoaded.value
+            loadedPuzzleId.value != currentPuzzleId
         ) {
             val frame =
                 gameController.buildStaticBoardFrame(
@@ -126,13 +112,13 @@ fun GameScreen(
                 )
 
             gameController.emitLevelLoaded(frame)
-            hasEmittedLevelLoaded.value = true
+            loadedPuzzleId.value = currentPuzzleId
         }
     }
 
     LaunchedEffect(uiMode) {
         if (uiMode == GameController.UiMode.LEVEL_TRANSITION) {
-            hasEmittedLevelLoaded.value = false
+            loadedPuzzleId.value = null
         }
     }
 
@@ -140,85 +126,6 @@ fun GameScreen(
         GameInputHandler.handleBackKeyUp(
             gameController = gameController,
         )
-    }
-
-    @Composable
-    fun bottomIconButton(
-        onClick: () -> Unit,
-        icon: ImageVector,
-        contentDescription: String,
-        backgroundColor: Color = Color.Transparent,
-        pressedBackgroundColor: Color = Color.Transparent,
-        tintColor: Color = Color.LightGray,
-        pressedTintAlpha: Float = 0.6f,
-    ) {
-        val interactionSource = remember { MutableInteractionSource() }
-        val isPressed = interactionSource.collectIsPressedAsState()
-        val currentTint =
-            if (isPressed.value) {
-                tintColor.copy(alpha = tintColor.alpha * pressedTintAlpha)
-            } else {
-                tintColor
-            }
-
-        Box(
-            modifier =
-                Modifier
-                    .height(48.dp)
-                    .background(if (isPressed.value) pressedBackgroundColor else backgroundColor)
-                    .clickable(
-                        interactionSource = interactionSource,
-                        indication = null,
-                        onClick = onClick,
-                    ).padding(horizontal = 12.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = contentDescription,
-                tint = currentTint,
-            )
-        }
-    }
-
-    @Composable
-    fun bottomDrawableButton(
-        onClick: () -> Unit,
-        drawableResId: Int,
-        contentDescription: String,
-        backgroundColor: Color = Color.Transparent,
-        pressedBackgroundColor: Color = Color.Transparent,
-        tintColor: Color = Color.LightGray,
-        pressedTintAlpha: Float = 0.6f,
-    ) {
-        val interactionSource = remember { MutableInteractionSource() }
-        val isPressed = interactionSource.collectIsPressedAsState()
-        val currentTint =
-            if (isPressed.value) {
-                tintColor.copy(alpha = tintColor.alpha * pressedTintAlpha)
-            } else {
-                tintColor
-            }
-        Box(
-            modifier =
-                Modifier
-                    .height(48.dp)
-                    .background(if (isPressed.value) pressedBackgroundColor else backgroundColor)
-                    .clickable(
-                        interactionSource = interactionSource,
-                        indication = null,
-                        onClick = onClick,
-                    ).padding(horizontal = 12.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painter =
-                    androidx.compose.ui.res
-                        .painterResource(drawableResId),
-                contentDescription = contentDescription,
-                tint = currentTint,
-            )
-        }
     }
 
     Box(
@@ -257,6 +164,7 @@ fun GameScreen(
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
+                    val snapshot = requireNotNull(transitionSnapshot) { "Missing level transition snapshot" }
                     val width = boardWidth.value
                     val height = boardHeight.value
 
@@ -267,14 +175,14 @@ fun GameScreen(
                         computeBoardViewport(
                             surfaceWidth = width.toFloat(),
                             surfaceHeight = height.toFloat(),
-                            innerRows = currentTileMap.rowCount,
-                            innerCols = currentTileMap.columnCount,
+                            innerRows = snapshot.oldTileMap.rowCount,
+                            innerCols = snapshot.oldTileMap.columnCount,
                         )
 
                     val newFrame =
                         gameController.buildStaticBoardFrame(
                             context = ctx,
-                            tileMap = gameController.pendingTransitionTileMap,
+                            tileMap = currentTileMap,
                             width = width,
                             height = height,
                         )
@@ -282,13 +190,13 @@ fun GameScreen(
                     LevelTransitionView(ctx).apply {
                         setTransitionData(
                             oldViewport = oldViewport,
-                            oldTileMap = currentTileMap,
+                            oldTileMap = snapshot.oldTileMap,
                             newFrame = newFrame,
                         )
                         onDismiss = {
                             gameController.finishLevelTransition()
                             gameController.emitLevelLoaded(newFrame)
-                            hasEmittedLevelLoaded.value = true
+                            loadedPuzzleId.value = currentPuzzleId
                         }
                     }
                 },
@@ -319,37 +227,14 @@ fun GameScreen(
         }
 
         Column(modifier = Modifier.fillMaxSize()) {
-            Row(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // --- Set (top-left) ---
-                Text(
-                    text = currentSetName,
-                    fontSize = 16.sp,
-                    color = Color.LightGray,
-                    modifier =
-                        Modifier
-                            .clickable { showLevelSetPicker = true }
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
-                )
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                // --- Level (top-right, right-aligned) ---
-                Text(
-                    text = currentLevelName,
-                    fontSize = 16.sp,
-                    color = Color.LightGray,
-                    modifier =
-                        Modifier
-                            .clickable { showLevelPicker = true }
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
-                )
-            }
+            GameTitleBar(
+                setName = currentSetName,
+                levelName = currentLevelName,
+                onOpenSetPicker = { showLevelSetPicker = true },
+                onOpenLevelPicker = { showLevelPicker = true },
+                isStarred = screenState.isStarred,
+                onToggleStar = { gameController.toggleStar() },
+            )
 
             Box(
                 modifier =
@@ -359,107 +244,55 @@ fun GameScreen(
             ) {
             }
 
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                val currentRating = gameController.getCurrentRating()
-
-                bottomIconButton(
-                    onClick = {
-                        syncError.value = null
-                        syncSuccess.value = false
-                        val handler = Handler(Looper.getMainLooper())
-                        Thread {
-                            try {
-                                gameController.syncWithServer()
-                                handler.post {
-                                    syncSuccess.value = true
-                                }
-                            } catch (_: Throwable) {
-                                handler.post {
-                                    syncError.value = "Sync failed."
-                                    syncSuccess.value = false
-                                }
-                            }
-                        }.start()
-                    },
-                    icon =
-                        when {
-                            syncSuccess.value -> Icons.Filled.Check
-                            syncError.value != null -> Icons.Filled.Warning
-                            else -> Icons.Filled.Refresh
-                        },
-                    contentDescription = "Sync",
-                )
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                Spacer(
-                    modifier =
-                        Modifier
-                            .height(48.dp)
-                            .width(144.dp)
-                            .background(Color.Transparent)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = { gameController.nextLevel() },
-                            ),
-                )
-
-                bottomDrawableButton(
-                    onClick = {
-                        syncSuccess.value = false
-                        syncError.value = null
-                        gameController.toggleThumbDown()
-                    },
-                    drawableResId =
-                        if (currentRating ==
-                            -1
-                        ) {
-                            com.example.einkarcade.R.drawable.ic_trash_filled
-                        } else {
-                            com.example.einkarcade.R.drawable.ic_trash
-                        },
-                    contentDescription = "Dislike level",
-                )
-
-                bottomDrawableButton(
-                    onClick = {
-                        syncSuccess.value = false
-                        syncError.value = null
-                        gameController.toggleThumbUp()
-                    },
-                    drawableResId =
-                        if (currentRating ==
-                            1
-                        ) {
-                            com.example.einkarcade.R.drawable.ic_heart_filled
-                        } else {
-                            com.example.einkarcade.R.drawable.ic_heart
-                        },
-                    contentDescription = "Like level",
+            if (uiMode == GameController.UiMode.GAMEPLAY) {
+                GameHud(
+                    currentRating = screenState.rating,
+                    onThumbUp = { gameController.toggleThumbUp() },
+                    onThumbDown = { gameController.toggleThumbDown() },
                 )
             }
         }
 
+        if (uiMode == GameController.UiMode.GAMEPLAY) {
+            SideControlsOverlay(onSkip = { gameController.skipLevel() })
+        }
+
         if (showLevelPicker) {
             LevelPickerOverlay(
-                catalog = levelCatalog,
-                selectedSetId = gameController.currentSetId,
-                selectedPuzzleId = gameController.currentPuzzleId,
+                levels = gameController.getCurrentLevelSummaries(),
+                selectedPuzzleId = screenState.puzzleId,
                 onPickLevel = { puzzleId -> gameController.selectLevelByPuzzleId(puzzleId) },
-                onToggleLike = { puzzleId -> gameController.toggleLikeByPuzzleId(puzzleId) },
-                onToggleDislike = { puzzleId -> gameController.toggleDislikeByPuzzleId(puzzleId) },
+                onToggleLike = { puzzleId ->
+                    gameController.toggleLikeByPuzzleId(puzzleId)
+                    pickerRefreshNonce++
+                },
+                onToggleStar = { puzzleId ->
+                    gameController.toggleStarByPuzzleId(puzzleId)
+                    pickerRefreshNonce++
+                },
+                onToggleDislike = { puzzleId ->
+                    gameController.toggleDislikeByPuzzleId(puzzleId)
+                    pickerRefreshNonce++
+                },
+                refreshNonce = pickerRefreshNonce,
                 onDismiss = { showLevelPicker = false },
             )
         }
         if (showLevelSetPicker) {
             LevelSetPickerOverlay(
                 catalog = levelCatalog,
-                selectedSetId = gameController.currentSetId,
+                selectedSetId = screenState.setId,
                 onPickSet = { setId -> gameController.selectSetById(setId) },
+                onRefresh = {
+                    try {
+                        withContext(Dispatchers.IO) {
+                            gameController.syncWithServer()
+                        }
+                        true
+                    } catch (_: Throwable) {
+                        false
+                    }
+                },
                 onDismiss = { showLevelSetPicker = false },
             )
         }

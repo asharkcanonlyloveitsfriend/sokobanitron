@@ -35,6 +35,7 @@ class RepositoryLevelCatalog(
                 name = level.name,
                 isCompleted = level.isCompleted,
                 rating = level.rating,
+                isStarred = level.isStarred,
                 boardGeometry = level.toBoardGeometry(),
             )
         }
@@ -48,6 +49,16 @@ class RepositoryLevelCatalog(
         val level = findLevelByPuzzleId(sets, puzzleId) ?: return
         level.setRating(rating)
         repository.updateRating(level)
+    }
+
+    override fun setStarred(
+        puzzleId: Int,
+        isStarred: Boolean,
+    ) {
+        val sets = loadSetsFresh()
+        val level = findLevelByPuzzleId(sets, puzzleId) ?: return
+        level.setStarred(isStarred)
+        repository.updateStarred(level)
     }
 
     private fun findLevelByPuzzleId(

@@ -12,6 +12,7 @@ data class LevelSummary(
     val name: String,
     val isCompleted: Boolean,
     val rating: Int,
+    val isStarred: Boolean,
     val boardGeometry: LevelBoardGeometry,
 )
 
@@ -43,5 +44,10 @@ interface LevelCatalog {
     fun setRating(
         puzzleId: Int,
         rating: Int,
+    )
+
+    fun setStarred(
+        puzzleId: Int,
+        isStarred: Boolean,
     )
 }
