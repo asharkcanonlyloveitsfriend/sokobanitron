@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Eink Arcade"
+rootProject.name = "Sokobanitron"
 include(":app")
  

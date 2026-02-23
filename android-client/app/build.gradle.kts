@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.einkarcade"
+    namespace = "com.sokobanitron.app"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.einkarcade"
+        applicationId = "com.sokobanitron.app"
         minSdk = 33
         targetSdk = 36
         versionCode = 1
