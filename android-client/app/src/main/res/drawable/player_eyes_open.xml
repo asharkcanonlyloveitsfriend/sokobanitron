@@ -1,0 +1,22 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="100dp"
+    android:height="100dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+
+    <!-- Gray background -->
+    <path
+        android:pathData="M31,37h38v11h-38z"
+        android:fillColor="#9ca3af" />
+
+    <!-- Left open eye -->
+    <path
+        android:pathData="M33,37h10v10h-10z"
+        android:fillColor="#020617" />
+
+    <!-- Right open eye -->
+    <path
+        android:pathData="M57,37h10v10h-10z"
+        android:fillColor="#020617" />
+
+</vector>

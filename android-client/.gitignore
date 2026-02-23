@@ -1,0 +1,21 @@
+# Android Studio/IntelliJ
+*.iml
+/.idea/*
+!.idea/inspectionProfiles
+!.idea/codeStyles
+
+# Build output
+/build/
+/captures/
+/.externalNativeBuild/
+/cxx/
+
+# Gradle
+.gradle/
+/local.properties
+
+# Kotlin
+/.kotlin/
+
+# macOS
+.DS_Store
