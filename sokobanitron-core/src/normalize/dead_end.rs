@@ -1,20 +1,24 @@
 use crate::grid::Grid;
 
-pub fn prune_dead_end_floors_in_place(grid: &mut Grid) {
-    if grid.h == 0 || grid.w == 0 {
+pub(crate) fn prune_dead_end_floors_in_place(grid: &mut Grid) {
+    let height = grid.height();
+    let width = grid.width();
+    if height == 0 || width == 0 {
         return;
     }
 
+    let cells = grid.cells_mut();
+
     // Degree for ' ' tiles: number of non-wall neighbors (neighbor != '#').
     // Non-floor tiles have degree -1.
-    let mut deg: Vec<i8> = vec![-1; grid.h * grid.w];
+    let mut deg: Vec<i8> = vec![-1; height * width];
     let mut stack: Vec<usize> = Vec::new();
 
-    for r in 0..grid.h {
-        let row_base = r * grid.w;
-        for c in 0..grid.w {
+    for r in 0..height {
+        let row_base = r * width;
+        for c in 0..width {
             let i = row_base + c;
-            if grid.cells[i] != b' ' {
+            if cells[i] != b' ' {
                 continue;
             }
 
@@ -22,29 +26,29 @@ pub fn prune_dead_end_floors_in_place(grid: &mut Grid) {
 
             // up
             if r > 0 {
-                let ni = i - grid.w;
-                if grid.cells[ni] != b'#' {
+                let ni = i - width;
+                if cells[ni] != b'#' {
                     d += 1;
                 }
             }
             // down
-            if r + 1 < grid.h {
-                let ni = i + grid.w;
-                if grid.cells[ni] != b'#' {
+            if r + 1 < height {
+                let ni = i + width;
+                if cells[ni] != b'#' {
                     d += 1;
                 }
             }
             // left
             if c > 0 {
                 let ni = i - 1;
-                if grid.cells[ni] != b'#' {
+                if cells[ni] != b'#' {
                     d += 1;
                 }
             }
             // right
-            if c + 1 < grid.w {
+            if c + 1 < width {
                 let ni = i + 1;
-                if grid.cells[ni] != b'#' {
+                if cells[ni] != b'#' {
                     d += 1;
                 }
             }
@@ -57,7 +61,7 @@ pub fn prune_dead_end_floors_in_place(grid: &mut Grid) {
     }
 
     while let Some(i) = stack.pop() {
-        if grid.cells[i] != b' ' {
+        if cells[i] != b' ' {
             continue;
         }
         if deg[i] > 1 {
@@ -65,17 +69,17 @@ pub fn prune_dead_end_floors_in_place(grid: &mut Grid) {
         }
 
         // Remove dead-end floor.
-        grid.cells[i] = b'#';
+        cells[i] = b'#';
 
-        let r = i / grid.w;
-        let c = i - (r * grid.w);
+        let r = i / width;
+        let c = i - (r * width);
 
         // For each neighboring floor tile, decrement its degree.
         // Seed it if it becomes a dead end.
         // up
         if r > 0 {
-            let ni = i - grid.w;
-            if grid.cells[ni] == b' ' {
+            let ni = i - width;
+            if cells[ni] == b' ' {
                 let nd = deg[ni] - 1;
                 deg[ni] = nd;
                 if nd <= 1 {
@@ -84,9 +88,9 @@ pub fn prune_dead_end_floors_in_place(grid: &mut Grid) {
             }
         }
         // down
-        if r + 1 < grid.h {
-            let ni = i + grid.w;
-            if grid.cells[ni] == b' ' {
+        if r + 1 < height {
+            let ni = i + width;
+            if cells[ni] == b' ' {
                 let nd = deg[ni] - 1;
                 deg[ni] = nd;
                 if nd <= 1 {
@@ -97,7 +101,7 @@ pub fn prune_dead_end_floors_in_place(grid: &mut Grid) {
         // left
         if c > 0 {
             let ni = i - 1;
-            if grid.cells[ni] == b' ' {
+            if cells[ni] == b' ' {
                 let nd = deg[ni] - 1;
                 deg[ni] = nd;
                 if nd <= 1 {
@@ -106,9 +110,9 @@ pub fn prune_dead_end_floors_in_place(grid: &mut Grid) {
             }
         }
         // right
-        if c + 1 < grid.w {
+        if c + 1 < width {
             let ni = i + 1;
-            if grid.cells[ni] == b' ' {
+            if cells[ni] == b' ' {
                 let nd = deg[ni] - 1;
                 deg[ni] = nd;
                 if nd <= 1 {
@@ -117,6 +121,8 @@ pub fn prune_dead_end_floors_in_place(grid: &mut Grid) {
             }
         }
     }
+
+    grid.debug_assert_invariants();
 }
 
 pub fn prune_dead_end_floors(lines: Vec<String>) -> Vec<String> {

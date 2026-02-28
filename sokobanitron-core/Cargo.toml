@@ -5,3 +5,14 @@ edition = "2024"
 
 [dependencies]
 sha2 = "0.10.9"
+
+[dev-dependencies]
+criterion = "0.8.2"
+rusqlite = "0.38.0"
+
+[features]
+stage-profile = []
+
+[[bench]]
+name = "canonical_pipeline"
+harness = false

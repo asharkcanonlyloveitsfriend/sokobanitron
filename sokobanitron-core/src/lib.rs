@@ -1,25 +1,22 @@
-mod canonical_hash;
+pub mod api;
+pub mod canonical;
+pub mod error;
+pub mod normalize;
+
 mod grid;
-mod mask_to_player_reachable;
-mod normalize_leading_indentation_with_walls;
-mod normalize_to_walkable_region;
-mod prune_dead_end_floors;
-mod prune_immovable_boxes_on_goals;
-mod rectangularize_with_walls;
-mod stage_profile;
-mod trim_outer_walls;
+mod util;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CoreError {
-    PlayerStartNotFound,
-}
+#[cfg(feature = "stage-profile")]
+pub use crate::util::stage_profile;
 
-pub use canonical_hash::*;
-pub use grid::*;
-pub use mask_to_player_reachable::*;
-pub use normalize_leading_indentation_with_walls::*;
-pub use normalize_to_walkable_region::*;
-pub use prune_dead_end_floors::*;
-pub use prune_immovable_boxes_on_goals::*;
-pub use rectangularize_with_walls::*;
-pub use trim_outer_walls::*;
+pub use api::canonical_hash::canonical_hash;
+pub use api::normalize::{normalize_to_walkable_region, normalize_to_walkable_region_lines};
+pub use error::CoreError;
+pub use normalize::dead_end::prune_dead_end_floors;
+pub use normalize::immovable_goals::prune_immovable_boxes_on_goals;
+pub use normalize::leading_indentation::normalize_leading_indentation_with_walls;
+pub use normalize::leading_indentation::normalize_leading_indentation_with_walls_in_place;
+pub use normalize::reachable::mask_to_player_reachable;
+pub use normalize::rectangularize::rectangularize_with_walls;
+pub use normalize::rectangularize::rectangularize_with_walls_in_place;
+pub use normalize::trim_outer::trim_outer_walls;

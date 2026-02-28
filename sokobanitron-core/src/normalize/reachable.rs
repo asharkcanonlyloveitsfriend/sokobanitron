@@ -1,13 +1,17 @@
 use crate::grid::Grid;
 
 pub(crate) fn mask_to_player_reachable_in_place(grid: &mut Grid) {
-    if grid.h == 0 || grid.w == 0 {
+    let height = grid.height();
+    let width = grid.width();
+    if height == 0 || width == 0 {
         return;
     }
 
+    let cells = grid.cells_mut();
+
     // Find the first player tile in row-major order: '@' or '+'.
     let mut start: Option<usize> = None;
-    for (i, &ch) in grid.cells.iter().enumerate() {
+    for (i, &ch) in cells.iter().enumerate() {
         if ch == b'@' || ch == b'+' {
             start = Some(i);
             break;
@@ -23,60 +27,62 @@ pub(crate) fn mask_to_player_reachable_in_place(grid: &mut Grid) {
     // Mark visited tiles in-place using the high bit (grid chars are ASCII).
     const VISITED: u8 = 0x80;
     let mut stack: Vec<usize> = Vec::with_capacity(16);
-    grid.cells[start] |= VISITED;
+    cells[start] |= VISITED;
     stack.push(start);
 
     while let Some(i) = stack.pop() {
-        let r = i / grid.w;
-        let c = i - (r * grid.w);
+        let r = i / width;
+        let c = i - (r * width);
 
         // up
         if r > 0 {
-            let ni = i - grid.w;
-            let ch = grid.cells[ni];
+            let ni = i - width;
+            let ch = cells[ni];
             if (ch & VISITED) == 0 && ch != b'#' {
-                grid.cells[ni] = ch | VISITED;
+                cells[ni] = ch | VISITED;
                 stack.push(ni);
             }
         }
         // down
-        if r + 1 < grid.h {
-            let ni = i + grid.w;
-            let ch = grid.cells[ni];
+        if r + 1 < height {
+            let ni = i + width;
+            let ch = cells[ni];
             if (ch & VISITED) == 0 && ch != b'#' {
-                grid.cells[ni] = ch | VISITED;
+                cells[ni] = ch | VISITED;
                 stack.push(ni);
             }
         }
         // left
         if c > 0 {
             let ni = i - 1;
-            let ch = grid.cells[ni];
+            let ch = cells[ni];
             if (ch & VISITED) == 0 && ch != b'#' {
-                grid.cells[ni] = ch | VISITED;
+                cells[ni] = ch | VISITED;
                 stack.push(ni);
             }
         }
         // right
-        if c + 1 < grid.w {
+        if c + 1 < width {
             let ni = i + 1;
-            let ch = grid.cells[ni];
+            let ch = cells[ni];
             if (ch & VISITED) == 0 && ch != b'#' {
-                grid.cells[ni] = ch | VISITED;
+                cells[ni] = ch | VISITED;
                 stack.push(ni);
             }
         }
     }
 
     // Mask unreachable non-walls to '#', and clear visited marker from reachable tiles.
-    for i in 0..(grid.h * grid.w) {
-        let ch = grid.cells[i];
+    for i in 0..(height * width) {
+        let ch = cells[i];
         if (ch & VISITED) != 0 {
-            grid.cells[i] = ch & !VISITED;
+            cells[i] = ch & !VISITED;
         } else if ch != b'#' {
-            grid.cells[i] = b'#';
+            cells[i] = b'#';
         }
     }
+
+    grid.debug_assert_invariants();
 }
 
 pub fn mask_to_player_reachable(lines: Vec<String>) -> Vec<String> {

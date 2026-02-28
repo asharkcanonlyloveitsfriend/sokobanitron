@@ -1,15 +1,18 @@
 use crate::grid::Grid;
 
-pub fn trim_outer_walls_in_place(grid: &mut Grid) {
-    if grid.h == 0 || grid.w == 0 {
+pub(crate) fn trim_outer_walls_in_place(grid: &mut Grid) {
+    let height = grid.height();
+    let width = grid.width();
+    if height == 0 || width == 0 {
         return;
     }
 
+    let cells = grid.cells();
     let mut top = 0usize;
-    while top < grid.h {
+    while top < height {
         let mut all_wall = true;
-        for c in 0..grid.w {
-            if grid.cells[grid.idx(top, c)] != b'#' {
+        for c in 0..width {
+            if cells[grid.idx(top, c)] != b'#' {
                 all_wall = false;
                 break;
             }
@@ -20,18 +23,16 @@ pub fn trim_outer_walls_in_place(grid: &mut Grid) {
         top += 1;
     }
 
-    if top == grid.h {
-        grid.h = 0;
-        grid.w = 0;
-        grid.cells.clear();
+    if top == height {
+        grid.clear();
         return;
     }
 
-    let mut bottom = grid.h - 1;
+    let mut bottom = height - 1;
     while bottom > top {
         let mut all_wall = true;
-        for c in 0..grid.w {
-            if grid.cells[grid.idx(bottom, c)] != b'#' {
+        for c in 0..width {
+            if cells[grid.idx(bottom, c)] != b'#' {
                 all_wall = false;
                 break;
             }
@@ -43,10 +44,10 @@ pub fn trim_outer_walls_in_place(grid: &mut Grid) {
     }
 
     let mut left = 0usize;
-    while left < grid.w {
+    while left < width {
         let mut all_wall = true;
         for r in top..=bottom {
-            if grid.cells[grid.idx(r, left)] != b'#' {
+            if cells[grid.idx(r, left)] != b'#' {
                 all_wall = false;
                 break;
             }
@@ -57,11 +58,11 @@ pub fn trim_outer_walls_in_place(grid: &mut Grid) {
         left += 1;
     }
 
-    let mut right = grid.w - 1;
+    let mut right = width - 1;
     while right >= left {
         let mut all_wall = true;
         for r in top..=bottom {
-            if grid.cells[grid.idx(r, right)] != b'#' {
+            if cells[grid.idx(r, right)] != b'#' {
                 all_wall = false;
                 break;
             }
@@ -81,12 +82,10 @@ pub fn trim_outer_walls_in_place(grid: &mut Grid) {
     for r in top..=bottom {
         let start = grid.idx(r, left);
         let end = start + new_w;
-        new_cells.extend_from_slice(&grid.cells[start..end]);
+        new_cells.extend_from_slice(&cells[start..end]);
     }
 
-    grid.h = new_h;
-    grid.w = new_w;
-    grid.cells = new_cells;
+    grid.set_shape_and_cells(new_w, new_h, new_cells);
 }
 
 pub fn trim_outer_walls(lines: Vec<String>) -> Vec<String> {

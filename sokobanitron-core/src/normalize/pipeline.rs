@@ -1,44 +1,11 @@
 use std::time::Instant;
 
-use crate::grid::Grid;
-use crate::mask_to_player_reachable::mask_to_player_reachable_in_place;
-use crate::prune_dead_end_floors::prune_dead_end_floors_in_place;
-use crate::prune_immovable_boxes_on_goals::prune_immovable_boxes_on_goals_in_place;
-use crate::stage_profile;
-use crate::trim_outer_walls::trim_outer_walls_in_place;
-
-fn build_grid_with_leading_and_rect(lines: Vec<String>) -> Grid {
-    let h = lines.len();
-    if h == 0 {
-        return Grid {
-            h: 0,
-            w: 0,
-            cells: Vec::new(),
-        };
-    }
-
-    let mut w = 0usize;
-    for line in &lines {
-        if line.len() > w {
-            w = line.len();
-        }
-    }
-
-    let mut cells = vec![b'#'; h * w];
-    for (r, line) in lines.into_iter().enumerate() {
-        let bytes = line.into_bytes();
-        let len = bytes.len();
-        let row_start = r * w;
-
-        if let Some(first_wall) = bytes.iter().position(|&b| b == b'#') {
-            cells[row_start + first_wall..row_start + len].copy_from_slice(&bytes[first_wall..]);
-        } else {
-            cells[row_start..row_start + len].copy_from_slice(&bytes);
-        }
-    }
-
-    Grid { h, w, cells }
-}
+use crate::normalize::build_grid::build_grid_with_leading_and_rect;
+use crate::normalize::dead_end::prune_dead_end_floors_in_place;
+use crate::normalize::immovable_goals::prune_immovable_boxes_on_goals_in_place;
+use crate::normalize::reachable::mask_to_player_reachable_in_place;
+use crate::normalize::trim_outer::trim_outer_walls_in_place;
+use crate::util::stage_profile;
 
 pub fn normalize_to_walkable_region_lines(lines: Vec<String>) -> Vec<String> {
     let t0 = Instant::now();
