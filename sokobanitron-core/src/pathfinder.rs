@@ -21,8 +21,9 @@ pub struct PathfinderStats {
 pub struct Pathfinder {
     width: usize,
     height: usize,
-    walkable: Vec<bool>,
+    walkable: Vec<u8>,
     visited_stamp: Vec<u32>,
+    queue: Vec<usize>,
     current_stamp: u32,
     stats: PathfinderStats,
 }
@@ -40,11 +41,16 @@ impl Pathfinder {
             );
         }
 
-        let walkable = walkable_rows.into_iter().flatten().collect::<Vec<_>>();
+        let walkable = walkable_rows
+            .into_iter()
+            .flatten()
+            .map(u8::from)
+            .collect::<Vec<_>>();
         Self {
             width,
             height,
             visited_stamp: vec![0; width * height],
+            queue: Vec::with_capacity(width * height),
             walkable,
             current_stamp: 1,
             stats: PathfinderStats::default(),
@@ -64,11 +70,6 @@ impl Pathfinder {
     #[inline]
     fn idx(&self, row: usize, col: usize) -> usize {
         row * self.width + col
-    }
-
-    #[inline]
-    fn is_walkable(&self, row: usize, col: usize) -> bool {
-        self.walkable[self.idx(row, col)]
     }
 
     pub fn can_find_path(
@@ -97,13 +98,25 @@ impl Pathfinder {
             self.visited_stamp.fill(0);
         }
 
-        let mut queue = std::collections::VecDeque::new();
-        queue.push_back(self.idx(from.row, from.col));
-        self.stats.nodes_pushed += 1;
-
+        let blocked_idx = blocked.and_then(|pos| {
+            if pos.row < self.height && pos.col < self.width {
+                Some(self.idx(pos.row, pos.col))
+            } else {
+                None
+            }
+        });
+        let start_idx = self.idx(from.row, from.col);
         let target_index = self.idx(to.row, to.col);
 
-        while let Some(current) = queue.pop_front() {
+        self.queue.clear();
+        self.queue.push(start_idx);
+        self.visited_stamp[start_idx] = stamp;
+        self.stats.nodes_pushed += 1;
+        let mut head = 0;
+
+        while head < self.queue.len() {
+            let current = self.queue[head];
+            head += 1;
             self.stats.nodes_expanded += 1;
 
             if current == target_index {
@@ -112,61 +125,55 @@ impl Pathfinder {
 
             let row = current / self.width;
             let col = current % self.width;
-            let index = self.idx(row, col);
-
-            if self.visited_stamp[index] == stamp {
-                continue;
-            }
-            self.visited_stamp[index] = stamp;
 
             if row > 0 {
                 let up_row = row - 1;
-                let up = Position::new(up_row, col);
                 let up_idx = self.idx(up_row, col);
-                if blocked != Some(up)
-                    && self.is_walkable(up_row, col)
+                if blocked_idx != Some(up_idx)
+                    && self.walkable[up_idx] != 0
                     && self.visited_stamp[up_idx] != stamp
                 {
-                    queue.push_back(up_idx);
+                    self.visited_stamp[up_idx] = stamp;
+                    self.queue.push(up_idx);
                     self.stats.nodes_pushed += 1;
                 }
             }
 
             if row + 1 < self.height {
                 let down_row = row + 1;
-                let down = Position::new(down_row, col);
                 let down_idx = self.idx(down_row, col);
-                if blocked != Some(down)
-                    && self.is_walkable(down_row, col)
+                if blocked_idx != Some(down_idx)
+                    && self.walkable[down_idx] != 0
                     && self.visited_stamp[down_idx] != stamp
                 {
-                    queue.push_back(down_idx);
+                    self.visited_stamp[down_idx] = stamp;
+                    self.queue.push(down_idx);
                     self.stats.nodes_pushed += 1;
                 }
             }
 
             if col > 0 {
                 let left_col = col - 1;
-                let left = Position::new(row, left_col);
                 let left_idx = self.idx(row, left_col);
-                if blocked != Some(left)
-                    && self.is_walkable(row, left_col)
+                if blocked_idx != Some(left_idx)
+                    && self.walkable[left_idx] != 0
                     && self.visited_stamp[left_idx] != stamp
                 {
-                    queue.push_back(left_idx);
+                    self.visited_stamp[left_idx] = stamp;
+                    self.queue.push(left_idx);
                     self.stats.nodes_pushed += 1;
                 }
             }
 
             if col + 1 < self.width {
                 let right_col = col + 1;
-                let right = Position::new(row, right_col);
                 let right_idx = self.idx(row, right_col);
-                if blocked != Some(right)
-                    && self.is_walkable(row, right_col)
+                if blocked_idx != Some(right_idx)
+                    && self.walkable[right_idx] != 0
                     && self.visited_stamp[right_idx] != stamp
                 {
-                    queue.push_back(right_idx);
+                    self.visited_stamp[right_idx] = stamp;
+                    self.queue.push(right_idx);
                     self.stats.nodes_pushed += 1;
                 }
             }
