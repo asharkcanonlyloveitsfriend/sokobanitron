@@ -22,6 +22,8 @@ pub struct Pathfinder {
     width: usize,
     height: usize,
     walkable: Vec<u8>,
+    neighbors: Vec<[usize; 4]>,
+    neighbor_counts: Vec<u8>,
     visited_stamp: Vec<u32>,
     queue: Vec<usize>,
     current_stamp: u32,
@@ -46,11 +48,43 @@ impl Pathfinder {
             .flatten()
             .map(u8::from)
             .collect::<Vec<_>>();
+
+        let cells = width * height;
+        let mut neighbors = vec![[0usize; 4]; cells];
+        let mut neighbor_counts = vec![0u8; cells];
+        for row in 0..height {
+            for col in 0..width {
+                let idx = row * width + col;
+                let mut count = 0u8;
+
+                if row > 0 {
+                    neighbors[idx][count as usize] = (row - 1) * width + col;
+                    count += 1;
+                }
+                if row + 1 < height {
+                    neighbors[idx][count as usize] = (row + 1) * width + col;
+                    count += 1;
+                }
+                if col > 0 {
+                    neighbors[idx][count as usize] = row * width + (col - 1);
+                    count += 1;
+                }
+                if col + 1 < width {
+                    neighbors[idx][count as usize] = row * width + (col + 1);
+                    count += 1;
+                }
+
+                neighbor_counts[idx] = count;
+            }
+        }
+
         Self {
             width,
             height,
-            visited_stamp: vec![0; width * height],
-            queue: Vec::with_capacity(width * height),
+            neighbors,
+            neighbor_counts,
+            visited_stamp: vec![0; cells],
+            queue: Vec::with_capacity(cells),
             walkable,
             current_stamp: 1,
             stats: PathfinderStats::default(),
@@ -123,57 +157,15 @@ impl Pathfinder {
                 return true;
             }
 
-            let row = current / self.width;
-            let col = current % self.width;
-
-            if row > 0 {
-                let up_row = row - 1;
-                let up_idx = self.idx(up_row, col);
-                if blocked_idx != Some(up_idx)
-                    && self.walkable[up_idx] != 0
-                    && self.visited_stamp[up_idx] != stamp
+            let count = self.neighbor_counts[current] as usize;
+            let neighbor_slice = &self.neighbors[current][..count];
+            for &next in neighbor_slice {
+                if blocked_idx != Some(next)
+                    && self.walkable[next] != 0
+                    && self.visited_stamp[next] != stamp
                 {
-                    self.visited_stamp[up_idx] = stamp;
-                    self.queue.push(up_idx);
-                    self.stats.nodes_pushed += 1;
-                }
-            }
-
-            if row + 1 < self.height {
-                let down_row = row + 1;
-                let down_idx = self.idx(down_row, col);
-                if blocked_idx != Some(down_idx)
-                    && self.walkable[down_idx] != 0
-                    && self.visited_stamp[down_idx] != stamp
-                {
-                    self.visited_stamp[down_idx] = stamp;
-                    self.queue.push(down_idx);
-                    self.stats.nodes_pushed += 1;
-                }
-            }
-
-            if col > 0 {
-                let left_col = col - 1;
-                let left_idx = self.idx(row, left_col);
-                if blocked_idx != Some(left_idx)
-                    && self.walkable[left_idx] != 0
-                    && self.visited_stamp[left_idx] != stamp
-                {
-                    self.visited_stamp[left_idx] = stamp;
-                    self.queue.push(left_idx);
-                    self.stats.nodes_pushed += 1;
-                }
-            }
-
-            if col + 1 < self.width {
-                let right_col = col + 1;
-                let right_idx = self.idx(row, right_col);
-                if blocked_idx != Some(right_idx)
-                    && self.walkable[right_idx] != 0
-                    && self.visited_stamp[right_idx] != stamp
-                {
-                    self.visited_stamp[right_idx] = stamp;
-                    self.queue.push(right_idx);
+                    self.visited_stamp[next] = stamp;
+                    self.queue.push(next);
                     self.stats.nodes_pushed += 1;
                 }
             }
