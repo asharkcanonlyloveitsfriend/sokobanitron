@@ -4,7 +4,7 @@ use std::time::Instant;
 use sha2::{Digest, Sha256};
 
 use crate::canonical::player_canonicalization::canonicalize_player_start_in_place;
-use crate::canonical::symmetry::{build_variant_grid, compare_variant_keys, FlatGrid, VARIANTS};
+use crate::canonical::symmetry::{FlatGrid, VARIANTS, build_variant_grid, compare_variant_keys};
 use crate::error::CoreError;
 use crate::normalize::pipeline::normalize_to_walkable_region_lines;
 use crate::util::stage_profile;
@@ -185,7 +185,10 @@ mod tests {
     #   $ #
     #######
     ";
-        assert_eq!(canonical_hash_impl(a).unwrap(), canonical_hash_impl(b).unwrap());
+        assert_eq!(
+            canonical_hash_impl(a).unwrap(),
+            canonical_hash_impl(b).unwrap()
+        );
     }
 
     #[test]
@@ -208,6 +211,9 @@ mod tests {
     #     #
     #######
     ";
-        assert_ne!(canonical_hash_impl(a).unwrap(), canonical_hash_impl(b).unwrap());
+        assert_ne!(
+            canonical_hash_impl(a).unwrap(),
+            canonical_hash_impl(b).unwrap()
+        );
     }
 }

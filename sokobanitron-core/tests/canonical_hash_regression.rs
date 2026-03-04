@@ -8,20 +8,11 @@ use sokobanitron_core::canonical_hash;
 fn canonical_hash_matches_database() {
     // Resolve DB path relative to workspace root
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let db_path: PathBuf = [
-        manifest_dir,
-        "benches",
-        "fixtures",
-        "puzzles.db",
-    ]
-    .iter()
-    .collect();
+    let db_path: PathBuf = [manifest_dir, "benches", "fixtures", "puzzles.db"]
+        .iter()
+        .collect();
 
-    assert!(
-        db_path.exists(),
-        "Database not found at {:?}",
-        db_path
-    );
+    assert!(db_path.exists(), "Database not found at {:?}", db_path);
 
     let conn = Connection::open(&db_path).expect("Failed to open puzzles.db");
 
@@ -40,8 +31,7 @@ fn canonical_hash_matches_database() {
     for (index, row) in rows.enumerate() {
         let (grid, expected_hash) = row.expect("Row decode failed");
 
-        let computed = canonical_hash(&grid)
-            .expect("canonical_hash returned error");
+        let computed = canonical_hash(&grid).expect("canonical_hash returned error");
 
         assert_eq!(
             computed, expected_hash,

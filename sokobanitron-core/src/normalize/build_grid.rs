@@ -1,5 +1,5 @@
-use crate::grid::validation::{assert_has_goal, assert_single_player, validate_characters};
 use crate::grid::Grid;
+use crate::grid::validation::{assert_has_goal, assert_single_player, validate_characters};
 
 pub(crate) fn build_grid_with_leading_and_rect(lines: Vec<String>) -> Grid {
     validate_characters(&lines);

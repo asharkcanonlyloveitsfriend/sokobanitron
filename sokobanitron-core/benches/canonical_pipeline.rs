@@ -41,8 +41,7 @@ fn bench_canonical_pipeline(c: &mut Criterion) {
             stage_profile::reset();
 
             for grid in &grids {
-                let hash = canonical_hash(grid)
-                    .expect("canonical_hash returned error");
+                let hash = canonical_hash(grid).expect("canonical_hash returned error");
                 black_box(hash);
             }
 

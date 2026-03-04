@@ -1,5 +1,5 @@
-use std::collections::{HashMap, HashSet};
 use crate::grid::Grid;
+use std::collections::{HashMap, HashSet};
 
 pub(crate) fn prune_immovable_boxes_on_goals_in_place(grid: &mut Grid) {
     let height = grid.height();

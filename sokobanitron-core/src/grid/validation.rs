@@ -3,7 +3,10 @@ pub(crate) fn validate_characters(lines: &[String]) {
         for (col, ch) in line.bytes().enumerate() {
             match ch {
                 b'#' | b'.' | b'@' | b'$' | b'*' | b'+' | b' ' => {}
-                _ => panic!("invalid Sokoban character '{}' at ({},{})", ch as char, row, col),
+                _ => panic!(
+                    "invalid Sokoban character '{}' at ({},{})",
+                    ch as char, row, col
+                ),
             }
         }
     }

@@ -14,8 +14,7 @@ pub fn rectangularize_with_walls(lines: Vec<String>) -> Vec<String> {
 
     let mut rows: Vec<Vec<u8>> = lines.into_iter().map(|s| s.into_bytes()).collect();
     rectangularize_with_walls_in_place(&mut rows);
-    rows
-        .into_iter()
+    rows.into_iter()
         .map(|row| String::from_utf8(row).expect("grid must contain valid ASCII"))
         .collect()
 }
@@ -26,11 +25,7 @@ mod tests {
 
     #[test]
     fn in_place_rectangularizes_shorter_rows() {
-        let mut rows = vec![
-            b"###".to_vec(),
-            b"##".to_vec(),
-            b"#".to_vec(),
-        ];
+        let mut rows = vec![b"###".to_vec(), b"##".to_vec(), b"#".to_vec()];
         rectangularize_with_walls_in_place(&mut rows);
         assert_eq!(rows[0], b"###".to_vec());
         assert_eq!(rows[1], b"###".to_vec());

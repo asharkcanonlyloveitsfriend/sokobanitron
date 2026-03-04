@@ -94,7 +94,10 @@ mod tests {
     #####
     ";
 
-        assert_eq!(normalize_grid(grid), vec!["#  ".to_string(), ".$@".to_string()]);
+        assert_eq!(
+            normalize_grid(grid),
+            vec!["#  ".to_string(), ".$@".to_string()]
+        );
     }
 
     #[test]

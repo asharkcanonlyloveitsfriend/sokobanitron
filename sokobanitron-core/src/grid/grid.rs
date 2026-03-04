@@ -76,7 +76,10 @@ impl Grid {
         for r in 0..self.height {
             let start = r * self.width;
             let end = start + self.width;
-            out.push(String::from_utf8(self.cells[start..end].to_vec()).expect("grid must contain valid ASCII"));
+            out.push(
+                String::from_utf8(self.cells[start..end].to_vec())
+                    .expect("grid must contain valid ASCII"),
+            );
         }
         out
     }
