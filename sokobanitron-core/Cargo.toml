@@ -16,3 +16,7 @@ stage-profile = []
 [[bench]]
 name = "canonical_pipeline"
 harness = false
+
+[[bench]]
+name = "pathfinder"
+harness = false
