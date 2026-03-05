@@ -1,5 +1,5 @@
 use crate::pathfinder::{Pathfinder, Position};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct BoxPathfinderStats {
@@ -174,12 +174,10 @@ impl BoxPathfinder {
         let mut dead: Option<Vec<u8>> = None;
         let mut expanded_count = 0u64;
 
-        let mut visited = HashSet::new();
         let mut parents: HashMap<State, Option<State>> = HashMap::new();
         let mut queue = VecDeque::new();
         queue.push_back(self.start_state);
         self.stats.states_pushed += 1;
-        visited.insert(self.start_state);
         parents.insert(self.start_state, None);
 
         while let Some(state) = queue.pop_front() {
@@ -229,8 +227,8 @@ impl BoxPathfinder {
                         box_pos: new_box,
                         player_pos: box_pos,
                     };
-                    if visited.insert(new_state) {
-                        parents.insert(new_state, Some(state));
+                    if let std::collections::hash_map::Entry::Vacant(e) = parents.entry(new_state) {
+                        e.insert(Some(state));
                         queue.push_back(new_state);
                         self.stats.states_pushed += 1;
                     }
