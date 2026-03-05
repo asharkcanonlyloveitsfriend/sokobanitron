@@ -1,5 +1,5 @@
 use crate::pathfinder::{Pathfinder, Position};
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct BoxPathfinderStats {
@@ -20,10 +20,14 @@ struct State {
 pub struct BoxPathfinder {
     width: usize,
     height: usize,
+    cell_count: usize,
     planning_grid: Vec<u8>,
     start_state: State,
     player_pathfinder: Pathfinder,
     stats: BoxPathfinderStats,
+    visited: Vec<u32>,
+    generation: u32,
+    parents: Vec<Option<State>>,
 }
 
 impl BoxPathfinder {
@@ -57,9 +61,13 @@ impl BoxPathfinder {
             .map(|row| row.iter().map(|&cell| cell != 0).collect::<Vec<_>>())
             .collect::<Vec<_>>();
 
+        let cell_count = width * height;
+        let state_count = cell_count * cell_count;
+
         Self {
             width,
             height,
+            cell_count,
             planning_grid,
             start_state: State {
                 box_pos: box_start,
@@ -67,6 +75,9 @@ impl BoxPathfinder {
             },
             player_pathfinder: Pathfinder::from_rows(planning_rows),
             stats: BoxPathfinderStats::default(),
+            visited: vec![0u32; state_count],
+            generation: 1,
+            parents: vec![None; state_count],
         }
     }
 
@@ -88,6 +99,13 @@ impl BoxPathfinder {
     #[inline]
     fn idx(&self, pos: Position) -> usize {
         pos.row * self.width + pos.col
+    }
+
+    #[inline]
+    fn state_index(&self, state: State) -> usize {
+        let box_idx = self.idx(state.box_pos);
+        let player_idx = self.idx(state.player_pos);
+        box_idx * self.cell_count + player_idx
     }
 
     #[inline]
@@ -158,7 +176,7 @@ impl BoxPathfinder {
             for col in 0..self.width {
                 let pos = Position::new(row, col);
                 let idx = self.idx(pos);
-                if self.is_walkable(pos) && alive[idx] == 0 && pos != goal {
+                if pos != goal && self.is_walkable(pos) && alive[idx] == 0 {
                     dead[idx] = 1;
                 }
             }
@@ -174,15 +192,25 @@ impl BoxPathfinder {
         let mut dead: Option<Vec<u8>> = None;
         let mut expanded_count = 0u64;
 
-        let mut parents: HashMap<State, Option<State>> = HashMap::new();
+        // Increment generation instead of clearing the visited array.
+        // A state is considered visited in the current search when
+        // visited[idx] == generation.
+        self.generation = self.generation.wrapping_add(1);
+        let generation = self.generation;
+
         let mut queue = VecDeque::new();
         queue.push_back(self.start_state);
         self.stats.states_pushed += 1;
-        parents.insert(self.start_state, None);
+
+        let start_idx = self.state_index(self.start_state);
+        self.visited[start_idx] = generation;
+        self.parents[start_idx] = None;
 
         while let Some(state) = queue.pop_front() {
-            let box_pos = state.box_pos;
-            let player_pos = state.player_pos;
+            let State {
+                box_pos,
+                player_pos,
+            } = state;
             self.stats.states_expanded += 1;
             expanded_count += 1;
 
@@ -191,7 +219,7 @@ impl BoxPathfinder {
             }
 
             if box_pos == to {
-                return Some(Self::build_box_path(&parents, state));
+                return Some(self.build_box_path(state));
             }
 
             for (dr, dc) in Self::DIRECTIONS {
@@ -203,10 +231,11 @@ impl BoxPathfinder {
                     continue;
                 };
 
-                if let Some(dead_grid) = &dead {
-                    if self.is_inside(new_box) && dead_grid[self.idx(new_box)] != 0 {
-                        continue;
-                    }
+                if let Some(dead_grid) = &dead
+                    && self.is_inside(new_box)
+                    && dead_grid[self.idx(new_box)] != 0
+                {
+                    continue;
                 }
 
                 if !self.is_inside(new_box)
@@ -223,12 +252,16 @@ impl BoxPathfinder {
                     .can_find_path(player_pos, push_pos, Some(box_pos))
                 {
                     self.stats.player_pathfinder_successes += 1;
+
                     let new_state = State {
                         box_pos: new_box,
                         player_pos: box_pos,
                     };
-                    if let std::collections::hash_map::Entry::Vacant(e) = parents.entry(new_state) {
-                        e.insert(Some(state));
+
+                    let idx = self.state_index(new_state);
+                    if self.visited[idx] != generation {
+                        self.visited[idx] = generation;
+                        self.parents[idx] = Some(state);
                         queue.push_back(new_state);
                         self.stats.states_pushed += 1;
                     }
@@ -239,16 +272,14 @@ impl BoxPathfinder {
         None
     }
 
-    fn build_box_path(parents: &HashMap<State, Option<State>>, end_state: State) -> Vec<Position> {
+    fn build_box_path(&self, end_state: State) -> Vec<Position> {
         let mut reversed = Vec::new();
         let mut current = Some(end_state);
 
         while let Some(state) = current {
             reversed.push(state.box_pos);
-            current = parents
-                .get(&state)
-                .copied()
-                .expect("every visited state must exist in parents");
+            let idx = self.state_index(state);
+            current = self.parents[idx];
         }
 
         reversed.reverse();
