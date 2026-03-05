@@ -1,0 +1,259 @@
+use crate::pathfinder::{Pathfinder, Position};
+use std::collections::{HashMap, HashSet, VecDeque};
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct BoxPathfinderStats {
+    pub states_pushed: u64,
+    pub states_expanded: u64,
+    pub push_attempts: u64,
+    pub player_pathfinder_calls: u64,
+    pub player_pathfinder_successes: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct State {
+    box_pos: Position,
+    player_pos: Position,
+}
+
+#[derive(Debug, Clone)]
+pub struct BoxPathfinder {
+    width: usize,
+    height: usize,
+    planning_grid: Vec<u8>,
+    start_state: State,
+    player_pathfinder: Pathfinder,
+    stats: BoxPathfinderStats,
+}
+
+impl BoxPathfinder {
+    const DEAD_ENABLE_AFTER_EXPANDED: u64 = 16;
+    const DIRECTIONS: [(isize, isize); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+
+    pub fn new(full_grid: Vec<Vec<bool>>, box_start: Position, player_start: Position) -> Self {
+        let height = full_grid.len();
+        let width = full_grid.first().map_or(0, Vec::len);
+        for row in &full_grid {
+            assert_eq!(row.len(), width, "all grid rows must have the same width");
+        }
+        assert!(
+            box_start.row < height && box_start.col < width,
+            "box_start must be in bounds"
+        );
+        assert!(
+            player_start.row < height && player_start.col < width,
+            "player_start must be in bounds"
+        );
+
+        let mut planning_grid = full_grid
+            .into_iter()
+            .flatten()
+            .map(u8::from)
+            .collect::<Vec<_>>();
+        planning_grid[box_start.row * width + box_start.col] = 1;
+
+        let planning_rows = planning_grid
+            .chunks(width)
+            .map(|row| row.iter().map(|&cell| cell != 0).collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+
+        Self {
+            width,
+            height,
+            planning_grid,
+            start_state: State {
+                box_pos: box_start,
+                player_pos: player_start,
+            },
+            player_pathfinder: Pathfinder::from_rows(planning_rows),
+            stats: BoxPathfinderStats::default(),
+        }
+    }
+
+    #[inline]
+    pub fn stats(&self) -> &BoxPathfinderStats {
+        &self.stats
+    }
+
+    #[inline]
+    pub fn stats_mut(&mut self) -> &mut BoxPathfinderStats {
+        &mut self.stats
+    }
+
+    #[inline]
+    pub fn reset_stats(&mut self) {
+        self.stats = BoxPathfinderStats::default();
+    }
+
+    #[inline]
+    fn idx(&self, pos: Position) -> usize {
+        pos.row * self.width + pos.col
+    }
+
+    #[inline]
+    fn is_inside(&self, pos: Position) -> bool {
+        pos.row < self.height && pos.col < self.width
+    }
+
+    #[inline]
+    fn is_walkable(&self, pos: Position) -> bool {
+        self.planning_grid[self.idx(pos)] != 0
+    }
+
+    fn offset_pos(pos: Position, dr: isize, dc: isize) -> Option<Position> {
+        let row = pos.row.checked_add_signed(dr)?;
+        let col = pos.col.checked_add_signed(dc)?;
+        Some(Position::new(row, col))
+    }
+
+    fn compute_dead_squares(&self, goal: Position) -> Vec<u8> {
+        let mut alive = vec![0u8; self.width * self.height];
+        let mut queue = VecDeque::new();
+
+        let enqueue = |p: Position, alive: &mut [u8], queue: &mut VecDeque<Position>| {
+            let idx = self.idx(p);
+            if alive[idx] == 0 {
+                alive[idx] = 1;
+                queue.push_back(p);
+            }
+        };
+
+        if !self.is_inside(goal) || !self.is_walkable(goal) {
+            let mut dead = vec![0u8; self.width * self.height];
+            for row in 0..self.height {
+                for col in 0..self.width {
+                    let pos = Position::new(row, col);
+                    if self.is_walkable(pos) {
+                        dead[self.idx(pos)] = 1;
+                    }
+                }
+            }
+            return dead;
+        }
+
+        enqueue(goal, &mut alive, &mut queue);
+
+        while let Some(cur) = queue.pop_front() {
+            for (dr, dc) in Self::DIRECTIONS {
+                let Some(prev) = Self::offset_pos(cur, -dr, -dc) else {
+                    continue;
+                };
+                let Some(push_pos) = Self::offset_pos(prev, -dr, -dc) else {
+                    continue;
+                };
+
+                if !self.is_inside(prev) || !self.is_inside(push_pos) {
+                    continue;
+                }
+                if !self.is_walkable(prev) || !self.is_walkable(push_pos) {
+                    continue;
+                }
+
+                enqueue(prev, &mut alive, &mut queue);
+            }
+        }
+
+        let mut dead = vec![0u8; self.width * self.height];
+        for row in 0..self.height {
+            for col in 0..self.width {
+                let pos = Position::new(row, col);
+                let idx = self.idx(pos);
+                if self.is_walkable(pos) && alive[idx] == 0 && pos != goal {
+                    dead[idx] = 1;
+                }
+            }
+        }
+        dead
+    }
+
+    pub fn find_box_path(&mut self, to: Position) -> Option<Vec<Position>> {
+        if self.start_state.box_pos == to {
+            return None;
+        }
+
+        let mut dead: Option<Vec<u8>> = None;
+        let mut expanded_count = 0u64;
+
+        let mut visited = HashSet::new();
+        let mut parents: HashMap<State, Option<State>> = HashMap::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(self.start_state);
+        self.stats.states_pushed += 1;
+        visited.insert(self.start_state);
+        parents.insert(self.start_state, None);
+
+        while let Some(state) = queue.pop_front() {
+            let box_pos = state.box_pos;
+            let player_pos = state.player_pos;
+            self.stats.states_expanded += 1;
+            expanded_count += 1;
+
+            if dead.is_none() && expanded_count >= Self::DEAD_ENABLE_AFTER_EXPANDED {
+                dead = Some(self.compute_dead_squares(to));
+            }
+
+            if box_pos == to {
+                return Some(Self::build_box_path(&parents, state));
+            }
+
+            for (dr, dc) in Self::DIRECTIONS {
+                self.stats.push_attempts += 1;
+                let Some(new_box) = Self::offset_pos(box_pos, dr, dc) else {
+                    continue;
+                };
+                let Some(push_pos) = Self::offset_pos(box_pos, -dr, -dc) else {
+                    continue;
+                };
+
+                if let Some(dead_grid) = &dead {
+                    if self.is_inside(new_box) && dead_grid[self.idx(new_box)] != 0 {
+                        continue;
+                    }
+                }
+
+                if !self.is_inside(new_box)
+                    || !self.is_inside(push_pos)
+                    || !self.is_walkable(new_box)
+                    || !self.is_walkable(push_pos)
+                {
+                    continue;
+                }
+
+                self.stats.player_pathfinder_calls += 1;
+                if self
+                    .player_pathfinder
+                    .can_find_path(player_pos, push_pos, Some(box_pos))
+                {
+                    self.stats.player_pathfinder_successes += 1;
+                    let new_state = State {
+                        box_pos: new_box,
+                        player_pos: box_pos,
+                    };
+                    if visited.insert(new_state) {
+                        parents.insert(new_state, Some(state));
+                        queue.push_back(new_state);
+                        self.stats.states_pushed += 1;
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    fn build_box_path(parents: &HashMap<State, Option<State>>, end_state: State) -> Vec<Position> {
+        let mut reversed = Vec::new();
+        let mut current = Some(end_state);
+
+        while let Some(state) = current {
+            reversed.push(state.box_pos);
+            current = parents
+                .get(&state)
+                .copied()
+                .expect("every visited state must exist in parents");
+        }
+
+        reversed.reverse();
+        reversed
+    }
+}

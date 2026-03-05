@@ -20,3 +20,7 @@ harness = false
 [[bench]]
 name = "pathfinder"
 harness = false
+
+[[bench]]
+name = "box_pathfinder"
+harness = false
