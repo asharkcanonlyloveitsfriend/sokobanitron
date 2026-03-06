@@ -1,3 +1,4 @@
+#[allow(clippy::module_inception)]
 mod grid;
 mod invariants;
 pub(crate) mod validation;

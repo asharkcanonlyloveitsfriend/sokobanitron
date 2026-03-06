@@ -73,12 +73,12 @@ pub(crate) fn mask_to_player_reachable_in_place(grid: &mut Grid) {
     }
 
     // Mask unreachable non-walls to '#', and clear visited marker from reachable tiles.
-    for i in 0..(height * width) {
-        let ch = cells[i];
-        if (ch & VISITED) != 0 {
-            cells[i] = ch & !VISITED;
-        } else if ch != b'#' {
-            cells[i] = b'#';
+    for ch in cells.iter_mut().take(height * width) {
+        let current = *ch;
+        if (current & VISITED) != 0 {
+            *ch = current & !VISITED;
+        } else if current != b'#' {
+            *ch = b'#';
         }
     }
 

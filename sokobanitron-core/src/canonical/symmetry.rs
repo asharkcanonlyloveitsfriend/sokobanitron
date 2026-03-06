@@ -66,7 +66,7 @@ fn normalize_key_byte(ch: u8) -> u8 {
 
 #[inline]
 fn variant_dims(base: FlatGrid<'_>, v: Variant) -> (usize, usize) {
-    if v.rot % 2 == 0 {
+    if v.rot.is_multiple_of(2) {
         (base.h, base.w)
     } else {
         (base.w, base.h)

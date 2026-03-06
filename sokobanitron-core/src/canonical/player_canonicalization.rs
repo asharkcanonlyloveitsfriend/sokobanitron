@@ -18,7 +18,7 @@ pub(crate) fn canonicalize_player_start_in_place(
     h: usize,
     w: usize,
 ) -> Result<(), CoreError> {
-    let (sr, sc) = find_player_start(cells, h, w).ok_or_else(|| CoreError::PlayerStartNotFound)?;
+    let (sr, sc) = find_player_start(cells, h, w).ok_or(CoreError::PlayerStartNotFound)?;
 
     let size = h * w;
     let mut seen = vec![0u8; size];
@@ -90,7 +90,7 @@ pub(crate) fn canonicalize_player_start_in_place(
         }
     }
 
-    let (cr, cc) = canonical_pos.ok_or_else(|| CoreError::PlayerStartNotFound)?;
+    let (cr, cc) = canonical_pos.ok_or(CoreError::PlayerStartNotFound)?;
 
     let si = sr * w + sc;
     cells[si] = if cells[si] == b'+' { b'.' } else { b' ' };
