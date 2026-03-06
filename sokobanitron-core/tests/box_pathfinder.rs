@@ -1,4 +1,4 @@
-use sokobanitron_core::box_pathfinder::BoxPathfinder;
+use sokobanitron_core::pathfinder::BoxPathfinder;
 use sokobanitron_core::pathfinder::Position;
 
 #[test]

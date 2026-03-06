@@ -1,8 +1,10 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use sokobanitron_core::pathfinder::{Pathfinder, Position};
+use sokobanitron_core::pathfinder::{PlayerPathfinder, Position};
 use std::hint::black_box;
 
-fn parse_pathfinder_with_endpoints(ascii_map: &str) -> (Pathfinder, Position, Position) {
+fn parse_player_pathfinder_with_endpoints(
+    ascii_map: &str,
+) -> (PlayerPathfinder, Position, Position) {
     let lines = ascii_map.lines().collect::<Vec<_>>();
     let width = lines.iter().map(|line| line.len()).max().unwrap_or(0);
 
@@ -35,13 +37,13 @@ fn parse_pathfinder_with_endpoints(ascii_map: &str) -> (Pathfinder, Position, Po
         .collect::<Vec<_>>();
 
     (
-        Pathfinder::from_rows(rows),
+        PlayerPathfinder::from_rows(rows),
         from.expect("map must contain '@'"),
         to.expect("map must contain 'x'"),
     )
 }
 
-fn bench_pathfinder(c: &mut Criterion) {
+fn bench_player_pathfinder(c: &mut Criterion) {
     let ascii_map = "\
        ######\n\
     ####    ###\n\
@@ -54,18 +56,18 @@ fn bench_pathfinder(c: &mut Criterion) {
 ##   #     #   ##\n\
  #####     #####";
 
-    let (mut pathfinder, from, to) = parse_pathfinder_with_endpoints(ascii_map);
+    let (mut pathfinder, from, to) = parse_player_pathfinder_with_endpoints(ascii_map);
 
     for _ in 0..1_000 {
         black_box(pathfinder.can_find_path(from, to, None));
     }
 
-    c.bench_function("pathfinder/can_find_path_baseline", |b| {
+    c.bench_function("player_pathfinder/can_find_path_baseline", |b| {
         b.iter(|| {
             black_box(pathfinder.can_find_path(from, to, None));
         })
     });
 }
 
-criterion_group!(benches, bench_pathfinder);
+criterion_group!(benches, bench_player_pathfinder);
 criterion_main!(benches);

@@ -1,3 +1,6 @@
+use crate::pathfinder::stats::PathfinderStats;
+use crate::stat;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Position {
     pub row: usize,
@@ -11,14 +14,8 @@ impl Position {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct PathfinderStats {
-    pub nodes_expanded: u64,
-    pub nodes_pushed: u64,
-}
-
 #[derive(Debug, Clone)]
-pub struct Pathfinder {
+pub struct PlayerPathfinder {
     width: usize,
     height: usize,
     walkable: Vec<u8>,
@@ -30,7 +27,7 @@ pub struct Pathfinder {
     stats: PathfinderStats,
 }
 
-impl Pathfinder {
+impl PlayerPathfinder {
     pub fn from_rows(walkable_rows: Vec<Vec<bool>>) -> Self {
         let height = walkable_rows.len();
         let width = walkable_rows.first().map_or(0, Vec::len);
@@ -97,6 +94,11 @@ impl Pathfinder {
     }
 
     #[inline]
+    pub fn stats_mut(&mut self) -> &mut PathfinderStats {
+        &mut self.stats
+    }
+
+    #[inline]
     pub fn reset_stats(&mut self) {
         self.stats = PathfinderStats::default();
     }
@@ -145,13 +147,13 @@ impl Pathfinder {
         self.queue.clear();
         self.queue.push(start_idx);
         self.visited_stamp[start_idx] = stamp;
-        self.stats.nodes_pushed += 1;
+        stat!(self, player_nodes_pushed += 1);
         let mut head = 0;
 
         while head < self.queue.len() {
             let current = self.queue[head];
             head += 1;
-            self.stats.nodes_expanded += 1;
+            stat!(self, player_nodes_expanded += 1);
 
             if current == target_index {
                 return true;
@@ -166,7 +168,7 @@ impl Pathfinder {
                 {
                     self.visited_stamp[next] = stamp;
                     self.queue.push(next);
-                    self.stats.nodes_pushed += 1;
+                    stat!(self, player_nodes_pushed += 1);
                 }
             }
         }

@@ -12,13 +12,14 @@ rusqlite = "0.38.0"
 
 [features]
 stage-profile = []
+stats = []
 
 [[bench]]
 name = "canonical_pipeline"
 harness = false
 
 [[bench]]
-name = "pathfinder"
+name = "player_pathfinder"
 harness = false
 
 [[bench]]

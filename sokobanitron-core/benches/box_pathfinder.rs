@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use sokobanitron_core::box_pathfinder::BoxPathfinder;
+use sokobanitron_core::pathfinder::BoxPathfinder;
 use sokobanitron_core::pathfinder::Position;
 use std::hint::black_box;
 

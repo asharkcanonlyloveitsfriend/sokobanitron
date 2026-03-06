@@ -1,4 +1,4 @@
-use sokobanitron_core::pathfinder::{Pathfinder, Position};
+use sokobanitron_core::pathfinder::{PlayerPathfinder, Position};
 
 #[test]
 fn can_find_path_straight_line_clear() {
@@ -8,7 +8,7 @@ fn can_find_path_straight_line_clear() {
 #   #\n\
 #   #\n\
 #####";
-    let (mut pathfinder, from, to) = parse_pathfinder_with_endpoints(ascii_map);
+    let (mut pathfinder, from, to) = parse_player_pathfinder_with_endpoints(ascii_map);
 
     assert!(pathfinder.can_find_path(from, to, None));
 }
@@ -21,7 +21,7 @@ fn can_find_path_straight_line_blocked_by_wall() {
 #   #\n\
 #   #\n\
 #####";
-    let (mut pathfinder, from, to) = parse_pathfinder_with_endpoints(ascii_map);
+    let (mut pathfinder, from, to) = parse_player_pathfinder_with_endpoints(ascii_map);
 
     assert!(pathfinder.can_find_path(from, to, None));
 }
@@ -35,7 +35,7 @@ fn can_find_path_multi_turn() {
 #x# ### #\n\
 #     # #\n\
 #########";
-    let (mut pathfinder, from, to) = parse_pathfinder_with_endpoints(ascii_map);
+    let (mut pathfinder, from, to) = parse_player_pathfinder_with_endpoints(ascii_map);
 
     assert!(pathfinder.can_find_path(from, to, None));
 }
@@ -48,7 +48,7 @@ fn can_find_path_turn_corner() {
 # # #\n\
 #  x#\n\
 #####";
-    let (mut pathfinder, from, to) = parse_pathfinder_with_endpoints(ascii_map);
+    let (mut pathfinder, from, to) = parse_player_pathfinder_with_endpoints(ascii_map);
 
     assert!(pathfinder.can_find_path(from, to, None));
 }
@@ -59,12 +59,12 @@ fn can_find_path_completely_blocked() {
 #######\n\
 #@ # x#\n\
 #######";
-    let (mut pathfinder, from, to) = parse_pathfinder_with_endpoints(ascii_map);
+    let (mut pathfinder, from, to) = parse_player_pathfinder_with_endpoints(ascii_map);
 
     assert!(!pathfinder.can_find_path(from, to, None));
 }
 
-fn parse_pathfinder_with_endpoints(ascii_map: &str) -> (Pathfinder, Position, Position) {
+fn parse_player_pathfinder_with_endpoints(ascii_map: &str) -> (PlayerPathfinder, Position, Position) {
     let mut from = None;
     let mut to = None;
 
@@ -81,10 +81,10 @@ fn parse_pathfinder_with_endpoints(ascii_map: &str) -> (Pathfinder, Position, Po
     let from = from.expect("map must contain '@'");
     let to = to.expect("map must contain 'x'");
 
-    (create_pathfinder_from_ascii(ascii_map), from, to)
+    (create_player_pathfinder_from_ascii(ascii_map), from, to)
 }
 
-fn create_pathfinder_from_ascii(ascii_map: &str) -> Pathfinder {
+fn create_player_pathfinder_from_ascii(ascii_map: &str) -> PlayerPathfinder {
     let rows = ascii_map
         .lines()
         .map(|row| {
@@ -98,5 +98,5 @@ fn create_pathfinder_from_ascii(ascii_map: &str) -> Pathfinder {
         })
         .collect::<Vec<_>>();
 
-    Pathfinder::from_rows(rows)
+    PlayerPathfinder::from_rows(rows)
 }

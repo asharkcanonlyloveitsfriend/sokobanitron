@@ -1,14 +1,7 @@
-use crate::pathfinder::{Pathfinder, Position};
+use crate::pathfinder::stats::PathfinderStats;
+use crate::pathfinder::{PlayerPathfinder, Position};
+use crate::stat;
 use std::collections::VecDeque;
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct BoxPathfinderStats {
-    pub states_pushed: u64,
-    pub states_expanded: u64,
-    pub push_attempts: u64,
-    pub player_pathfinder_calls: u64,
-    pub player_pathfinder_successes: u64,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct State {
@@ -21,10 +14,12 @@ pub struct BoxPathfinder {
     width: usize,
     height: usize,
     cell_count: usize,
-    planning_grid: Vec<u8>,
+    // Static walkable floor grid used for box planning.
+    // The current box position is handled dynamically in the player pathfinder.
+    walkable_grid: Vec<u8>,
     start_state: State,
-    player_pathfinder: Pathfinder,
-    stats: BoxPathfinderStats,
+    player_pathfinder: PlayerPathfinder,
+    stats: PathfinderStats,
     visited: Vec<u32>,
     generation: u32,
     parents: Vec<Option<State>>,
@@ -49,14 +44,14 @@ impl BoxPathfinder {
             "player_start must be in bounds"
         );
 
-        let mut planning_grid = full_grid
+        let mut walkable_grid = full_grid
             .into_iter()
             .flatten()
             .map(u8::from)
             .collect::<Vec<_>>();
-        planning_grid[box_start.row * width + box_start.col] = 1;
+        walkable_grid[box_start.row * width + box_start.col] = 1;
 
-        let planning_rows = planning_grid
+        let planning_rows = walkable_grid
             .chunks(width)
             .map(|row| row.iter().map(|&cell| cell != 0).collect::<Vec<_>>())
             .collect::<Vec<_>>();
@@ -68,13 +63,13 @@ impl BoxPathfinder {
             width,
             height,
             cell_count,
-            planning_grid,
+            walkable_grid,
             start_state: State {
                 box_pos: box_start,
                 player_pos: player_start,
             },
-            player_pathfinder: Pathfinder::from_rows(planning_rows),
-            stats: BoxPathfinderStats::default(),
+            player_pathfinder: PlayerPathfinder::from_rows(planning_rows),
+            stats: PathfinderStats::default(),
             visited: vec![0u32; state_count],
             generation: 1,
             parents: vec![None; state_count],
@@ -82,18 +77,18 @@ impl BoxPathfinder {
     }
 
     #[inline]
-    pub fn stats(&self) -> &BoxPathfinderStats {
+    pub fn stats(&self) -> &PathfinderStats {
         &self.stats
     }
 
     #[inline]
-    pub fn stats_mut(&mut self) -> &mut BoxPathfinderStats {
+    pub fn stats_mut(&mut self) -> &mut PathfinderStats {
         &mut self.stats
     }
 
     #[inline]
     pub fn reset_stats(&mut self) {
-        self.stats = BoxPathfinderStats::default();
+        self.stats = PathfinderStats::default();
     }
 
     #[inline]
@@ -115,7 +110,7 @@ impl BoxPathfinder {
 
     #[inline]
     fn is_walkable(&self, pos: Position) -> bool {
-        self.planning_grid[self.idx(pos)] != 0
+        self.walkable_grid[self.idx(pos)] != 0
     }
 
     fn offset_pos(pos: Position, dr: isize, dc: isize) -> Option<Position> {
@@ -200,7 +195,7 @@ impl BoxPathfinder {
 
         let mut queue = VecDeque::new();
         queue.push_back(self.start_state);
-        self.stats.states_pushed += 1;
+        stat!(self, states_pushed += 1);
 
         let start_idx = self.state_index(self.start_state);
         self.visited[start_idx] = generation;
@@ -211,7 +206,7 @@ impl BoxPathfinder {
                 box_pos,
                 player_pos,
             } = state;
-            self.stats.states_expanded += 1;
+            stat!(self, states_expanded += 1);
             expanded_count += 1;
 
             if dead.is_none() && expanded_count >= Self::DEAD_ENABLE_AFTER_EXPANDED {
@@ -223,48 +218,54 @@ impl BoxPathfinder {
             }
 
             for (dr, dc) in Self::DIRECTIONS {
-                self.stats.push_attempts += 1;
+                stat!(self, push_attempts += 1);
+
                 let Some(new_box) = Self::offset_pos(box_pos, dr, dc) else {
                     continue;
                 };
-                let Some(push_pos) = Self::offset_pos(box_pos, -dr, -dc) else {
+                let Some(player_push_from) = Self::offset_pos(box_pos, -dr, -dc) else {
                     continue;
                 };
 
+                // Basic legality: bounds and floor checks
+                if !self.is_inside(new_box)
+                    || !self.is_inside(player_push_from)
+                    || !self.is_walkable(new_box)
+                    || !self.is_walkable(player_push_from)
+                {
+                    continue;
+                }
+
+                // Dead-square pruning
                 if let Some(dead_grid) = &dead
-                    && self.is_inside(new_box)
                     && dead_grid[self.idx(new_box)] != 0
                 {
                     continue;
                 }
 
-                if !self.is_inside(new_box)
-                    || !self.is_inside(push_pos)
-                    || !self.is_walkable(new_box)
-                    || !self.is_walkable(push_pos)
-                {
+                // Player must be able to reach the square behind the box
+                stat!(self, player_pathfinder_calls += 1);
+                if !self.player_pathfinder.can_find_path(
+                    player_pos,
+                    player_push_from,
+                    Some(box_pos),
+                ) {
                     continue;
                 }
 
-                self.stats.player_pathfinder_calls += 1;
-                if self
-                    .player_pathfinder
-                    .can_find_path(player_pos, push_pos, Some(box_pos))
-                {
-                    self.stats.player_pathfinder_successes += 1;
+                stat!(self, player_pathfinder_successes += 1);
 
-                    let new_state = State {
-                        box_pos: new_box,
-                        player_pos: box_pos,
-                    };
+                let new_state = State {
+                    box_pos: new_box,
+                    player_pos: box_pos,
+                };
 
-                    let idx = self.state_index(new_state);
-                    if self.visited[idx] != generation {
-                        self.visited[idx] = generation;
-                        self.parents[idx] = Some(state);
-                        queue.push_back(new_state);
-                        self.stats.states_pushed += 1;
-                    }
+                let idx = self.state_index(new_state);
+                if self.visited[idx] != generation {
+                    self.visited[idx] = generation;
+                    self.parents[idx] = Some(state);
+                    queue.push_back(new_state);
+                    stat!(self, states_pushed += 1);
                 }
             }
         }

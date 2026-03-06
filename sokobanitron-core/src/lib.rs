@@ -1,5 +1,4 @@
 pub mod api;
-pub mod box_pathfinder;
 pub mod canonical;
 pub mod error;
 pub mod normalize;
