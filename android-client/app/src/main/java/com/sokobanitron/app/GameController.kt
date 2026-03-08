@@ -224,7 +224,7 @@ class GameController(
     }
 
     fun restart() {
-        gameEngine = GameEngine(level)
+        replaceGameEngine(GameEngine(level))
         refreshShowRestartControl()
         emitStateChanged(RenderDelta.StateChangeAnnotation.Restart)
         uiModeState.longValue = UiMode.GAMEPLAY.ordinal.toLong()
@@ -300,7 +300,7 @@ class GameController(
         currentSetIndex = resolvedSetIndex
         currentLevelIndex = resolvedLevelIndex
         level = levels[currentLevelIndex]
-        gameEngine = GameEngine(level)
+        replaceGameEngine(GameEngine(level))
         refreshShowRestartControl()
         persistSelection()
         refreshGameScreenState()
@@ -390,7 +390,7 @@ class GameController(
             return
         }
         restoreLastSelection()
-        gameEngine = GameEngine(level)
+        replaceGameEngine(GameEngine(level))
         refreshShowRestartControl()
         persistSelection()
         refreshGameScreenState()
@@ -398,6 +398,13 @@ class GameController(
 
     private fun refreshShowRestartControl() {
         showRestartControlState.value = !gameEngine.isAtStart
+    }
+
+    private fun replaceGameEngine(newEngine: GameEngine) {
+        if (::gameEngine.isInitialized) {
+            gameEngine.close()
+        }
+        gameEngine = newEngine
     }
 
     private fun restoreLastSelection() {
@@ -418,8 +425,7 @@ class GameController(
         lastSelectionStore.save(levelSets[currentSetIndex].id, level.puzzleId)
     }
 
-    private fun requireGameScreenState(): GameScreenState =
-        requireNotNull(gameScreenState.value) { "Game screen state is not initialized" }
+    private fun requireGameScreenState(): GameScreenState = requireNotNull(gameScreenState.value) { "Game screen state is not initialized" }
 
     private fun refreshGameScreenState() {
         gameScreenState.value =

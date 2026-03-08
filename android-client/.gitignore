@@ -17,5 +17,5 @@
 # Kotlin
 /.kotlin/
 
-# macOS
-.DS_Store
+# Built JNI artifacts
+/app/src/main/jniLibs/**/*.so
