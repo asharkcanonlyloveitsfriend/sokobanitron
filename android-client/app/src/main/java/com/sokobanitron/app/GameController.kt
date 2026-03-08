@@ -407,6 +407,12 @@ class GameController(
         gameEngine = newEngine
     }
 
+    fun close() {
+        if (::gameEngine.isInitialized) {
+            gameEngine.close()
+        }
+    }
+
     private fun restoreLastSelection() {
         level = levelsInCurrentSet[currentLevelIndex]
         val (savedSetId, savedPuzzleId) = lastSelectionStore.load()

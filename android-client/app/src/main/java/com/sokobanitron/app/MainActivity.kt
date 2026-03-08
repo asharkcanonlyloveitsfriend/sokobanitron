@@ -36,4 +36,9 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onDestroy() {
+        gameController.close()
+        super.onDestroy()
+    }
 }

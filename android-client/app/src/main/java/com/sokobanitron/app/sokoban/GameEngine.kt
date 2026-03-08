@@ -3,7 +3,7 @@ package com.sokobanitron.app.sokoban
 class GameEngine(
     level: Level,
 ) {
-    private val nativeHandle: Long = RustGameEngineBridge.create(level.ascii)
+    private var nativeHandle: Long = RustGameEngineBridge.create(level.ascii)
 
     val playerPosition: Position
         get() = RustGameEngineBridge.getPlayerPosition(nativeHandle)
@@ -47,6 +47,9 @@ class GameEngine(
     }
 
     fun close() {
-        RustGameEngineBridge.destroy(nativeHandle)
+        if (nativeHandle != 0L) {
+            RustGameEngineBridge.destroy(nativeHandle)
+            nativeHandle = 0L
+        }
     }
 }

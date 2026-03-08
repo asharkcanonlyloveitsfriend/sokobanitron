@@ -53,7 +53,11 @@ pub extern "system" fn Java_com_sokobanitron_app_sokoban_RustGameEngineBridge_na
     let Ok(level_ascii) = env.get_string(&level_ascii) else {
         return 0;
     };
-    let Some(engine) = GameEngine::from_ascii(level_ascii.to_str().ok().unwrap_or_default()) else {
+    let Ok(level_str) = level_ascii.to_str() else {
+        return 0;
+    };
+
+    let Some(engine) = GameEngine::from_ascii(level_str) else {
         return 0;
     };
 
