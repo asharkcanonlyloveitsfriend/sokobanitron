@@ -25,3 +25,7 @@ harness = false
 [[bench]]
 name = "box_pathfinder"
 harness = false
+
+[[bench]]
+name = "normalize_build_grid_prune_immovable"
+harness = false

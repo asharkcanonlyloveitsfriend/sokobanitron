@@ -3,77 +3,63 @@ use crate::grid::Grid;
 pub(crate) fn mask_to_player_reachable_in_place(grid: &mut Grid) {
     let height = grid.height();
     let width = grid.width();
-    if height == 0 || width == 0 {
-        return;
-    }
 
     let cells = grid.cells_mut();
 
     // Find the first player tile in row-major order: '@' or '+'.
-    let mut start: Option<usize> = None;
-    for (i, &ch) in cells.iter().enumerate() {
-        if ch == b'@' || ch == b'+' {
-            start = Some(i);
-            break;
-        }
-    }
-
-    // If no player found, match Python behavior by returning unchanged.
-    let Some(start) = start else {
-        return;
-    };
+    let player_index = cells
+        .iter()
+        .position(|&ch| ch == b'@' || ch == b'+')
+        .expect("grid invariant violated: player not found");
 
     // Flood fill reachable tiles where tile != '#'.
     // Mark visited tiles in-place using the high bit (grid chars are ASCII).
     const VISITED: u8 = 0x80;
-    let mut stack: Vec<usize> = Vec::with_capacity(16);
-    cells[start] |= VISITED;
-    stack.push(start);
+    #[inline]
+    fn try_push(cells: &mut [u8], stack: &mut Vec<usize>, neighbor_index: usize, visited: u8) {
+        let neighbor = cells[neighbor_index];
+        if (neighbor & visited) == 0 && neighbor != b'#' {
+            cells[neighbor_index] = neighbor | visited;
+            stack.push(neighbor_index);
+        }
+    }
+    let mut stack: Vec<usize> = Vec::with_capacity(16); // small DFS frontier
+    cells[player_index] |= VISITED;
+    stack.push(player_index);
 
-    while let Some(i) = stack.pop() {
-        let r = i / width;
-        let c = i - (r * width);
+    let grid_len = width * height;
+
+    while let Some(cell_index) = stack.pop() {
+        let row_start = cell_index - (cell_index % width);
+        let row_end = row_start + width;
 
         // up
-        if r > 0 {
-            let ni = i - width;
-            let ch = cells[ni];
-            if (ch & VISITED) == 0 && ch != b'#' {
-                cells[ni] = ch | VISITED;
-                stack.push(ni);
-            }
+        if cell_index >= width {
+            let neighbor_index = cell_index - width;
+            try_push(cells, &mut stack, neighbor_index, VISITED);
         }
+
         // down
-        if r + 1 < height {
-            let ni = i + width;
-            let ch = cells[ni];
-            if (ch & VISITED) == 0 && ch != b'#' {
-                cells[ni] = ch | VISITED;
-                stack.push(ni);
-            }
+        if cell_index + width < grid_len {
+            let neighbor_index = cell_index + width;
+            try_push(cells, &mut stack, neighbor_index, VISITED);
         }
+
         // left
-        if c > 0 {
-            let ni = i - 1;
-            let ch = cells[ni];
-            if (ch & VISITED) == 0 && ch != b'#' {
-                cells[ni] = ch | VISITED;
-                stack.push(ni);
-            }
+        if cell_index > row_start {
+            let neighbor_index = cell_index - 1;
+            try_push(cells, &mut stack, neighbor_index, VISITED);
         }
+
         // right
-        if c + 1 < width {
-            let ni = i + 1;
-            let ch = cells[ni];
-            if (ch & VISITED) == 0 && ch != b'#' {
-                cells[ni] = ch | VISITED;
-                stack.push(ni);
-            }
+        if cell_index + 1 < row_end {
+            let neighbor_index = cell_index + 1;
+            try_push(cells, &mut stack, neighbor_index, VISITED);
         }
     }
 
     // Mask unreachable non-walls to '#', and clear visited marker from reachable tiles.
-    for ch in cells.iter_mut().take(height * width) {
+    for ch in cells.iter_mut() {
         let current = *ch;
         if (current & VISITED) != 0 {
             *ch = current & !VISITED;
@@ -93,4 +79,44 @@ pub fn mask_to_player_reachable(lines: Vec<String>) -> Vec<String> {
     let mut grid = Grid::from_lines(lines);
     mask_to_player_reachable_in_place(&mut grid);
     grid.into_lines()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mask_to_player_reachable;
+
+    fn lines(grid: &str) -> Vec<String> {
+        grid.trim_matches('\n')
+            .lines()
+            .map(|l| l.trim_end().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn masks_disconnected_interior_island() {
+        let grid = "
+#######
+#.@   #
+# ### #
+# #*# #
+# ### #
+#   $ #
+#######
+";
+
+        let result = mask_to_player_reachable(lines(grid));
+
+        assert_eq!(
+            result,
+            vec![
+                "#######".to_string(),
+                "#.@   #".to_string(),
+                "# ### #".to_string(),
+                "# ### #".to_string(),
+                "# ### #".to_string(),
+                "#   $ #".to_string(),
+                "#######".to_string(),
+            ]
+        );
+    }
 }
