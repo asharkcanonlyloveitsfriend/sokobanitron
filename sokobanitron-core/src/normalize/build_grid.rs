@@ -1,17 +1,17 @@
 use crate::grid::Grid;
 use crate::grid::validation::{assert_has_goal, assert_single_player, validate_characters};
 
-pub(crate) fn build_rectangular_grid(lines: &[String]) -> Grid {
-    validate_characters(lines);
-    assert_single_player(lines);
-    assert_has_goal(lines);
+pub(crate) fn build_rectangular_grid(lines: Vec<String>) -> Grid {
+    validate_characters(&lines);
+    assert_single_player(&lines);
+    assert_has_goal(&lines);
 
     let height = lines.len();
     let width = lines.iter().map(String::len).max().unwrap();
 
     let mut cells = vec![b'#'; height * width];
     let mut row_start = 0;
-    for line in lines {
+    for line in &lines {
         let bytes = line.as_bytes();
         let len = bytes.len();
 
@@ -42,8 +42,7 @@ mod tests {
    #####
 ";
 
-        let lines = lines(grid);
-        let g = build_rectangular_grid(&lines);
+        let g = build_rectangular_grid(lines(grid));
 
         assert_eq!(
             g.into_lines(),
@@ -63,8 +62,7 @@ mod tests {
 #####
 ";
 
-        let lines = lines(grid);
-        let g = build_rectangular_grid(&lines);
+        let g = build_rectangular_grid(lines(grid));
 
         assert_eq!(
             g.into_lines(),
@@ -82,8 +80,7 @@ mod tests {
 @$.
 ";
 
-        let lines = lines(grid);
-        let g = build_rectangular_grid(&lines);
+        let g = build_rectangular_grid(lines(grid));
 
         assert_eq!(g.into_lines(), vec!["@$.".to_string(),]);
     }

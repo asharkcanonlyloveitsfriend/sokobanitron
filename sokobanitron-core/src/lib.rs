@@ -11,7 +11,6 @@ mod util;
 pub use crate::util::stage_profile;
 
 pub use api::canonical_hash::canonical_hash;
-pub use api::normalize::normalize_build_grid_then_prune_immovable_boxes_lines;
 pub use api::normalize::{normalize_to_walkable_region, normalize_to_walkable_region_lines};
 pub use error::CoreError;
 pub use normalize::dead_end::prune_dead_end_floors;

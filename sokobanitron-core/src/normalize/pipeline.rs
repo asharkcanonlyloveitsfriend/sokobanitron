@@ -9,7 +9,7 @@ use crate::util::stage_profile;
 
 pub fn normalize_to_walkable_region_lines(lines: Vec<String>) -> Vec<String> {
     let t0 = Instant::now();
-    let mut grid = build_rectangular_grid(&lines);
+    let mut grid = build_rectangular_grid(lines);
     stage_profile::record("normalize.build_grid", t0.elapsed());
 
     let t1 = Instant::now();
@@ -38,26 +38,9 @@ pub fn normalize_to_walkable_region(lines: Vec<String>) -> Vec<String> {
     normalize_to_walkable_region_lines(lines)
 }
 
-pub fn normalize_build_grid_then_prune_immovable_boxes_lines(lines: &[String]) -> Vec<String> {
-    let t0 = Instant::now();
-    let mut grid = build_rectangular_grid(lines);
-    stage_profile::record("normalize_slice.build_grid", t0.elapsed());
-
-    let t1 = Instant::now();
-    prune_immovable_boxes_on_goals_in_place(&mut grid);
-    stage_profile::record("normalize_slice.prune_immovable_boxes", t1.elapsed());
-
-    let t2 = Instant::now();
-    let out = grid.into_lines();
-    stage_profile::record("normalize_slice.into_lines", t2.elapsed());
-    out
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        normalize_build_grid_then_prune_immovable_boxes_lines, normalize_to_walkable_region_lines,
-    };
+    use super::normalize_to_walkable_region_lines;
 
     fn normalize_grid(grid: &str) -> Vec<String> {
         let lines: Vec<String> = grid
@@ -227,32 +210,4 @@ mod tests {
         assert_eq!(grid, normalized);
     }
 
-    #[test]
-    fn normalize_slice_build_grid_then_prune_immovable_boxes() {
-        let grid = "
-#######
-#.@   #
-# **  #
-# **  #
-#   $ #
-#######
-";
-        let lines: Vec<String> = grid
-            .trim_matches('\n')
-            .lines()
-            .map(|line| line.trim_end().to_string())
-            .collect();
-
-        assert_eq!(
-            normalize_build_grid_then_prune_immovable_boxes_lines(&lines),
-            vec![
-                "#######".to_string(),
-                "#.@   #".to_string(),
-                "# ##  #".to_string(),
-                "# ##  #".to_string(),
-                "#   $ #".to_string(),
-                "#######".to_string(),
-            ]
-        );
-    }
 }
