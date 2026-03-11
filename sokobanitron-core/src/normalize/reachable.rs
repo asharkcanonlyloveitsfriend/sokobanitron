@@ -12,8 +12,7 @@ pub(crate) fn mask_to_player_reachable_in_place(grid: &mut Grid) {
         .position(|&ch| ch == b'@' || ch == b'+')
         .expect("grid invariant violated: player not found");
 
-    // Flood fill reachable tiles where tile != '#'.
-    // Mark visited tiles in-place using the high bit (grid chars are ASCII).
+    // Flood-fill non-wall tiles, marking visited cells with the high bit.
     const VISITED: u8 = 0x80;
     #[inline]
     fn try_push(cells: &mut [u8], stack: &mut Vec<usize>, neighbor_index: usize, visited: u8) {

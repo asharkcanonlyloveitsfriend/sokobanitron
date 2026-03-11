@@ -39,14 +39,12 @@ internal class AnimationRunner(
 
         active = null
 
-        // Clean up previous animation region
         previous?.let { invalidateRects(it.dirtyRects()) }
 
         if (next == null) return
 
         active = next
 
-        // Invalidate initial region if needed
         invalidateRects(next.dirtyRects())
 
         scheduleNextStep()

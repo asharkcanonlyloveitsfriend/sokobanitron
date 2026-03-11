@@ -6,7 +6,7 @@ use sokobanitron_core::canonical_hash;
 
 #[test]
 fn canonical_hash_matches_database() {
-    // Resolve DB path relative to workspace root
+    // Resolve DB path relative to the sokobanitron-core crate root.
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let db_path: PathBuf = [manifest_dir, "benches", "fixtures", "puzzles.db"]
         .iter()

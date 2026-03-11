@@ -3,120 +3,111 @@ use crate::grid::Grid;
 pub(crate) fn prune_dead_end_floors_in_place(grid: &mut Grid) {
     let height = grid.height();
     let width = grid.width();
-    if height == 0 || width == 0 {
-        return;
-    }
 
     let cells = grid.cells_mut();
 
-    // Degree for ' ' tiles: number of non-wall neighbors (neighbor != '#').
-    // Non-floor tiles have degree -1.
-    let mut deg: Vec<i8> = vec![-1; height * width];
-    let mut stack: Vec<usize> = Vec::new();
+    // degree[i] is the non-wall neighbor count for floor tiles; non-floor tiles stay -1.
+    let mut degree: Vec<i8> = vec![-1; height * width];
+    let mut dead_end_stack: Vec<usize> = Vec::new();
 
-    for r in 0..height {
-        let row_base = r * width;
-        for c in 0..width {
-            let i = row_base + c;
-            if cells[i] != b' ' {
+    for row in 0..height {
+        let row_start = row * width;
+        for col in 0..width {
+            let idx = row_start + col;
+            if cells[idx] != b' ' {
                 continue;
             }
 
-            let mut d: i8 = 0;
+            let mut degree_count: i8 = 0;
 
             // up
-            if r > 0 {
-                let ni = i - width;
-                if cells[ni] != b'#' {
-                    d += 1;
+            if row > 0 {
+                let neighbor_idx = idx - width;
+                if cells[neighbor_idx] != b'#' {
+                    degree_count += 1;
                 }
             }
             // down
-            if r + 1 < height {
-                let ni = i + width;
-                if cells[ni] != b'#' {
-                    d += 1;
+            if row + 1 < height {
+                let neighbor_idx = idx + width;
+                if cells[neighbor_idx] != b'#' {
+                    degree_count += 1;
                 }
             }
             // left
-            if c > 0 {
-                let ni = i - 1;
-                if cells[ni] != b'#' {
-                    d += 1;
+            if col > 0 {
+                let neighbor_idx = idx - 1;
+                if cells[neighbor_idx] != b'#' {
+                    degree_count += 1;
                 }
             }
             // right
-            if c + 1 < width {
-                let ni = i + 1;
-                if cells[ni] != b'#' {
-                    d += 1;
+            if col + 1 < width {
+                let neighbor_idx = idx + 1;
+                if cells[neighbor_idx] != b'#' {
+                    degree_count += 1;
                 }
             }
 
-            deg[i] = d;
-            if d <= 1 {
-                stack.push(i);
+            degree[idx] = degree_count;
+            if degree_count <= 1 {
+                dead_end_stack.push(idx);
             }
         }
     }
 
-    while let Some(i) = stack.pop() {
-        if cells[i] != b' ' {
-            continue;
-        }
-        if deg[i] > 1 {
+    while let Some(idx) = dead_end_stack.pop() {
+        if cells[idx] != b' ' {
             continue;
         }
 
-        // Remove dead-end floor.
-        cells[i] = b'#';
+        cells[idx] = b'#';
 
-        let r = i / width;
-        let c = i - (r * width);
+        let row = idx / width;
+        let col = idx - (row * width);
 
-        // For each neighboring floor tile, decrement its degree.
-        // Seed it if it becomes a dead end.
+        // Decrement neighboring floor degrees and enqueue newly created dead ends.
         // up
-        if r > 0 {
-            let ni = i - width;
-            if cells[ni] == b' ' {
-                let nd = deg[ni] - 1;
-                deg[ni] = nd;
-                if nd <= 1 {
-                    stack.push(ni);
+        if row > 0 {
+            let neighbor_idx = idx - width;
+            if cells[neighbor_idx] == b' ' {
+                let new_degree = degree[neighbor_idx] - 1;
+                degree[neighbor_idx] = new_degree;
+                if new_degree <= 1 {
+                    dead_end_stack.push(neighbor_idx);
                 }
             }
         }
         // down
-        if r + 1 < height {
-            let ni = i + width;
-            if cells[ni] == b' ' {
-                let nd = deg[ni] - 1;
-                deg[ni] = nd;
-                if nd <= 1 {
-                    stack.push(ni);
+        if row + 1 < height {
+            let neighbor_idx = idx + width;
+            if cells[neighbor_idx] == b' ' {
+                let new_degree = degree[neighbor_idx] - 1;
+                degree[neighbor_idx] = new_degree;
+                if new_degree <= 1 {
+                    dead_end_stack.push(neighbor_idx);
                 }
             }
         }
         // left
-        if c > 0 {
-            let ni = i - 1;
-            if cells[ni] == b' ' {
-                let nd = deg[ni] - 1;
-                deg[ni] = nd;
-                if nd <= 1 {
-                    stack.push(ni);
+        if col > 0 {
+            let neighbor_idx = idx - 1;
+            if cells[neighbor_idx] == b' ' {
+                let new_degree = degree[neighbor_idx] - 1;
+                degree[neighbor_idx] = new_degree;
+                if new_degree <= 1 {
+                    dead_end_stack.push(neighbor_idx);
                 }
             }
         }
         // right
-        if c + 1 < width {
-            let ni = i + 1;
-            if cells[ni] == b' ' {
-                let nd = deg[ni] - 1;
-                deg[ni] = nd;
-                if nd <= 1 {
-                    stack.push(ni);
+        if col + 1 < width {
+            let neighbor_idx = idx + 1;
+            if cells[neighbor_idx] == b' ' {
+                let new_degree = degree[neighbor_idx] - 1;
+                degree[neighbor_idx] = new_degree;
+                if new_degree <= 1 {
+                    dead_end_stack.push(neighbor_idx);
                 }
             }
         }

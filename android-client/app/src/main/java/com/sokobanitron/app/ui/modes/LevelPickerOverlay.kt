@@ -99,31 +99,27 @@ fun LevelPickerOverlay(
     val selectedIndex = levels.indexOfFirst { it.puzzleId == selectedPuzzleId }
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
-    // Compose's Modifier.aspectRatio() expects width / height.
-    // Using screenWidth/screenHeight yields portrait cards on a portrait screen.
+    // aspectRatio expects width/height; using screen ratio keeps card orientation natural.
     val cardAspect =
         configuration.screenWidthDp.toFloat() / configuration.screenHeightDp.toFloat()
 
     LaunchedEffect(selectedIndex, refreshNonce) {
         if (selectedIndex < 0) return@LaunchedEffect
 
-        // Wait until the grid has measured so we know spanCount and viewport height.
+        // Wait for layout info so centering can use actual viewport and cell sizes.
         repeat(20) {
             val viewportWidthPx = gridState.layoutInfo.viewportSize.width
             val viewportHeightPx = gridState.layoutInfo.viewportSize.height
             if (viewportWidthPx > 0 && viewportHeightPx > 0) {
                 val spacingPx = with(density) { 10.dp.roundToPx() }
 
-                // We now use fixed columns: GridCells.Fixed(3).
                 val spanCount = 3
 
-                // Compute the actual item height from the measured viewport width and the card aspect ratio.
                 val cellWidthPx =
                     ((viewportWidthPx - (spacingPx * (spanCount - 1))) / spanCount)
                         .coerceAtLeast(1)
                 val cellHeightPx = (cellWidthPx / cardAspect).roundToInt().coerceAtLeast(1)
 
-                // One row's vertical step is the card height plus the vertical spacing.
                 val itemStepPx = cellHeightPx + spacingPx
                 val rowsPerScreen = (viewportHeightPx / itemStepPx).coerceAtLeast(1)
                 val selectedRow = selectedIndex / spanCount
@@ -135,7 +131,7 @@ fun LevelPickerOverlay(
             }
         }
 
-        // Fallback if layout info didn't become available quickly.
+        // Fallback when layout info does not stabilize quickly.
         gridState.scrollToItem(selectedIndex)
         gridReady = 1
     }
@@ -714,7 +710,6 @@ private fun LevelMapPreview(
                     androidx.compose.ui.graphics.drawscope
                         .Stroke(width = strokeWidth),
             )
-            // vertical extension
             drawLine(
                 color = selectionColor,
                 start =
@@ -725,7 +720,6 @@ private fun LevelMapPreview(
                         .Offset(left, top + radius + extension),
                 strokeWidth = strokeWidth,
             )
-            // horizontal extension
             drawLine(
                 color = selectionColor,
                 start =

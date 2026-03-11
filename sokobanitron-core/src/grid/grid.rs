@@ -54,13 +54,6 @@ impl Grid {
         self.debug_assert_invariants();
     }
 
-    pub(crate) fn clear(&mut self) {
-        self.width = 0;
-        self.height = 0;
-        self.cells.clear();
-        self.debug_assert_invariants();
-    }
-
     pub(crate) fn from_shape_and_cells(width: usize, height: usize, cells: Vec<u8>) -> Self {
         let grid = Self {
             width,

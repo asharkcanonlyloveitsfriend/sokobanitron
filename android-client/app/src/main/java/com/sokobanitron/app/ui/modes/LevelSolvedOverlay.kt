@@ -102,14 +102,12 @@ class LevelSolvedOverlay
             canvas.drawRect(box, fillPaint)
             canvas.drawRect(box, borderPaint)
 
-            // Draw left icon drawable
             val leftIconLeft = box.left + horizontalPadding
             val leftIconTop = box.centerY() - iconSize / 2f
             val leftIconRight = leftIconLeft + iconSize
             val leftIconBottom = leftIconTop + iconSize
 
-            // Set left icon hit rect - expand to cover larger tap area
-            // Compute text start X (left side of text)
+            // Expand icon hit area to the left half of the panel up to the text.
             val textStartX = box.left + horizontalPadding + iconSize + iconSpacing
             leftIconHitRect.set(
                 box.left,
@@ -127,14 +125,12 @@ class LevelSolvedOverlay
             )
             leftIconToDraw.draw(canvas)
 
-            // Draw right icon drawable
             val rightIconRight = box.left + box.width() - horizontalPadding
             val rightIconLeft = rightIconRight - iconSize
             val rightIconTop = box.centerY() - iconSize / 2f
             val rightIconBottom = rightIconTop + iconSize
 
-            // Set right icon hit rect - expand to cover larger tap area
-            // Compute text end X (right side of text)
+            // Expand icon hit area to the right half of the panel after the text.
             val textCenterX = textStartX + textWidth / 2f
             val textEndX = textCenterX + textWidth / 2f
             rightIconHitRect.set(
@@ -153,7 +149,6 @@ class LevelSolvedOverlay
             )
             rightIconToDraw.draw(canvas)
 
-            // Draw text centered vertically and horizontally between icons
             val textX = textStartX + textWidth / 2f
             val textY = box.centerY() - (fontMetrics.descent + fontMetrics.ascent) / 2f
             canvas.drawText(text, textX, textY, textPaint)
