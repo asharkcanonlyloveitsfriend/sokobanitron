@@ -3,9 +3,6 @@ use crate::grid::Grid;
 pub(crate) fn trim_outer_walls_in_place(grid: &mut Grid) {
     let height = grid.height();
     let width = grid.width();
-    if height == 0 || width == 0 {
-        return;
-    }
 
     let cells = grid.cells();
     let mut top = 0usize;
@@ -21,11 +18,6 @@ pub(crate) fn trim_outer_walls_in_place(grid: &mut Grid) {
             break;
         }
         top += 1;
-    }
-
-    if top == height {
-        grid.clear();
-        return;
     }
 
     let mut bottom = height - 1;
@@ -59,7 +51,7 @@ pub(crate) fn trim_outer_walls_in_place(grid: &mut Grid) {
     }
 
     let mut right = width - 1;
-    while right >= left {
+    while right > left {
         let mut all_wall = true;
         for r in top..=bottom {
             if cells[grid.idx(r, right)] != b'#' {
@@ -68,9 +60,6 @@ pub(crate) fn trim_outer_walls_in_place(grid: &mut Grid) {
             }
         }
         if !all_wall {
-            break;
-        }
-        if right == 0 {
             break;
         }
         right -= 1;
@@ -96,4 +85,53 @@ pub fn trim_outer_walls(lines: Vec<String>) -> Vec<String> {
     let mut grid = Grid::from_lines(lines);
     trim_outer_walls_in_place(&mut grid);
     grid.into_lines()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::trim_outer_walls;
+
+    fn lines(grid: &str) -> Vec<String> {
+        grid.trim_matches('\n')
+            .lines()
+            .map(|l| l.trim_end().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn trims_fully_walled_border() {
+        let grid = "
+#######
+#.@   #
+# ##  #
+# ##  #
+#   $ #
+#######
+";
+
+        let result = trim_outer_walls(lines(grid));
+
+        assert_eq!(
+            result,
+            vec![
+                ".@   ".to_string(),
+                " ##  ".to_string(),
+                " ##  ".to_string(),
+                "   $ ".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_non_wall_border_tiles() {
+        let grid = "
+.@#
+#$#
+###
+";
+
+        let result = trim_outer_walls(lines(grid));
+
+        assert_eq!(result, vec![".@".to_string(), "#$".to_string(),]);
+    }
 }

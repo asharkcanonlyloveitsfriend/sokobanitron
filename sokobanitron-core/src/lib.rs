@@ -15,8 +15,6 @@ pub use api::normalize::{normalize_to_walkable_region, normalize_to_walkable_reg
 pub use error::CoreError;
 pub use normalize::dead_end::prune_dead_end_floors;
 pub use normalize::immovable_boxes::prune_immovable_boxes_on_goals;
-pub use normalize::leading_indentation::normalize_leading_indentation_with_walls;
-pub use normalize::leading_indentation::normalize_leading_indentation_with_walls_in_place;
 pub use normalize::reachable::mask_to_player_reachable;
 pub use normalize::rectangularize::rectangularize_with_walls;
 pub use normalize::rectangularize::rectangularize_with_walls_in_place;

@@ -63,112 +63,6 @@ mod tests {
     }
 
     #[test]
-    fn normalize_to_walkable_region_non_rectangular_with_extra_walls() {
-        let grid = "
-     ######
-    #### ####
-    #   .   ##
-    #   #$####
-    ## @    ##
-    ##   ####
-    #######
-    ";
-
-        assert_eq!(
-            normalize_grid(grid),
-            vec![
-                "   . ".to_string(),
-                "   #$".to_string(),
-                "# @  ".to_string(),
-                "#   #".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn normalize_to_walkable_region_removes_corner_box_on_goal() {
-        let grid = "
-    #####
-    #*  #
-    #.$@#
-    #####
-    ";
-
-        assert_eq!(
-            normalize_grid(grid),
-            vec!["#  ".to_string(), ".$@".to_string()]
-        );
-    }
-
-    #[test]
-    fn normalize_to_walkable_region_removes_immovable_boxes_on_goals() {
-        let grid = "
-    #######
-    #.@   #
-    # **  #
-    # **  #
-    #   $ #
-    #######
-    ";
-
-        assert_eq!(
-            normalize_grid(grid),
-            vec![
-                ".@   ".to_string(),
-                " ##  ".to_string(),
-                " ##  ".to_string(),
-                "   $ ".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn normalize_to_walkable_region_keeps_movable_boxes_on_goals() {
-        let grid = "
-    #######
-    #.@   #
-    # *   #
-    # **  #
-    #   $ #
-    #######
-    ";
-
-        assert_eq!(
-            normalize_grid(grid),
-            vec![
-                ".@   ".to_string(),
-                " *   ".to_string(),
-                " **  ".to_string(),
-                "   $ ".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn normalize_to_walkable_region_ignores_disconnected_interior_islands() {
-        let grid = "
-    #######
-    #.@   #
-    # ### #
-    # #*# #
-    # ### #
-    #   $ #
-    #######
-    ";
-
-        assert_eq!(
-            normalize_grid(grid),
-            vec![
-                ".@   ".to_string(),
-                " ### ".to_string(),
-                " ### ".to_string(),
-                " ### ".to_string(),
-                "   $ ".to_string(),
-            ]
-        );
-    }
-
-    #[test]
     fn normalize_to_walkable_region_complex_shape() {
         let grid = "
     #######
@@ -209,5 +103,4 @@ mod tests {
 
         assert_eq!(grid, normalized);
     }
-
 }

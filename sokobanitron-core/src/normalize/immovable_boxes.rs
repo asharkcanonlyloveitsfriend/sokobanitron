@@ -148,6 +148,28 @@ mod tests {
     }
 
     #[test]
+    fn removes_corner_box_on_goal() {
+        let grid = "
+#####
+#*  #
+#.$@#
+#####
+";
+
+        let result = prune_immovable_boxes_on_goals(lines(grid));
+
+        assert_eq!(
+            result,
+            vec![
+                "#####".to_string(),
+                "##  #".to_string(),
+                "#.$@#".to_string(),
+                "#####".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn does_not_treat_single_resolved_axis_neighbor_as_sufficient() {
         let grid = "
 #########

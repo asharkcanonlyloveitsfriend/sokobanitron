@@ -125,3 +125,37 @@ pub fn prune_dead_end_floors(lines: Vec<String>) -> Vec<String> {
     prune_dead_end_floors_in_place(&mut grid);
     grid.into_lines()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::prune_dead_end_floors;
+
+    fn lines(grid: &str) -> Vec<String> {
+        grid.trim_matches('\n')
+            .lines()
+            .map(|l| l.trim_end().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn prunes_dead_end_floor_tiles() {
+        let grid = "
+#####
+#@$.#
+# # #
+#####
+";
+
+        let result = prune_dead_end_floors(lines(grid));
+
+        assert_eq!(
+            result,
+            vec![
+                "#####".to_string(),
+                "#@$.#".to_string(),
+                "#####".to_string(),
+                "#####".to_string(),
+            ]
+        );
+    }
+}
