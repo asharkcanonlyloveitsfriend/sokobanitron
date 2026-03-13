@@ -1,0 +1,8 @@
+[package]
+name = "sokobanitron-gameplay"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+sokobanitron-core = { path = "../sokobanitron-core" }
+sokobanitron_game_engine_jni = { package = "sokobanitron-game-engine", path = "../game-engine" }

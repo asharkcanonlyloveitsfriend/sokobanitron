@@ -1,0 +1,10 @@
+[package]
+name = "desktop-client"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+pixels = "0.15"
+renderer = { path = "../renderer" }
+sokobanitron-gameplay = { path = "../gameplay" }
+winit = "0.30"

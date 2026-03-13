@@ -1,0 +1,10 @@
+[package]
+name = "renderer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+font8x8 = "0.3"
+image = { version = "0.25", default-features = false, features = ["png"] }
+resvg = { version = "0.45", default-features = false }
+sokobanitron-gameplay = { path = "../gameplay" }

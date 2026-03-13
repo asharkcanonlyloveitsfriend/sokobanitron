@@ -1,7 +1,10 @@
 [workspace]
 members = [
     "sokobanitron-core",
-    "game-engine"
+    "game-engine",
+    "gameplay",
+    "desktop-client",
+    "renderer",
 ]
 
 resolver = "2"
