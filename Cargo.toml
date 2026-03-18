@@ -4,6 +4,7 @@ members = [
     "game-engine",
     "gameplay",
     "desktop-client",
+    "kindle-client",
     "renderer",
 ]
 
