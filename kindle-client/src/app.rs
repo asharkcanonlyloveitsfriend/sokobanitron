@@ -46,8 +46,19 @@ impl KindleApp {
 
         let mut touch = platform::TouchReader::new()?;
         loop {
-            let (raw_x, raw_y) = touch.next_tap_raw()?;
-            self.on_tap(raw_x, raw_y)?;
+            match touch.next_input_event()? {
+                platform::AppInputEvent::Tap(raw_x, raw_y) => self.on_tap(raw_x, raw_y)?,
+                platform::AppInputEvent::PowerShortPress => {
+                    self.display.force_full_refresh_next();
+                    self.render()?;
+                }
+                platform::AppInputEvent::PowerLongPress => {
+                    if let Err(err) = platform::start_lab126_gui() {
+                        eprintln!("warning: failed to restart lab126_gui: {err}");
+                    }
+                    return Ok(());
+                }
+            }
         }
     }
 

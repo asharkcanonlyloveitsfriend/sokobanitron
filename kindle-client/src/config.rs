@@ -3,6 +3,7 @@ pub const HEIGHT: usize = 1448;
 pub const STRIDE: usize = 1088;
 
 pub const TOUCH_DEVICE: &str = "/dev/input/event1";
+pub const POWER_DEVICE: &str = "/dev/input/event0";
 pub const FRAMEBUFFER_DEVICE: &str = "/dev/fb0";
 pub const REFRESH_DEVICE: &str = "/sys/devices/platform/imx_epdc_fb/mxc_epdc_update";
 pub const PREFERENCES_PATH: &str = "/mnt/us/kindle-client-preferences.json";
@@ -20,6 +21,7 @@ pub const UI_PLAY_BUTTON_HEIGHT: usize = UI_BUTTON_SIZE / 2;
 pub const BOARD_HORIZONTAL_MARGIN: usize = UI_BUTTON_MARGIN + UI_BUTTON_SIZE;
 pub const BOARD_VERTICAL_MARGIN: usize = UI_BUTTON_MARGIN + UI_PLAY_BUTTON_HEIGHT;
 pub const BLINK_ON_MS: u64 = 120;
+pub const POWER_LONG_PRESS_MS: u64 = 1000;
 pub const BOX_VANISH_STEPS: usize = 3;
 pub const BOX_VANISH_STEP_MS: u64 = 35;
 pub const BOX_VANISH_START_SCALE_PERCENT: usize = 68;

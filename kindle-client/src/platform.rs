@@ -3,6 +3,8 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Result, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::FileExt;
+use std::process::Command;
+use std::time::{Duration, Instant};
 
 const EV_SYN: u16 = 0x00;
 const EV_KEY: u16 = 0x01;
@@ -10,6 +12,7 @@ const EV_ABS: u16 = 0x03;
 
 const SYN_REPORT: u16 = 0;
 const BTN_TOUCH: u16 = 0x14a;
+const KEY_POWER: u16 = 116;
 const ABS_X: u16 = 0x00;
 const ABS_Y: u16 = 0x01;
 const ABS_MT_POSITION_X: u16 = 0x35;
@@ -190,6 +193,10 @@ impl Display {
         self.present_rgba_inner(rgba, Some(WAVEFORM_MODE_DU))
     }
 
+    pub fn force_full_refresh_next(&mut self) {
+        self.previous_frame = None;
+    }
+
     fn present_rgba_inner(&mut self, rgba: &[u8], partial_waveform: Option<u32>) -> Result<()> {
         let next = rgba_to_grayscale_framebuffer(rgba);
         let previous = self.previous_frame.as_ref();
@@ -319,60 +326,193 @@ impl Display {
 
 pub struct TouchReader {
     touch: File,
+    power: Option<File>,
     packet: [u8; std::mem::size_of::<InputEvent>()],
+    power_packet: [u8; std::mem::size_of::<InputEvent>()],
     latest_x: Option<i32>,
     latest_y: Option<i32>,
     touching: bool,
     pending_tap: bool,
+    power_down_at: Option<Instant>,
+    power_long_emitted: bool,
+}
+
+pub enum AppInputEvent {
+    Tap(i32, i32),
+    PowerShortPress,
+    PowerLongPress,
 }
 
 impl TouchReader {
     pub fn new() -> Result<Self> {
         let touch = OpenOptions::new().read(true).open(config::TOUCH_DEVICE)?;
+        let power = OpenOptions::new()
+            .read(true)
+            .open(config::POWER_DEVICE)
+            .ok();
         if let Err(err) = grab_input(&touch) {
             eprintln!("warning: failed to grab input device: {err}");
         }
 
         Ok(Self {
             touch,
+            power,
             packet: [0u8; std::mem::size_of::<InputEvent>()],
+            power_packet: [0u8; std::mem::size_of::<InputEvent>()],
             latest_x: None,
             latest_y: None,
             touching: false,
             pending_tap: false,
+            power_down_at: None,
+            power_long_emitted: false,
         })
     }
 
-    pub fn next_tap_raw(&mut self) -> Result<(i32, i32)> {
+    pub fn next_input_event(&mut self) -> Result<AppInputEvent> {
         loop {
-            self.touch.read_exact(&mut self.packet)?;
-            let event = parse_input_event(&self.packet);
+            self.wait_for_input()?;
 
-            match (event.type_, event.code) {
-                (EV_ABS, ABS_X) | (EV_ABS, ABS_MT_POSITION_X) => self.latest_x = Some(event.value),
-                (EV_ABS, ABS_Y) | (EV_ABS, ABS_MT_POSITION_Y) => self.latest_y = Some(event.value),
-                (EV_KEY, BTN_TOUCH) => {
-                    if event.value != 0 {
-                        self.touching = true;
-                        self.pending_tap = true;
-                    } else {
-                        self.touching = false;
+            if self.read_touch_event()? {
+                if self.touching && self.pending_tap {
+                    if let (Some(raw_x), Some(raw_y)) = (self.latest_x, self.latest_y) {
                         self.pending_tap = false;
+                        return Ok(AppInputEvent::Tap(raw_x, raw_y));
                     }
+                } else if !self.touching {
+                    self.pending_tap = false;
                 }
-                (EV_SYN, SYN_REPORT) => {
-                    if self.touching && self.pending_tap {
-                        if let (Some(raw_x), Some(raw_y)) = (self.latest_x, self.latest_y) {
-                            self.pending_tap = false;
-                            return Ok((raw_x, raw_y));
+            }
+
+            if let Some(power_event) = self.read_power_event()? {
+                return Ok(power_event);
+            }
+        }
+    }
+
+    fn wait_for_input(&self) -> Result<()> {
+        let mut fds = [PollFd {
+            fd: self.touch.as_raw_fd(),
+            events: POLLIN,
+            revents: 0,
+        }; 2];
+        let mut nfds = 1usize;
+        if let Some(power) = &self.power {
+            fds[1] = PollFd {
+                fd: power.as_raw_fd(),
+                events: POLLIN,
+                revents: 0,
+            };
+            nfds = 2;
+        }
+
+        // SAFETY: pointers and nfds are valid for the stack-allocated array.
+        let rc = unsafe { poll(fds.as_mut_ptr(), nfds, -1) };
+        if rc < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    }
+
+    fn read_touch_event(&mut self) -> Result<bool> {
+        let mut fds = [PollFd {
+            fd: self.touch.as_raw_fd(),
+            events: POLLIN,
+            revents: 0,
+        }];
+        // SAFETY: pointers and nfds are valid for the stack-allocated array.
+        let rc = unsafe { poll(fds.as_mut_ptr(), 1, 0) };
+        if rc < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if rc == 0 || (fds[0].revents & POLLIN) == 0 {
+            return Ok(false);
+        }
+
+        self.touch.read_exact(&mut self.packet)?;
+        let event = parse_input_event(&self.packet);
+        match (event.type_, event.code) {
+            (EV_ABS, ABS_X) | (EV_ABS, ABS_MT_POSITION_X) => self.latest_x = Some(event.value),
+            (EV_ABS, ABS_Y) | (EV_ABS, ABS_MT_POSITION_Y) => self.latest_y = Some(event.value),
+            (EV_KEY, BTN_TOUCH) => {
+                if event.value != 0 {
+                    self.touching = true;
+                    self.pending_tap = true;
+                } else {
+                    self.touching = false;
+                    self.pending_tap = false;
+                }
+            }
+            _ => {}
+        }
+        Ok(event.type_ == EV_SYN && event.code == SYN_REPORT)
+    }
+
+    fn read_power_event(&mut self) -> Result<Option<AppInputEvent>> {
+        let Some(power) = self.power.as_mut() else {
+            return Ok(None);
+        };
+
+        let mut fds = [PollFd {
+            fd: power.as_raw_fd(),
+            events: POLLIN,
+            revents: 0,
+        }];
+        // SAFETY: pointers and nfds are valid for the stack-allocated array.
+        let rc = unsafe { poll(fds.as_mut_ptr(), 1, 0) };
+        if rc < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if rc == 0 || (fds[0].revents & POLLIN) == 0 {
+            return Ok(None);
+        }
+
+        power.read_exact(&mut self.power_packet)?;
+        let event = parse_input_event(&self.power_packet);
+        if event.type_ == EV_KEY && event.code == KEY_POWER {
+            let long_press = Duration::from_millis(config::POWER_LONG_PRESS_MS);
+            match event.value {
+                1 => {
+                    self.power_down_at = Some(Instant::now());
+                    self.power_long_emitted = false;
+                }
+                0 => {
+                    if let Some(started) = self.power_down_at.take() {
+                        if !self.power_long_emitted && started.elapsed() >= long_press {
+                            self.power_long_emitted = true;
+                            return Ok(Some(AppInputEvent::PowerLongPress));
                         }
-                    } else if !self.touching {
-                        self.pending_tap = false;
+                        if !self.power_long_emitted {
+                            return Ok(Some(AppInputEvent::PowerShortPress));
+                        }
+                    }
+                    self.power_long_emitted = false;
+                }
+                2 => {
+                    if let Some(started) = self.power_down_at {
+                        if !self.power_long_emitted && started.elapsed() >= long_press {
+                            self.power_long_emitted = true;
+                            return Ok(Some(AppInputEvent::PowerLongPress));
+                        }
                     }
                 }
                 _ => {}
             }
         }
+        Ok(None)
+    }
+}
+
+pub fn start_lab126_gui() -> io::Result<()> {
+    let status = Command::new("/sbin/initctl")
+        .arg("start")
+        .arg("lab126_gui")
+        .status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "initctl start lab126_gui failed with status {status}"
+        )))
     }
 }
 
@@ -606,7 +746,18 @@ fn grab_input(touch: &File) -> Result<()> {
 
 unsafe extern "C" {
     fn ioctl(fd: i32, request: u64, ...) -> i32;
+    fn poll(fds: *mut PollFd, nfds: usize, timeout: i32) -> i32;
 }
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct PollFd {
+    fd: i32,
+    events: i16,
+    revents: i16,
+}
+
+const POLLIN: i16 = 0x0001;
 
 fn map_touch(raw: i32, min: i32, max: i32, dimension: usize) -> io::Result<usize> {
     if max <= min {
