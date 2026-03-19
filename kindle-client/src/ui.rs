@@ -14,37 +14,81 @@ impl Rect {
     }
 }
 
-pub fn restart_button_rect() -> Rect {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ButtonAction {
+    Previous,
+    Next,
+    Restart,
+    Undo,
+}
+
+fn top_left_button_rect() -> Rect {
     Rect {
-        x: (config::WIDTH - config::RESTART_BUTTON_WIDTH) / 2,
-        y: config::HEIGHT - config::FOOTER_HEIGHT
-            + (config::FOOTER_HEIGHT - config::RESTART_BUTTON_HEIGHT) / 2,
-        w: config::RESTART_BUTTON_WIDTH,
-        h: config::RESTART_BUTTON_HEIGHT,
+        x: config::UI_BUTTON_MARGIN,
+        y: config::UI_BUTTON_MARGIN,
+        w: config::UI_BUTTON_SIZE,
+        h: config::UI_BUTTON_SIZE,
     }
 }
 
-pub fn draw_restart_ui(frame: &mut [u8]) {
-    let footer_top = config::HEIGHT - config::FOOTER_HEIGHT;
-    draw_rect_rgba(
-        frame,
-        0,
-        footer_top,
-        config::WIDTH,
-        config::FOOTER_HEIGHT,
-        [232, 232, 232, 255],
-    );
+fn top_right_button_rect() -> Rect {
+    Rect {
+        x: config::WIDTH.saturating_sub(config::UI_BUTTON_MARGIN + config::UI_BUTTON_SIZE),
+        y: config::UI_BUTTON_MARGIN,
+        w: config::UI_BUTTON_SIZE,
+        h: config::UI_BUTTON_SIZE,
+    }
+}
 
-    let button = restart_button_rect();
-    draw_rect_rgba(frame, button.x, button.y, button.w, button.h, [255, 255, 255, 255]);
-    draw_rect_outline_rgba(frame, button, 5, [0, 0, 0, 255]);
+fn bottom_left_button_rect() -> Rect {
+    Rect {
+        x: config::UI_BUTTON_MARGIN,
+        y: config::HEIGHT.saturating_sub(config::UI_BUTTON_MARGIN + config::UI_BUTTON_SIZE),
+        w: config::UI_BUTTON_SIZE,
+        h: config::UI_BUTTON_SIZE,
+    }
+}
+
+fn bottom_right_button_rect() -> Rect {
+    Rect {
+        x: config::WIDTH.saturating_sub(config::UI_BUTTON_MARGIN + config::UI_BUTTON_SIZE),
+        y: config::HEIGHT.saturating_sub(config::UI_BUTTON_MARGIN + config::UI_BUTTON_SIZE),
+        w: config::UI_BUTTON_SIZE,
+        h: config::UI_BUTTON_SIZE,
+    }
+}
+
+pub fn button_action_at(px: usize, py: usize) -> Option<ButtonAction> {
+    if top_left_button_rect().contains(px, py) {
+        return Some(ButtonAction::Previous);
+    }
+    if top_right_button_rect().contains(px, py) {
+        return Some(ButtonAction::Next);
+    }
+    if bottom_left_button_rect().contains(px, py) {
+        return Some(ButtonAction::Restart);
+    }
+    if bottom_right_button_rect().contains(px, py) {
+        return Some(ButtonAction::Undo);
+    }
+    None
+}
+
+pub fn draw_controls_ui(frame: &mut [u8]) {
+    draw_button(frame, top_left_button_rect(), "<");
+    draw_button(frame, top_right_button_rect(), ">");
+    draw_button(frame, bottom_left_button_rect(), "R");
+    draw_button(frame, bottom_right_button_rect(), "U");
+}
+
+fn draw_button(frame: &mut [u8], rect: Rect, label: &str) {
     draw_centered_label(
         frame,
-        button,
-        "RESTART",
+        rect,
+        label,
         config::UI_TEXT_SCALE,
-        config::UI_TEXT_SPACING,
-        [0, 0, 0, 255],
+        0,
+        [220, 220, 220, 255],
     );
 }
 
@@ -119,34 +163,12 @@ fn glyph_width(ch: char) -> usize {
 fn glyph_pattern(ch: char) -> [u8; 7] {
     match ch {
         'R' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
-        'E' => [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111],
-        'S' => [0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110],
-        'T' => [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
-        'A' => [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
+        'U' => [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+        '<' => [0b00010, 0b00100, 0b01000, 0b10000, 0b01000, 0b00100, 0b00010],
+        '>' => [0b01000, 0b00100, 0b00010, 0b00001, 0b00010, 0b00100, 0b01000],
         ' ' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000],
         _ => [0b11111, 0b10001, 0b00110, 0b00100, 0b00110, 0b10001, 0b11111],
     }
-}
-
-fn draw_rect_outline_rgba(frame: &mut [u8], rect: Rect, thickness: usize, color: [u8; 4]) {
-    draw_rect_rgba(frame, rect.x, rect.y, rect.w, thickness, color);
-    draw_rect_rgba(
-        frame,
-        rect.x,
-        rect.y + rect.h.saturating_sub(thickness),
-        rect.w,
-        thickness,
-        color,
-    );
-    draw_rect_rgba(frame, rect.x, rect.y, thickness, rect.h, color);
-    draw_rect_rgba(
-        frame,
-        rect.x + rect.w.saturating_sub(thickness),
-        rect.y,
-        thickness,
-        rect.h,
-        color,
-    );
 }
 
 fn draw_rect_rgba(frame: &mut [u8], x: usize, y: usize, w: usize, h: usize, color: [u8; 4]) {

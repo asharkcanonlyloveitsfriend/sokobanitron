@@ -1,6 +1,6 @@
 use crate::{config, level, platform, ui};
 use renderer::{BoardViewport, Renderer};
-use sokobanitron_gameplay::GameplaySession;
+use sokobanitron_gameplay::{GameplayKey, GameplaySession};
 use std::io::Result;
 
 pub struct KindleApp {
@@ -13,9 +13,11 @@ pub struct KindleApp {
 impl KindleApp {
     pub fn new() -> Result<Self> {
         let session = GameplaySession::from_level_ascii(level::portrait_level_ascii());
-        let board_area_height = (config::HEIGHT.saturating_sub(config::FOOTER_HEIGHT)) as u32;
-        let viewport =
-            BoardViewport::fit_to_window(config::WIDTH as u32, board_area_height, session.board());
+        let viewport = BoardViewport::fit_to_window(
+            config::WIDTH as u32,
+            config::HEIGHT as u32,
+            session.board(),
+        );
         Ok(Self {
             renderer: Renderer::new(),
             session,
@@ -35,9 +37,11 @@ impl KindleApp {
     }
 
     fn update_viewport(&mut self) {
-        let board_area_height = (config::HEIGHT.saturating_sub(config::FOOTER_HEIGHT)) as u32;
-        self.viewport =
-            BoardViewport::fit_to_window(config::WIDTH as u32, board_area_height, self.session.board());
+        self.viewport = BoardViewport::fit_to_window(
+            config::WIDTH as u32,
+            config::HEIGHT as u32,
+            self.session.board(),
+        );
     }
 
     fn render(&mut self) -> Result<()> {
@@ -49,19 +53,30 @@ impl KindleApp {
             self.session.board(),
             &self.viewport,
         );
-        ui::draw_restart_ui(&mut rgba);
+        ui::draw_controls_ui(&mut rgba);
         self.display.present_rgba(&rgba)
     }
 
     fn on_tap(&mut self, raw_x: i32, raw_y: i32) -> Result<()> {
         let (screen_x, screen_y) = platform::map_touch_to_screen(raw_x, raw_y)?;
-        let restart = ui::restart_button_rect();
-
-        if restart.contains(screen_x, screen_y) {
-            self.session.restart();
-            self.update_viewport();
-            self.render()?;
-            return Ok(());
+        if let Some(action) = ui::button_action_at(screen_x, screen_y) {
+            match action {
+                ui::ButtonAction::Restart => {
+                    self.session.restart();
+                    self.update_viewport();
+                    self.render()?;
+                    return Ok(());
+                }
+                ui::ButtonAction::Undo => {
+                    self.session.on_key(GameplayKey::Backspace);
+                    self.update_viewport();
+                    self.render()?;
+                    return Ok(());
+                }
+                ui::ButtonAction::Previous | ui::ButtonAction::Next => {
+                    return Ok(());
+                }
+            }
         }
 
         if let Some((x, y)) =

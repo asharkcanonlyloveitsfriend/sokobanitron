@@ -11,8 +11,6 @@ pub const TOUCH_MAX_X: i32 = WIDTH as i32 - 1;
 pub const TOUCH_MIN_Y: i32 = 0;
 pub const TOUCH_MAX_Y: i32 = HEIGHT as i32 - 1;
 
-pub const FOOTER_HEIGHT: usize = 180;
-pub const RESTART_BUTTON_WIDTH: usize = 420;
-pub const RESTART_BUTTON_HEIGHT: usize = 96;
+pub const UI_BUTTON_SIZE: usize = 76;
+pub const UI_BUTTON_MARGIN: usize = 16;
 pub const UI_TEXT_SCALE: usize = 8;
-pub const UI_TEXT_SPACING: usize = 10;
