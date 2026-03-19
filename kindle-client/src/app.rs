@@ -184,8 +184,7 @@ impl KindleApp {
         let (screen_x, screen_y) = platform::map_touch_to_screen(raw_x, raw_y)?;
         if self.session.board().is_won() {
             if let Some(next) = self.peek_level(1) {
-                self.jump_to_level(next);
-                self.render()?;
+                self.navigate_with_flash(next)?;
             }
             return Ok(());
         }
