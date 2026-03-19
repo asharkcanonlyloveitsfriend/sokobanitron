@@ -7,3 +7,5 @@ edition = "2024"
 renderer = { path = "../renderer" }
 sokobanitron-gameplay = { path = "../gameplay" }
 sokobanitron-core = { path = "../sokobanitron-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

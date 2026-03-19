@@ -2,6 +2,7 @@ mod app;
 mod config;
 mod level;
 mod platform;
+mod preferences;
 mod ui;
 
 use std::io::Result;

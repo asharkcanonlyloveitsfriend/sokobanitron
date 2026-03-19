@@ -1040,6 +1040,8 @@ name = "kindle-client"
 version = "0.1.0"
 dependencies = [
  "renderer",
+ "serde",
+ "serde_json",
  "sokobanitron-core",
  "sokobanitron-gameplay",
 ]

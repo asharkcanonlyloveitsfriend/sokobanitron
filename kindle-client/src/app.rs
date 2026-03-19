@@ -1,7 +1,6 @@
-use crate::{config, level, platform, ui};
+use crate::{config, level, platform, preferences, ui};
 use renderer::{BoardViewport, BoardViewportOptions, Renderer, RendererOverrides};
 use sokobanitron_gameplay::{ClickOutcome, GameplayKey, GameplaySession};
-use std::fs;
 use std::io::Result;
 use std::thread;
 use std::time::Duration;
@@ -11,6 +10,7 @@ pub struct KindleApp {
     levels: Vec<String>,
     current_level: usize,
     last_attempted_level: Option<usize>,
+    preferences: preferences::Preferences,
     session: GameplaySession,
     viewport: BoardViewport,
     display: platform::Display,
@@ -19,7 +19,8 @@ pub struct KindleApp {
 impl KindleApp {
     pub fn new() -> Result<Self> {
         let levels = level::load_kindle_levels();
-        let last_attempted_level = Self::load_last_attempted_level(levels.len());
+        let preferences = preferences::Preferences::load();
+        let last_attempted_level = preferences.level_index(levels.len());
         let current_level = last_attempted_level.unwrap_or(0);
         let session = GameplaySession::from_level_ascii(levels[current_level].clone());
         let viewport = Self::compute_viewport(session.board());
@@ -33,6 +34,7 @@ impl KindleApp {
             levels,
             current_level,
             last_attempted_level,
+            preferences,
             session,
             viewport,
             display: platform::Display::new()?,
@@ -249,21 +251,11 @@ impl KindleApp {
         )
     }
 
-    fn load_last_attempted_level(level_count: usize) -> Option<usize> {
-        let raw = fs::read_to_string(config::LAST_ATTEMPTED_LEVEL_PATH).ok()?;
-        let value = raw.trim().parse::<usize>().ok()?;
-        if value == 0 {
-            return None;
-        }
-        let idx = value - 1;
-        if idx < level_count { Some(idx) } else { None }
-    }
-
     fn persist_last_attempted_level(&mut self, level_index: usize) {
         self.last_attempted_level = Some(level_index);
-        let one_based = level_index + 1;
-        if let Err(err) = fs::write(config::LAST_ATTEMPTED_LEVEL_PATH, format!("{one_based}\n")) {
-            eprintln!("warning: failed to persist last attempted level: {err}");
+        self.preferences.last_started_level = Some(level_index + 1);
+        if let Err(err) = self.preferences.save() {
+            eprintln!("warning: failed to persist preferences: {err}");
         }
     }
 
@@ -397,7 +389,12 @@ impl KindleApp {
                 return Ok(());
             }
             self.record_first_move_if_needed(was_started);
-            let box_trail = self.session.take_pending_box_trail();
+            let box_trail = if self.preferences.show_box_path {
+                self.session.take_pending_box_trail()
+            } else {
+                let _ = self.session.take_pending_box_trail();
+                None
+            };
             let now_won = self.session.board().is_won();
             let delay_win_overlay = !was_won && now_won;
             let dirty_win = delay_win_overlay && !self.session.is_clean_solution();
