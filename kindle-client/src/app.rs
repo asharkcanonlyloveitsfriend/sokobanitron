@@ -377,11 +377,6 @@ impl KindleApp {
             self.viewport
                 .screen_to_cell(screen_x as f64, screen_y as f64, self.session.board())
         {
-            if self.session.board().player() == Some((x, y)) {
-                self.animate_player_blink()?;
-                return Ok(());
-            }
-
             let was_won = self.session.board().is_won();
             let was_started = self.session.is_started();
             let click_outcome = self.session.click_cell_with_feedback(x, y);
@@ -393,16 +388,12 @@ impl KindleApp {
                 self.record_first_move_if_needed(was_started);
                 let now_won = self.session.board().is_won();
                 let delay_win_overlay = !was_won && now_won;
-                let dirty_win = delay_win_overlay && !self.session.is_clean_solution();
                 self.animate_box_vanish(to_x, to_y, !delay_win_overlay)?;
-                if dirty_win {
-                    self.animate_player_blink()?;
-                } else if delay_win_overlay {
-                    self.render_with_options(None, true, true, true)?;
-                }
+                self.animate_player_blink()?;
                 return Ok(());
             }
             if click_outcome == ClickOutcome::NoOp {
+                self.animate_player_blink()?;
                 return Ok(());
             }
             self.record_first_move_if_needed(was_started);
