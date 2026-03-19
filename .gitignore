@@ -7,3 +7,6 @@
 
 # Generated documentation
 /doc/
+
+# Local level packs for Kindle testing/deployment
+/*.slc

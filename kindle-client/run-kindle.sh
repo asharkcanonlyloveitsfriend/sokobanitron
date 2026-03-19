@@ -8,6 +8,7 @@ KINDLE_PATH=/mnt/us/$BIN
 KINDLE_LOG=/mnt/us/$BIN.log
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SLC_SOURCE="$(find "$REPO_ROOT" -maxdepth 1 -type f \( -iname '*.slc' \) | LC_ALL=C sort | head -n 1 || true)"
 
 docker run --rm \
   -v "$REPO_ROOT":/src \
@@ -25,6 +26,9 @@ pkill -9 kindle-client 2>/dev/null || true
 EOF
 
 scp "$REPO_ROOT/target/$TARGET/debug/$BIN" "$KINDLE_HOST:$KINDLE_PATH"
+if [[ -n "$SLC_SOURCE" ]]; then
+  scp "$SLC_SOURCE" "$KINDLE_HOST:/mnt/us/$(basename "$SLC_SOURCE")"
+fi
 
 ssh "$KINDLE_HOST" <<EOF
 /sbin/initctl stop lab126_gui || true

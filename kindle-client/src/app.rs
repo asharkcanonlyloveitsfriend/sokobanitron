@@ -5,6 +5,8 @@ use std::io::Result;
 
 pub struct KindleApp {
     renderer: Renderer,
+    levels: Vec<String>,
+    current_level: usize,
     session: GameplaySession,
     viewport: BoardViewport,
     display: platform::Display,
@@ -12,7 +14,9 @@ pub struct KindleApp {
 
 impl KindleApp {
     pub fn new() -> Result<Self> {
-        let session = GameplaySession::from_level_ascii(level::portrait_level_ascii());
+        let levels = level::load_kindle_levels();
+        let current_level = 0usize;
+        let session = GameplaySession::from_level_ascii(levels[current_level].clone());
         let viewport = Self::compute_viewport(session.board());
         Ok(Self {
             renderer: Renderer::with_overrides(RendererOverrides {
@@ -21,6 +25,8 @@ impl KindleApp {
                 selected_box_shadow: Some(config::KINDLE_SELECTED_BOX_SHADOW),
                 ..RendererOverrides::default()
             }),
+            levels,
+            current_level,
             session,
             viewport,
             display: platform::Display::new()?,
@@ -39,6 +45,21 @@ impl KindleApp {
 
     fn update_viewport(&mut self) {
         self.viewport = Self::compute_viewport(self.session.board());
+    }
+
+    fn load_current_level(&mut self) {
+        self.session = GameplaySession::from_level_ascii(self.levels[self.current_level].clone());
+        self.update_viewport();
+    }
+
+    fn step_level(&mut self, delta: i32) {
+        if self.levels.is_empty() {
+            return;
+        }
+        let len = self.levels.len() as i32;
+        let next = (self.current_level as i32 + delta).rem_euclid(len);
+        self.current_level = next as usize;
+        self.load_current_level();
     }
 
     fn compute_viewport(board: &sokobanitron_gameplay::BoardView) -> BoardViewport {
@@ -87,7 +108,14 @@ impl KindleApp {
                     self.render()?;
                     return Ok(());
                 }
-                ui::ButtonAction::Previous | ui::ButtonAction::Next => {
+                ui::ButtonAction::Previous => {
+                    self.step_level(-1);
+                    self.render()?;
+                    return Ok(());
+                }
+                ui::ButtonAction::Next => {
+                    self.step_level(1);
+                    self.render()?;
                     return Ok(());
                 }
             }

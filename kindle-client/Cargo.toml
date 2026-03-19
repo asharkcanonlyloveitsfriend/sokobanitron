@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 renderer = { path = "../renderer" }
 sokobanitron-gameplay = { path = "../gameplay" }
+sokobanitron-core = { path = "../sokobanitron-core" }
