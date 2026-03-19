@@ -18,6 +18,7 @@ pub enum ClickOutcome {
     NoOp,
     Updated,
     IllegalBoxDestination,
+    BoxRemoved { to_x: u32, to_y: u32 },
 }
 
 pub struct GameplaySession {
@@ -68,6 +69,10 @@ impl GameplaySession {
         !self.engine.is_at_start()
     }
 
+    pub fn is_clean_solution(&self) -> bool {
+        self.engine.is_clean_solution()
+    }
+
     pub fn take_pending_box_trail(&mut self) -> Option<Vec<(u32, u32)>> {
         self.pending_box_trail.take()
     }
@@ -98,6 +103,22 @@ impl GameplaySession {
         }
 
         if let Some((from_x, from_y)) = self.selected_box {
+            if self.board.tile(x, y) == crate::presenter::TileKind::Void {
+                let removed = self.engine.push_box_into_void(
+                    Position::new(from_y as usize, from_x as usize),
+                    Position::new(y as usize, x as usize),
+                );
+                if removed {
+                    self.selected_box = None;
+                    self.pending_box_trail = None;
+                    self.sync_board();
+                    return ClickOutcome::BoxRemoved { to_x: x, to_y: y };
+                }
+                self.selected_box = None;
+                self.sync_board();
+                return ClickOutcome::IllegalBoxDestination;
+            }
+
             let moved_box = self.engine.move_box_to(
                 Position::new(from_y as usize, from_x as usize),
                 Position::new(y as usize, x as usize),
@@ -112,6 +133,7 @@ impl GameplaySession {
                 self.sync_board();
                 return ClickOutcome::Updated;
             }
+            self.selected_box = None;
             self.sync_board();
             return ClickOutcome::IllegalBoxDestination;
         }

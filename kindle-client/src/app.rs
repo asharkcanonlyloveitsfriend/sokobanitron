@@ -84,12 +84,15 @@ impl KindleApp {
 
     fn flash_level_number(&mut self, level_index: usize) -> Result<()> {
         let mut rgba = vec![0u8; config::WIDTH * config::HEIGHT * 4];
-        self.renderer.draw(
+        self.renderer.draw_with_box_trail_options(
             &mut rgba,
             config::WIDTH as u32,
             config::HEIGHT as u32,
             self.session.board(),
             &self.viewport,
+            None,
+            true,
+            false,
         );
         ui::draw_controls_ui(&mut rgba, self.show_play_button());
         ui::draw_level_flash_overlay(&mut rgba, level_index + 1);
@@ -98,12 +101,15 @@ impl KindleApp {
 
     fn animate_player_blink(&mut self) -> Result<()> {
         let mut blink_frame = vec![0u8; config::WIDTH * config::HEIGHT * 4];
-        self.renderer.draw(
+        self.renderer.draw_with_box_trail_options(
             &mut blink_frame,
             config::WIDTH as u32,
             config::HEIGHT as u32,
             self.session.board(),
             &self.viewport,
+            None,
+            true,
+            false,
         );
         self.renderer.draw_player_blink_overlay(
             &mut blink_frame,
@@ -117,6 +123,120 @@ impl KindleApp {
         thread::sleep(Duration::from_millis(config::BLINK_ON_MS));
 
         self.render_with_options(None, true, true, true)
+    }
+
+    fn draw_rounded_rect_rgba(
+        frame: &mut [u8],
+        x: i32,
+        y: i32,
+        w: u32,
+        h: u32,
+        radius: u32,
+        color: [u8; 4],
+    ) {
+        let start_x = x.max(0) as usize;
+        let start_y = y.max(0) as usize;
+        let end_x = (x + w as i32).clamp(0, config::WIDTH as i32) as usize;
+        let end_y = (y + h as i32).clamp(0, config::HEIGHT as i32) as usize;
+        if start_x >= end_x || start_y >= end_y {
+            return;
+        }
+
+        let radius = radius.min(w / 2).min(h / 2) as i32;
+        let w_i = w as i32;
+        let h_i = h as i32;
+        let r2 = radius * radius;
+
+        for py in start_y..end_y {
+            let row = py * config::WIDTH * 4;
+            for px in start_x..end_x {
+                let local_x = px as i32 - x;
+                let local_y = py as i32 - y;
+
+                if radius > 0 {
+                    let in_left = local_x < radius;
+                    let in_right = local_x >= w_i - radius;
+                    let in_top = local_y < radius;
+                    let in_bottom = local_y >= h_i - radius;
+
+                    if (in_left || in_right) && (in_top || in_bottom) {
+                        let cx = if in_left { radius - 1 } else { w_i - radius };
+                        let cy = if in_top { radius - 1 } else { h_i - radius };
+                        let dx = local_x - cx;
+                        let dy = local_y - cy;
+                        if dx * dx + dy * dy > r2 {
+                            continue;
+                        }
+                    }
+                }
+
+                let idx = row + px * 4;
+                frame[idx] = color[0];
+                frame[idx + 1] = color[1];
+                frame[idx + 2] = color[2];
+                frame[idx + 3] = color[3];
+            }
+        }
+    }
+
+    fn animate_box_vanish(&mut self, to_x: u32, to_y: u32, show_win_overlay: bool) -> Result<()> {
+        let (cell_x, cell_y, cell_w, cell_h) = self.viewport.cell_to_screen_rect(to_x, to_y);
+        let inset = (cell_w / 24).max(1);
+        let box_x = cell_x + inset as i32;
+        let box_y = cell_y + inset as i32;
+        let box_w = cell_w.saturating_sub(inset * 2);
+        let box_h = cell_h.saturating_sub(inset * 2);
+        let raw_base_size = box_w.min(box_h);
+        let base_size =
+            ((raw_base_size as usize * config::BOX_VANISH_START_SCALE_PERCENT) / 100).max(1) as u32;
+        if base_size == 0 {
+            return self.render_with_options(None, true, true, show_win_overlay);
+        }
+        let base_x = box_x + ((raw_base_size - base_size) / 2) as i32;
+        let base_y = box_y + ((raw_base_size - base_size) / 2) as i32;
+
+        let steps = config::BOX_VANISH_STEPS.max(1);
+        for step in 0..steps {
+            let mut frame = vec![0u8; config::WIDTH * config::HEIGHT * 4];
+            self.renderer.draw_with_box_trail_options(
+                &mut frame,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+                self.session.board(),
+                &self.viewport,
+                None,
+                true,
+                false,
+            );
+            ui::draw_controls_ui(&mut frame, self.show_play_button());
+            if show_win_overlay && self.session.board().is_won() {
+                ui::draw_you_win_overlay(&mut frame);
+            }
+
+            let remaining = steps - step;
+            let size = if step + 1 == steps {
+                ((base_size as usize * config::BOX_VANISH_TAIL_SCALE_PERCENT) / 100).max(1) as u32
+            } else {
+                ((base_size as usize * remaining) / steps).max(1) as u32
+            };
+            let draw_x = base_x + ((base_size - size) / 2) as i32;
+            let draw_y = base_y + ((base_size - size) / 2) as i32;
+            let radius = (size * 14) / 100;
+            Self::draw_rounded_rect_rgba(
+                &mut frame,
+                draw_x,
+                draw_y,
+                size,
+                size,
+                radius,
+                [0, 0, 0, 255],
+            );
+
+            self.display.present_rgba_fast_partial(&frame)?;
+            thread::sleep(Duration::from_millis(config::BOX_VANISH_STEP_MS));
+        }
+
+        self.render_with_options(None, true, true, show_win_overlay)
     }
 
     fn show_play_button(&self) -> bool {
@@ -203,12 +323,6 @@ impl KindleApp {
 
     fn on_tap(&mut self, raw_x: i32, raw_y: i32) -> Result<()> {
         let (screen_x, screen_y) = platform::map_touch_to_screen(raw_x, raw_y)?;
-        if self.session.board().is_won() {
-            if let Some(next) = self.peek_level(1) {
-                self.navigate_with_flash(next)?;
-            }
-            return Ok(());
-        }
         if let Some(action) = ui::button_action_at(screen_x, screen_y, self.show_play_button()) {
             match action {
                 ui::ButtonAction::Restart => {
@@ -252,6 +366,12 @@ impl KindleApp {
                 }
             }
         }
+        if self.session.board().is_won() {
+            if let Some(next) = self.peek_level(1) {
+                self.navigate_with_flash(next)?;
+            }
+            return Ok(());
+        }
 
         if let Some((x, y)) =
             self.viewport
@@ -269,16 +389,39 @@ impl KindleApp {
                 self.animate_player_blink()?;
                 return Ok(());
             }
+            if let ClickOutcome::BoxRemoved { to_x, to_y } = click_outcome {
+                self.record_first_move_if_needed(was_started);
+                let now_won = self.session.board().is_won();
+                let delay_win_overlay = !was_won && now_won;
+                let dirty_win = delay_win_overlay && !self.session.is_clean_solution();
+                self.animate_box_vanish(to_x, to_y, !delay_win_overlay)?;
+                if dirty_win {
+                    self.animate_player_blink()?;
+                } else if delay_win_overlay {
+                    self.render_with_options(None, true, true, true)?;
+                }
+                return Ok(());
+            }
+            if click_outcome == ClickOutcome::NoOp {
+                return Ok(());
+            }
             self.record_first_move_if_needed(was_started);
             let box_trail = self.session.take_pending_box_trail();
             let now_won = self.session.board().is_won();
             let delay_win_overlay = !was_won && now_won;
+            let dirty_win = delay_win_overlay && !self.session.is_clean_solution();
             if box_trail.as_ref().is_some_and(|path| path.len() > 2) {
                 self.render_with_options(box_trail.as_deref(), false, false, !delay_win_overlay)?;
-                self.render_with_options(None, true, true, true)?;
+                if dirty_win {
+                    self.animate_player_blink()?;
+                } else {
+                    self.render_with_options(None, true, true, true)?;
+                }
             } else {
                 self.render_with_options(None, true, false, !delay_win_overlay)?;
-                if delay_win_overlay {
+                if dirty_win {
+                    self.animate_player_blink()?;
+                } else if delay_win_overlay {
                     self.render_with_options(None, true, true, true)?;
                 }
             }
