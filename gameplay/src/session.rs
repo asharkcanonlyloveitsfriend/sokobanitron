@@ -64,6 +64,10 @@ impl GameplaySession {
         &self.board
     }
 
+    pub fn is_started(&self) -> bool {
+        !self.engine.is_at_start()
+    }
+
     pub fn click_cell(&mut self, x: u32, y: u32) {
         if self.board.is_won() {
             return;

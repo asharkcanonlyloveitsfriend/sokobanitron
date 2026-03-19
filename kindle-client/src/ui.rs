@@ -16,25 +16,72 @@ impl Rect {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ButtonAction {
+    JumpStart,
     Previous,
+    Play,
     Next,
+    JumpEnd,
     Restart,
     Undo,
 }
 
-fn top_left_button_rect() -> Rect {
+fn top_row_y() -> usize {
+    config::UI_BUTTON_MARGIN
+}
+
+fn top_row_left_x() -> usize {
+    config::UI_BUTTON_MARGIN
+}
+
+fn top_row_right_x() -> usize {
+    config::WIDTH.saturating_sub(config::UI_BUTTON_MARGIN + config::UI_BUTTON_SIZE)
+}
+
+fn top_row_center_x() -> usize {
+    (config::WIDTH.saturating_sub(config::UI_BUTTON_SIZE)) / 2
+}
+
+fn top_jump_start_button_rect() -> Rect {
     Rect {
-        x: config::UI_BUTTON_MARGIN,
-        y: config::UI_BUTTON_MARGIN,
+        x: top_row_left_x(),
+        y: top_row_y(),
         w: config::UI_BUTTON_SIZE,
         h: config::UI_BUTTON_SIZE,
     }
 }
 
-fn top_right_button_rect() -> Rect {
+fn top_play_button_rect() -> Rect {
+    let h = config::UI_PLAY_BUTTON_HEIGHT;
+    Rect {
+        x: top_row_center_x(),
+        y: top_row_y(),
+        w: config::UI_BUTTON_SIZE,
+        h,
+    }
+}
+
+fn left_center_button_rect() -> Rect {
+    Rect {
+        x: config::UI_BUTTON_MARGIN,
+        y: config::HEIGHT.saturating_sub(config::UI_BUTTON_SIZE) / 2,
+        w: config::UI_BUTTON_SIZE,
+        h: config::UI_BUTTON_SIZE,
+    }
+}
+
+fn right_center_button_rect() -> Rect {
     Rect {
         x: config::WIDTH.saturating_sub(config::UI_BUTTON_MARGIN + config::UI_BUTTON_SIZE),
-        y: config::UI_BUTTON_MARGIN,
+        y: config::HEIGHT.saturating_sub(config::UI_BUTTON_SIZE) / 2,
+        w: config::UI_BUTTON_SIZE,
+        h: config::UI_BUTTON_SIZE,
+    }
+}
+
+fn top_jump_end_button_rect() -> Rect {
+    Rect {
+        x: top_row_right_x(),
+        y: top_row_y(),
         w: config::UI_BUTTON_SIZE,
         h: config::UI_BUTTON_SIZE,
     }
@@ -58,12 +105,21 @@ fn bottom_right_button_rect() -> Rect {
     }
 }
 
-pub fn button_action_at(px: usize, py: usize) -> Option<ButtonAction> {
-    if top_left_button_rect().contains(px, py) {
+pub fn button_action_at(px: usize, py: usize, show_play: bool) -> Option<ButtonAction> {
+    if top_jump_start_button_rect().contains(px, py) {
+        return Some(ButtonAction::JumpStart);
+    }
+    if left_center_button_rect().contains(px, py) {
         return Some(ButtonAction::Previous);
     }
-    if top_right_button_rect().contains(px, py) {
+    if show_play && top_play_button_rect().contains(px, py) {
+        return Some(ButtonAction::Play);
+    }
+    if right_center_button_rect().contains(px, py) {
         return Some(ButtonAction::Next);
+    }
+    if top_jump_end_button_rect().contains(px, py) {
+        return Some(ButtonAction::JumpEnd);
     }
     if bottom_left_button_rect().contains(px, py) {
         return Some(ButtonAction::Restart);
@@ -74,9 +130,15 @@ pub fn button_action_at(px: usize, py: usize) -> Option<ButtonAction> {
     None
 }
 
-pub fn draw_controls_ui(frame: &mut [u8]) {
-    draw_button(frame, top_left_button_rect(), "<");
-    draw_button(frame, top_right_button_rect(), ">");
+pub fn draw_controls_ui(frame: &mut [u8], show_play: bool) {
+    let top_scale = config::UI_TEXT_SCALE.saturating_sub(1).max(1);
+    draw_button_scaled(frame, top_jump_start_button_rect(), "|<", top_scale);
+    draw_button(frame, left_center_button_rect(), "<");
+    if show_play {
+        draw_button_scaled(frame, top_play_button_rect(), "/\\", config::UI_PLAY_TEXT_SCALE);
+    }
+    draw_button(frame, right_center_button_rect(), ">");
+    draw_button_scaled(frame, top_jump_end_button_rect(), ">|", top_scale);
     draw_button(frame, bottom_left_button_rect(), "R");
     draw_button(frame, bottom_right_button_rect(), "U");
 }
@@ -139,11 +201,15 @@ fn draw_outlined_text(
 }
 
 fn draw_button(frame: &mut [u8], rect: Rect, label: &str) {
+    draw_button_scaled(frame, rect, label, config::UI_TEXT_SCALE);
+}
+
+fn draw_button_scaled(frame: &mut [u8], rect: Rect, label: &str, scale: usize) {
     draw_centered_label(
         frame,
         rect,
         label,
-        config::UI_TEXT_SCALE,
+        scale,
         0,
         [220, 220, 220, 255],
     );
@@ -248,6 +314,15 @@ fn glyph_pattern(ch: char) -> [u8; 7] {
         ],
         '9' => [
             0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110,
+        ],
+        '|' => [
+            0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100,
+        ],
+        '/' => [
+            0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b00000, 0b00000,
+        ],
+        '\\' => [
+            0b10000, 0b01000, 0b00100, 0b00010, 0b00001, 0b00000, 0b00000,
         ],
         'R' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
         'U' => [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],

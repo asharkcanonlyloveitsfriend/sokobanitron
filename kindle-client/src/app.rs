@@ -1,12 +1,14 @@
 use crate::{config, level, platform, ui};
 use renderer::{BoardViewport, BoardViewportOptions, Renderer, RendererOverrides};
 use sokobanitron_gameplay::{GameplayKey, GameplaySession};
+use std::fs;
 use std::io::Result;
 
 pub struct KindleApp {
     renderer: Renderer,
     levels: Vec<String>,
     current_level: usize,
+    last_attempted_level: Option<usize>,
     session: GameplaySession,
     viewport: BoardViewport,
     display: platform::Display,
@@ -15,7 +17,8 @@ pub struct KindleApp {
 impl KindleApp {
     pub fn new() -> Result<Self> {
         let levels = level::load_kindle_levels();
-        let current_level = 0usize;
+        let last_attempted_level = Self::load_last_attempted_level(levels.len());
+        let current_level = last_attempted_level.unwrap_or(0);
         let session = GameplaySession::from_level_ascii(levels[current_level].clone());
         let viewport = Self::compute_viewport(session.board());
         Ok(Self {
@@ -27,6 +30,7 @@ impl KindleApp {
             }),
             levels,
             current_level,
+            last_attempted_level,
             session,
             viewport,
             display: platform::Display::new()?,
@@ -52,13 +56,12 @@ impl KindleApp {
         self.update_viewport();
     }
 
-    fn step_level(&mut self, delta: i32) {
+    fn jump_to_level(&mut self, index: usize) {
         if self.levels.is_empty() {
             return;
         }
-        let len = self.levels.len() as i32;
-        let next = (self.current_level as i32 + delta).rem_euclid(len);
-        self.current_level = next as usize;
+        let clamped = index.min(self.levels.len().saturating_sub(1));
+        self.current_level = clamped;
         self.load_current_level();
     }
 
@@ -71,6 +74,12 @@ impl KindleApp {
         Some(next as usize)
     }
 
+    fn navigate_with_flash(&mut self, target_level: usize) -> Result<()> {
+        self.flash_level_number(target_level)?;
+        self.jump_to_level(target_level);
+        self.render()
+    }
+
     fn flash_level_number(&mut self, level_index: usize) -> Result<()> {
         let mut rgba = vec![0u8; config::WIDTH * config::HEIGHT * 4];
         self.renderer.draw(
@@ -80,9 +89,44 @@ impl KindleApp {
             self.session.board(),
             &self.viewport,
         );
-        ui::draw_controls_ui(&mut rgba);
+        ui::draw_controls_ui(&mut rgba, self.show_play_button());
         ui::draw_level_flash_overlay(&mut rgba, level_index + 1);
         self.display.present_rgba(&rgba)
+    }
+
+    fn show_play_button(&self) -> bool {
+        matches!(
+            self.last_attempted_level,
+            Some(last) if last != self.current_level
+        )
+    }
+
+    fn load_last_attempted_level(level_count: usize) -> Option<usize> {
+        let raw = fs::read_to_string(config::LAST_ATTEMPTED_LEVEL_PATH).ok()?;
+        let value = raw.trim().parse::<usize>().ok()?;
+        if value == 0 {
+            return None;
+        }
+        let idx = value - 1;
+        if idx < level_count {
+            Some(idx)
+        } else {
+            None
+        }
+    }
+
+    fn persist_last_attempted_level(&mut self, level_index: usize) {
+        self.last_attempted_level = Some(level_index);
+        let one_based = level_index + 1;
+        if let Err(err) = fs::write(config::LAST_ATTEMPTED_LEVEL_PATH, format!("{one_based}\n")) {
+            eprintln!("warning: failed to persist last attempted level: {err}");
+        }
+    }
+
+    fn record_first_move_if_needed(&mut self, was_started: bool) {
+        if !was_started && self.session.is_started() {
+            self.persist_last_attempted_level(self.current_level);
+        }
     }
 
     fn compute_viewport(board: &sokobanitron_gameplay::BoardView) -> BoardViewport {
@@ -104,20 +148,22 @@ impl KindleApp {
 
     fn render(&mut self) -> Result<()> {
         let mut rgba = vec![0u8; config::WIDTH * config::HEIGHT * 4];
-        self.renderer.draw(
+        let box_trail = self.session.take_pending_box_trail();
+        self.renderer.draw_with_box_trail(
             &mut rgba,
             config::WIDTH as u32,
             config::HEIGHT as u32,
             self.session.board(),
             &self.viewport,
+            box_trail.as_deref(),
         );
-        ui::draw_controls_ui(&mut rgba);
+        ui::draw_controls_ui(&mut rgba, self.show_play_button());
         self.display.present_rgba(&rgba)
     }
 
     fn on_tap(&mut self, raw_x: i32, raw_y: i32) -> Result<()> {
         let (screen_x, screen_y) = platform::map_touch_to_screen(raw_x, raw_y)?;
-        if let Some(action) = ui::button_action_at(screen_x, screen_y) {
+        if let Some(action) = ui::button_action_at(screen_x, screen_y, self.show_play_button()) {
             match action {
                 ui::ButtonAction::Restart => {
                     self.session.restart();
@@ -133,18 +179,29 @@ impl KindleApp {
                 }
                 ui::ButtonAction::Previous => {
                     if let Some(next) = self.peek_level(-1) {
-                        self.flash_level_number(next)?;
+                        self.navigate_with_flash(next)?;
                     }
-                    self.step_level(-1);
-                    self.render()?;
                     return Ok(());
                 }
                 ui::ButtonAction::Next => {
                     if let Some(next) = self.peek_level(1) {
-                        self.flash_level_number(next)?;
+                        self.navigate_with_flash(next)?;
                     }
-                    self.step_level(1);
-                    self.render()?;
+                    return Ok(());
+                }
+                ui::ButtonAction::JumpStart => {
+                    self.navigate_with_flash(0)?;
+                    return Ok(());
+                }
+                ui::ButtonAction::JumpEnd => {
+                    let last = self.levels.len().saturating_sub(1);
+                    self.navigate_with_flash(last)?;
+                    return Ok(());
+                }
+                ui::ButtonAction::Play => {
+                    if let Some(level_index) = self.last_attempted_level {
+                        self.navigate_with_flash(level_index)?;
+                    }
                     return Ok(());
                 }
             }
@@ -154,7 +211,9 @@ impl KindleApp {
             self.viewport
                 .screen_to_cell(screen_x as f64, screen_y as f64, self.session.board())
         {
+            let was_started = self.session.is_started();
             self.session.click_cell(x, y);
+            self.record_first_move_if_needed(was_started);
             self.render()?;
         }
         Ok(())
