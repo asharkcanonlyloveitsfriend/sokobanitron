@@ -1,40 +1,54 @@
-use crate::pixels::{fill_rect, stroke_rect};
+use crate::{
+    Renderer,
+    pixels::{fill_rect, stroke_rect},
+};
 use font8x8::{BASIC_FONTS, UnicodeFonts};
 
-pub(crate) fn draw_win_overlay(frame: &mut [u8], width: u32, height: u32) {
-    let panel_w = (width as f32 * 0.55) as u32;
-    let panel_h = (height as f32 * 0.24) as u32;
-    let panel_x = ((width - panel_w) / 2) as i32;
-    let panel_y = ((height - panel_h) / 2) as i32;
+impl Renderer {
+    pub(crate) fn draw_win_overlay(&self, frame: &mut [u8], width: u32, height: u32) {
+        let panel_w = (width as f32 * 0.55) as u32;
+        let panel_h = (height as f32 * 0.24) as u32;
+        let panel_x = ((width - panel_w) / 2) as i32;
+        let panel_y = ((height - panel_h) / 2) as i32;
 
-    fill_rect(frame, width, height, panel_x, panel_y, panel_w, panel_h, [8, 12, 20, 220]);
-    stroke_rect(
-        frame,
-        width,
-        height,
-        panel_x,
-        panel_y,
-        panel_w,
-        panel_h,
-        [255, 255, 255, 255],
-    );
+        fill_rect(
+            frame,
+            width,
+            height,
+            panel_x,
+            panel_y,
+            panel_w,
+            panel_h,
+            self.theme.win_panel_fill,
+        );
+        stroke_rect(
+            frame,
+            width,
+            height,
+            panel_x,
+            panel_y,
+            panel_w,
+            panel_h,
+            self.theme.win_panel_stroke,
+        );
 
-    let title_scale = (panel_h / 18).max(2);
-    let title = "You win.";
-    let title_px_w = (title.chars().count() as u32) * 8 * title_scale;
-    let title_x = panel_x + ((panel_w.saturating_sub(title_px_w)) / 2) as i32;
-    let title_y = panel_y + ((panel_h as i32 - (8 * title_scale as i32)) / 2);
+        let title_scale = (panel_h / 18).max(2);
+        let title = "You win.";
+        let title_px_w = (title.chars().count() as u32) * 8 * title_scale;
+        let title_x = panel_x + ((panel_w.saturating_sub(title_px_w)) / 2) as i32;
+        let title_y = panel_y + ((panel_h as i32 - (8 * title_scale as i32)) / 2);
 
-    draw_text(
-        frame,
-        width,
-        height,
-        title_x,
-        title_y,
-        title,
-        title_scale,
-        [255, 255, 255, 255],
-    );
+        draw_text(
+            frame,
+            width,
+            height,
+            title_x,
+            title_y,
+            title,
+            title_scale,
+            self.theme.win_text,
+        );
+    }
 }
 
 fn draw_text(

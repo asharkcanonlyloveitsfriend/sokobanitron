@@ -1,9 +1,9 @@
-use crate::{
-    BoardViewport, Renderer,
-    pixels::blit_rgba,
-    sprites::rasterize_svg,
-};
+use crate::{BoardViewport, Renderer, pixels::blit_rgba, sprites::rasterize_svg};
 use sokobanitron_gameplay::BoardView;
+
+fn rgb_hex(color: [u8; 4]) -> String {
+    format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2])
+}
 
 impl Renderer {
     pub(crate) fn draw_boxes(
@@ -86,13 +86,19 @@ impl Renderer {
 
     fn box_bitmap(&mut self, size: u32) -> &[u8] {
         self.box_bitmap_cache.entry(size).or_insert_with(|| {
+            let c1 = rgb_hex(self.theme.box_primary);
+            let c2 = rgb_hex(self.theme.box_highlight);
+            let c3 = rgb_hex(self.theme.box_shadow);
             let svg = format!(
                 "<svg xmlns='http://www.w3.org/2000/svg' width='{s}' height='{s}' viewBox='0 0 100 100'>\
-                 <path d='M28,14L72,14A14,14 0,0 1,86 28L86,72A14,14 0,0 1,72 86L28,86A14,14 0,0 1,14 72L14,28A14,14 0,0 1,28 14z' fill='#788190'/>\
-                 <path d='M27,20L37,20A7,7 0,0 1,44 27L44,27A7,7 0,0 1,37 34L27,34A7,7 0,0 1,20 27L20,27A7,7 0,0 1,27 20z' fill='#9ca3af'/>\
-                 <path d='M67,60L71,60A7,7 0,0 1,78 67L78,71A7,7 0,0 1,71 78L67,78A7,7 0,0 1,60 71L60,67A7,7 0,0 1,67 60z' fill='#4b5563'/>\
+                 <path d='M28,14L72,14A14,14 0,0 1,86 28L86,72A14,14 0,0 1,72 86L28,86A14,14 0,0 1,14 72L14,28A14,14 0,0 1,28 14z' fill='{c1}'/>\
+                 <path d='M27,20L37,20A7,7 0,0 1,44 27L44,27A7,7 0,0 1,37 34L27,34A7,7 0,0 1,20 27L20,27A7,7 0,0 1,27 20z' fill='{c2}'/>\
+                 <path d='M67,60L71,60A7,7 0,0 1,78 67L78,71A7,7 0,0 1,71 78L67,78A7,7 0,0 1,60 71L60,67A7,7 0,0 1,67 60z' fill='{c3}'/>\
                  </svg>",
-                s = size
+                s = size,
+                c1 = c1,
+                c2 = c2,
+                c3 = c3,
             );
 
             rasterize_svg(&svg, size)
@@ -101,13 +107,19 @@ impl Renderer {
 
     fn selected_box_bitmap(&mut self, size: u32) -> &[u8] {
         self.selected_box_bitmap_cache.entry(size).or_insert_with(|| {
+            let c1 = rgb_hex(self.theme.selected_box_primary);
+            let c2 = rgb_hex(self.theme.selected_box_highlight);
+            let c3 = rgb_hex(self.theme.selected_box_shadow);
             let svg = format!(
                 "<svg xmlns='http://www.w3.org/2000/svg' width='{s}' height='{s}' viewBox='0 0 100 100'>\
-                 <path d='M28,14L72,14A14,14 0,0 1,86 28L86,72A14,14 0,0 1,72 86L28,86A14,14 0,0 1,14 72L14,28A14,14 0,0 1,28 14z' fill='#5f6775'/>\
-                 <path d='M27,20L37,20A7,7 0,0 1,44 27L44,27A7,7 0,0 1,37 34L27,34A7,7 0,0 1,20 27L20,27A7,7 0,0 1,27 20z' fill='#7b8596'/>\
-                 <path d='M67,60L71,60A7,7 0,0 1,78 67L78,71A7,7 0,0 1,71 78L67,78A7,7 0,0 1,60 71L60,67A7,7 0,0 1,67 60z' fill='#4a5160'/>\
+                 <path d='M28,14L72,14A14,14 0,0 1,86 28L86,72A14,14 0,0 1,72 86L28,86A14,14 0,0 1,14 72L14,28A14,14 0,0 1,28 14z' fill='{c1}'/>\
+                 <path d='M27,20L37,20A7,7 0,0 1,44 27L44,27A7,7 0,0 1,37 34L27,34A7,7 0,0 1,20 27L20,27A7,7 0,0 1,27 20z' fill='{c2}'/>\
+                 <path d='M67,60L71,60A7,7 0,0 1,78 67L78,71A7,7 0,0 1,71 78L67,78A7,7 0,0 1,60 71L60,67A7,7 0,0 1,67 60z' fill='{c3}'/>\
                  </svg>",
-                s = size
+                s = size,
+                c1 = c1,
+                c2 = c2,
+                c3 = c3,
             );
 
             rasterize_svg(&svg, size)
@@ -116,16 +128,24 @@ impl Renderer {
 
     fn player_bitmap(&mut self, size: u32) -> &[u8] {
         self.player_bitmap_cache.entry(size).or_insert_with(|| {
+            let body = rgb_hex(self.theme.player_body);
+            let highlight = rgb_hex(self.theme.player_highlight);
+            let eye = rgb_hex(self.theme.player_eye);
+            let limb = rgb_hex(self.theme.player_limb);
             let svg = format!(
                 "<svg xmlns='http://www.w3.org/2000/svg' width='{s}' height='{s}' viewBox='0 0 100 100'>\
-                 <path d='M32,18L68,18A20,20 0,0 1,88 38L88,50A20,20 0,0 1,68 70L32,70A20,20 0,0 1,12 50L12,38A20,20 0,0 1,32 18z' fill='#9ca3af'/>\
-                 <path d='M28,22L34,22A6,5.5 0,0 1,40 27.5L40,27.5A6,5.5 0,0 1,34 33L28,33A6,5.5 0,0 1,22 27.5L22,27.5A6,5.5 0,0 1,28 22z' fill='#f9fafb'/>\
-                 <path d='M33,37h10v10h-10z' fill='#020617'/>\
-                 <path d='M57,37h10v10h-10z' fill='#020617'/>\
-                 <path d='M34,69L34,69A8,8 0,0 1,42 77L42,87A8,8 0,0 1,34 95L34,95A8,8 0,0 1,26 87L26,77A8,8 0,0 1,34 69z' fill='#6b7280'/>\
-                 <path d='M66,69L66,69A8,8 0,0 1,74 77L74,87A8,8 0,0 1,66 95L66,95A8,8 0,0 1,58 87L58,77A8,8 0,0 1,66 69z' fill='#6b7280'/>\
+                 <path d='M32,18L68,18A20,20 0,0 1,88 38L88,50A20,20 0,0 1,68 70L32,70A20,20 0,0 1,12 50L12,38A20,20 0,0 1,32 18z' fill='{body}'/>\
+                 <path d='M28,22L34,22A6,5.5 0,0 1,40 27.5L40,27.5A6,5.5 0,0 1,34 33L28,33A6,5.5 0,0 1,22 27.5L22,27.5A6,5.5 0,0 1,28 22z' fill='{highlight}'/>\
+                 <path d='M33,37h10v10h-10z' fill='{eye}'/>\
+                 <path d='M57,37h10v10h-10z' fill='{eye}'/>\
+                 <path d='M34,69L34,69A8,8 0,0 1,42 77L42,87A8,8 0,0 1,34 95L34,95A8,8 0,0 1,26 87L26,77A8,8 0,0 1,34 69z' fill='{limb}'/>\
+                 <path d='M66,69L66,69A8,8 0,0 1,74 77L74,87A8,8 0,0 1,66 95L66,95A8,8 0,0 1,58 87L58,77A8,8 0,0 1,66 69z' fill='{limb}'/>\
                  </svg>",
-                s = size
+                s = size,
+                body = body,
+                highlight = highlight,
+                eye = eye,
+                limb = limb,
             );
 
             rasterize_svg(&svg, size)

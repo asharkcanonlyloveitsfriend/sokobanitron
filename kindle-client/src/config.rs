@@ -14,3 +14,7 @@ pub const TOUCH_MAX_Y: i32 = HEIGHT as i32 - 1;
 pub const UI_BUTTON_SIZE: usize = 76;
 pub const UI_BUTTON_MARGIN: usize = 16;
 pub const UI_TEXT_SCALE: usize = 8;
+
+pub const KINDLE_SELECTED_BOX_PRIMARY: [u8; 4] = [28, 28, 28, 255];
+pub const KINDLE_SELECTED_BOX_HIGHLIGHT: [u8; 4] = [64, 64, 64, 255];
+pub const KINDLE_SELECTED_BOX_SHADOW: [u8; 4] = [0, 0, 0, 255];

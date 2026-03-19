@@ -1,5 +1,5 @@
 use crate::{config, level, platform, ui};
-use renderer::{BoardViewport, Renderer};
+use renderer::{BoardViewport, Renderer, RendererOverrides};
 use sokobanitron_gameplay::{GameplayKey, GameplaySession};
 use std::io::Result;
 
@@ -19,7 +19,12 @@ impl KindleApp {
             session.board(),
         );
         Ok(Self {
-            renderer: Renderer::new(),
+            renderer: Renderer::with_overrides(RendererOverrides {
+                selected_box_primary: Some(config::KINDLE_SELECTED_BOX_PRIMARY),
+                selected_box_highlight: Some(config::KINDLE_SELECTED_BOX_HIGHLIGHT),
+                selected_box_shadow: Some(config::KINDLE_SELECTED_BOX_SHADOW),
+                ..RendererOverrides::default()
+            }),
             session,
             viewport,
             display: platform::Display::new()?,
