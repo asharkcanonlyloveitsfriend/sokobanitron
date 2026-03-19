@@ -43,8 +43,11 @@ impl App {
     }
 
     fn update_viewport(&mut self) {
-        self.board_viewport =
-            BoardViewport::fit_to_window(self.surface_width, self.surface_height, self.session.board());
+        self.board_viewport = BoardViewport::fit_to_window(
+            self.surface_width,
+            self.surface_height,
+            self.session.board(),
+        );
     }
 }
 

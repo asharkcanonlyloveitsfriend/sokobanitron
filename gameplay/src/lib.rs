@@ -3,4 +3,4 @@ mod presenter;
 mod session;
 
 pub use presenter::{BoardView, TileKind};
-pub use session::{GameplayKey, GameplaySession};
+pub use session::{ClickOutcome, GameplayKey, GameplaySession};

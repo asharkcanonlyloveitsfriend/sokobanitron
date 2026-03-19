@@ -6,6 +6,25 @@ fn rgb_hex(color: [u8; 4]) -> String {
 }
 
 impl Renderer {
+    fn player_sprite_rect(
+        &self,
+        board: &BoardView,
+        viewport: &BoardViewport,
+    ) -> Option<(i32, i32, u32)> {
+        let (x, y) = board.player()?;
+        let (cell_x, cell_y, cell_w, cell_h) = viewport.cell_to_screen_rect(x, y);
+        let inset = (cell_w / 10).max(1);
+        let player_x = cell_x + inset as i32;
+        let player_y = cell_y + inset as i32;
+        let player_w = cell_w.saturating_sub(inset * 2);
+        let player_h = cell_h.saturating_sub(inset * 2);
+        if player_w == 0 || player_h == 0 {
+            return None;
+        }
+        let icon_size = player_w.min(player_h);
+        Some((player_x, player_y, icon_size))
+    }
+
     pub(crate) fn draw_boxes(
         &mut self,
         frame: &mut [u8],
@@ -57,21 +76,34 @@ impl Renderer {
         board: &BoardView,
         viewport: &BoardViewport,
     ) {
-        let Some((x, y)) = board.player() else {
+        let Some((player_x, player_y, icon_size)) = self.player_sprite_rect(board, viewport) else {
             return;
         };
-        let (cell_x, cell_y, cell_w, cell_h) = viewport.cell_to_screen_rect(x, y);
-        let inset = (cell_w / 10).max(1);
-        let player_x = cell_x + inset as i32;
-        let player_y = cell_y + inset as i32;
-        let player_w = cell_w.saturating_sub(inset * 2);
-        let player_h = cell_h.saturating_sub(inset * 2);
-        if player_w == 0 || player_h == 0 {
-            return;
-        }
-
-        let icon_size = player_w.min(player_h);
         let icon = self.player_bitmap(icon_size);
+        blit_rgba(
+            frame,
+            frame_width,
+            frame_height,
+            icon,
+            icon_size,
+            icon_size,
+            player_x,
+            player_y,
+        );
+    }
+
+    pub(crate) fn draw_player_blink(
+        &mut self,
+        frame: &mut [u8],
+        frame_width: u32,
+        frame_height: u32,
+        board: &BoardView,
+        viewport: &BoardViewport,
+    ) {
+        let Some((player_x, player_y, icon_size)) = self.player_sprite_rect(board, viewport) else {
+            return;
+        };
+        let icon = self.player_blink_bitmap(icon_size);
         blit_rgba(
             frame,
             frame_width,
@@ -146,6 +178,25 @@ impl Renderer {
                 highlight = highlight,
                 eye = eye,
                 limb = limb,
+            );
+
+            rasterize_svg(&svg, size)
+        })
+    }
+
+    fn player_blink_bitmap(&mut self, size: u32) -> &[u8] {
+        self.player_blink_bitmap_cache.entry(size).or_insert_with(|| {
+            let body = rgb_hex(self.theme.player_body);
+            let eye = rgb_hex(self.theme.player_eye);
+            let svg = format!(
+                "<svg xmlns='http://www.w3.org/2000/svg' width='{s}' height='{s}' viewBox='0 0 100 100'>\
+                 <path d='M31,37h38v11h-38z' fill='{body}'/>\
+                 <path d='M31,41h14v3h-14z' fill='{eye}'/>\
+                 <path d='M55,41h14v3h-14z' fill='{eye}'/>\
+                 </svg>",
+                s = size,
+                body = body,
+                eye = eye,
             );
 
             rasterize_svg(&svg, size)

@@ -3,8 +3,8 @@ mod entities;
 mod overlay;
 mod pixels;
 mod sprites;
-mod trail;
 mod tiles;
+mod trail;
 mod viewport;
 
 use image::RgbaImage;
@@ -145,6 +145,7 @@ pub struct Renderer {
     box_bitmap_cache: HashMap<u32, Vec<u8>>,
     selected_box_bitmap_cache: HashMap<u32, Vec<u8>>,
     player_bitmap_cache: HashMap<u32, Vec<u8>>,
+    player_blink_bitmap_cache: HashMap<u32, Vec<u8>>,
 }
 
 impl Renderer {
@@ -170,6 +171,7 @@ impl Renderer {
             box_bitmap_cache: HashMap::new(),
             selected_box_bitmap_cache: HashMap::new(),
             player_bitmap_cache: HashMap::new(),
+            player_blink_bitmap_cache: HashMap::new(),
         }
     }
 
@@ -225,6 +227,17 @@ impl Renderer {
         if draw_win_overlay && board.is_won() {
             self.draw_win_overlay(frame, width, height);
         }
+    }
+
+    pub fn draw_player_blink_overlay(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        board: &BoardView,
+        viewport: &BoardViewport,
+    ) {
+        self.draw_player_blink(frame, width, height, board, viewport);
     }
 }
 

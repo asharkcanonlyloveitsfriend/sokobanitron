@@ -64,7 +64,9 @@ fn can_find_path_completely_blocked() {
     assert!(!pathfinder.can_find_path(from, to, None));
 }
 
-fn parse_player_pathfinder_with_endpoints(ascii_map: &str) -> (PlayerPathfinder, Position, Position) {
+fn parse_player_pathfinder_with_endpoints(
+    ascii_map: &str,
+) -> (PlayerPathfinder, Position, Position) {
     let mut from = None;
     let mut to = None;
 

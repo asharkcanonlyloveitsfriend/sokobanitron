@@ -1,8 +1,10 @@
 use crate::{config, level, platform, ui};
 use renderer::{BoardViewport, BoardViewportOptions, Renderer, RendererOverrides};
-use sokobanitron_gameplay::{GameplayKey, GameplaySession};
+use sokobanitron_gameplay::{ClickOutcome, GameplayKey, GameplaySession};
 use std::fs;
 use std::io::Result;
+use std::thread;
+use std::time::Duration;
 
 pub struct KindleApp {
     renderer: Renderer,
@@ -94,6 +96,29 @@ impl KindleApp {
         self.display.present_rgba(&rgba)
     }
 
+    fn animate_player_blink(&mut self) -> Result<()> {
+        let mut blink_frame = vec![0u8; config::WIDTH * config::HEIGHT * 4];
+        self.renderer.draw(
+            &mut blink_frame,
+            config::WIDTH as u32,
+            config::HEIGHT as u32,
+            self.session.board(),
+            &self.viewport,
+        );
+        self.renderer.draw_player_blink_overlay(
+            &mut blink_frame,
+            config::WIDTH as u32,
+            config::HEIGHT as u32,
+            self.session.board(),
+            &self.viewport,
+        );
+        ui::draw_controls_ui(&mut blink_frame, self.show_play_button());
+        self.display.present_rgba_fast_partial(&blink_frame)?;
+        thread::sleep(Duration::from_millis(config::BLINK_ON_MS));
+
+        self.render_with_options(None, true, true, true)
+    }
+
     fn show_play_button(&self) -> bool {
         matches!(
             self.last_attempted_level,
@@ -108,11 +133,7 @@ impl KindleApp {
             return None;
         }
         let idx = value - 1;
-        if idx < level_count {
-            Some(idx)
-        } else {
-            None
-        }
+        if idx < level_count { Some(idx) } else { None }
     }
 
     fn persist_last_attempted_level(&mut self, level_index: usize) {
@@ -236,9 +257,18 @@ impl KindleApp {
             self.viewport
                 .screen_to_cell(screen_x as f64, screen_y as f64, self.session.board())
         {
+            if self.session.board().player() == Some((x, y)) {
+                self.animate_player_blink()?;
+                return Ok(());
+            }
+
             let was_won = self.session.board().is_won();
             let was_started = self.session.is_started();
-            self.session.click_cell(x, y);
+            let click_outcome = self.session.click_cell_with_feedback(x, y);
+            if click_outcome == ClickOutcome::IllegalBoxDestination {
+                self.animate_player_blink()?;
+                return Ok(());
+            }
             self.record_first_move_if_needed(was_started);
             let box_trail = self.session.take_pending_box_trail();
             let now_won = self.session.board().is_won();

@@ -37,8 +37,7 @@ pub fn load_kindle_levels() -> Vec<String> {
 }
 
 fn first_slc_contents() -> Option<String> {
-    first_slc_path()
-        .and_then(|path| fs::read_to_string(path).ok())
+    first_slc_path().and_then(|path| fs::read_to_string(path).ok())
 }
 
 fn first_slc_path() -> Option<PathBuf> {
@@ -187,12 +186,7 @@ fn rotate_clockwise_lines(lines: &[String]) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        first_slc_in_dir,
-        is_wider_than_tall,
-        parse_slc_levels,
-        rotate_clockwise_lines,
-    };
+    use super::{first_slc_in_dir, is_wider_than_tall, parse_slc_levels, rotate_clockwise_lines};
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};

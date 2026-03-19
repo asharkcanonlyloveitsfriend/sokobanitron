@@ -135,7 +135,12 @@ pub fn draw_controls_ui(frame: &mut [u8], show_play: bool) {
     draw_button_scaled(frame, top_jump_start_button_rect(), "|<", top_scale);
     draw_button(frame, left_center_button_rect(), "<");
     if show_play {
-        draw_button_scaled(frame, top_play_button_rect(), "/\\", config::UI_PLAY_TEXT_SCALE);
+        draw_button_scaled(
+            frame,
+            top_play_button_rect(),
+            "/\\",
+            config::UI_PLAY_TEXT_SCALE,
+        );
     }
     draw_button(frame, right_center_button_rect(), ">");
     draw_button_scaled(frame, top_jump_end_button_rect(), ">|", top_scale);
@@ -245,14 +250,7 @@ fn draw_button(frame: &mut [u8], rect: Rect, label: &str) {
 }
 
 fn draw_button_scaled(frame: &mut [u8], rect: Rect, label: &str, scale: usize) {
-    draw_centered_label(
-        frame,
-        rect,
-        label,
-        scale,
-        0,
-        [220, 220, 220, 255],
-    );
+    draw_centered_label(frame, rect, label, scale, 0, [220, 220, 220, 255]);
 }
 
 fn draw_centered_label(
@@ -379,12 +377,24 @@ fn glyph_pattern(ch: char) -> [u8; 7] {
         '\\' => [
             0b10000, 0b01000, 0b00100, 0b00010, 0b00001, 0b00000, 0b00000,
         ],
-        'R' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
-        'U' => [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
-        '<' => [0b00010, 0b00100, 0b01000, 0b10000, 0b01000, 0b00100, 0b00010],
-        '>' => [0b01000, 0b00100, 0b00010, 0b00001, 0b00010, 0b00100, 0b01000],
-        ' ' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000],
-        _ => [0b11111, 0b10001, 0b00110, 0b00100, 0b00110, 0b10001, 0b11111],
+        'R' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001,
+        ],
+        'U' => [
+            0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+        ],
+        '<' => [
+            0b00010, 0b00100, 0b01000, 0b10000, 0b01000, 0b00100, 0b00010,
+        ],
+        '>' => [
+            0b01000, 0b00100, 0b00010, 0b00001, 0b00010, 0b00100, 0b01000,
+        ],
+        ' ' => [
+            0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000,
+        ],
+        _ => [
+            0b11111, 0b10001, 0b00110, 0b00100, 0b00110, 0b10001, 0b11111,
+        ],
     }
 }
 

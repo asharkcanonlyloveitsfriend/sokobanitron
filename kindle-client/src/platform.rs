@@ -139,9 +139,11 @@ impl UpdateAbi {
             Self::UseAltNoVirt => iow(b'F', 0x2E, std::mem::size_of::<MxcfbUpdateUseAlt>()),
             Self::FlagsNoVirt => iow(b'F', 0x2E, std::mem::size_of::<MxcfbUpdateFlagsNoVirt>()),
             Self::FlagsWithVirt => iow(b'F', 0x2E, std::mem::size_of::<MxcfbUpdateFlagsWithVirt>()),
-            Self::FlagsWithVirtDither => {
-                iow(b'F', 0x2E, std::mem::size_of::<MxcfbUpdateFlagsWithVirtDither>())
-            }
+            Self::FlagsWithVirtDither => iow(
+                b'F',
+                0x2E,
+                std::mem::size_of::<MxcfbUpdateFlagsWithVirtDither>(),
+            ),
         }
     }
 }
@@ -164,7 +166,9 @@ pub struct Display {
 
 impl Display {
     pub fn new() -> Result<Self> {
-        let fb = OpenOptions::new().write(true).open(config::FRAMEBUFFER_DEVICE)?;
+        let fb = OpenOptions::new()
+            .write(true)
+            .open(config::FRAMEBUFFER_DEVICE)?;
 
         let _ = configure_update_mode(&fb);
         let update_abi = probe_update_abi(&fb);
@@ -209,7 +213,11 @@ impl Display {
         Ok(())
     }
 
-    fn request_partial_refresh(&mut self, region: Region, waveform_mode: Option<u32>) -> Result<()> {
+    fn request_partial_refresh(
+        &mut self,
+        region: Region,
+        waveform_mode: Option<u32>,
+    ) -> Result<()> {
         let waveform = waveform_mode.unwrap_or(WAVEFORM_MODE_DU);
         if let Some(abi) = self.update_abi {
             match send_update_ioctl(
@@ -292,12 +300,7 @@ impl Display {
         let waveform = waveform_mode.unwrap_or(0);
         let cmd = format!(
             "{} {} {} {} {} {}\n",
-            waveform,
-            update_mode,
-            aligned.top,
-            aligned.left,
-            aligned.width,
-            aligned.height
+            waveform, update_mode, aligned.top, aligned.left, aligned.width, aligned.height
         );
         if write_sysfs_refresh(&cmd).is_ok() {
             return Ok(());
@@ -374,8 +377,18 @@ impl TouchReader {
 }
 
 pub fn map_touch_to_screen(raw_x: i32, raw_y: i32) -> io::Result<(usize, usize)> {
-    let x = map_touch(raw_x, config::TOUCH_MIN_X, config::TOUCH_MAX_X, config::WIDTH)?;
-    let y = map_touch(raw_y, config::TOUCH_MIN_Y, config::TOUCH_MAX_Y, config::HEIGHT)?;
+    let x = map_touch(
+        raw_x,
+        config::TOUCH_MIN_X,
+        config::TOUCH_MAX_X,
+        config::WIDTH,
+    )?;
+    let y = map_touch(
+        raw_y,
+        config::TOUCH_MIN_Y,
+        config::TOUCH_MAX_Y,
+        config::HEIGHT,
+    )?;
     Ok((x, y))
 }
 
@@ -633,6 +646,8 @@ fn configure_update_mode(fb: &File) -> io::Result<()> {
 }
 
 fn write_sysfs_refresh(command: &str) -> io::Result<()> {
-    let mut f = OpenOptions::new().write(true).open(config::REFRESH_DEVICE)?;
+    let mut f = OpenOptions::new()
+        .write(true)
+        .open(config::REFRESH_DEVICE)?;
     f.write_all(command.as_bytes())
 }

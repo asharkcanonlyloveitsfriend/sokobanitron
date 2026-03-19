@@ -4,18 +4,20 @@ use sokobanitron_core::pathfinder::Position;
 use sokobanitron_game_engine_jni::engine::GameEngine;
 use std::collections::HashSet;
 
-const DEFAULT_LEVEL_LINES: [&str; 4] = [
-    "    ###   ",
-    " $$     #@",
-    " $ #...   ",
-    "   #######",
-];
+const DEFAULT_LEVEL_LINES: [&str; 4] = ["    ###   ", " $$     #@", " $ #...   ", "   #######"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GameplayKey {
     Escape,
     Backspace,
     Other,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClickOutcome {
+    NoOp,
+    Updated,
+    IllegalBoxDestination,
 }
 
 pub struct GameplaySession {
@@ -45,12 +47,8 @@ impl GameplaySession {
             .iter()
             .map(|pos| (pos.col as u32, pos.row as u32))
             .collect();
-        let board = presenter.render_board(
-            player_xy,
-            &box_positions,
-            None,
-            engine.is_level_solved(),
-        );
+        let board =
+            presenter.render_board(player_xy, &box_positions, None, engine.is_level_solved());
 
         Self {
             level_ascii,
@@ -75,8 +73,12 @@ impl GameplaySession {
     }
 
     pub fn click_cell(&mut self, x: u32, y: u32) {
+        let _ = self.click_cell_with_feedback(x, y);
+    }
+
+    pub fn click_cell_with_feedback(&mut self, x: u32, y: u32) -> ClickOutcome {
         if self.board.is_won() {
-            return;
+            return ClickOutcome::NoOp;
         }
 
         let clicked_has_box = self
@@ -92,7 +94,7 @@ impl GameplaySession {
                 Some((x, y))
             };
             self.sync_board();
-            return;
+            return ClickOutcome::Updated;
         }
 
         if let Some((from_x, from_y)) = self.selected_box {
@@ -107,14 +109,21 @@ impl GameplaySession {
                         .map(|p| (p.col as u32, p.row as u32))
                         .collect(),
                 );
+                self.sync_board();
+                return ClickOutcome::Updated;
             }
             self.sync_board();
-            return;
+            return ClickOutcome::IllegalBoxDestination;
         }
 
-        if self.engine.move_player_to(Position::new(y as usize, x as usize)) {
+        if self
+            .engine
+            .move_player_to(Position::new(y as usize, x as usize))
+        {
             self.sync_board();
+            return ClickOutcome::Updated;
         }
+        ClickOutcome::NoOp
     }
 
     pub fn on_key(&mut self, key: GameplayKey) {
