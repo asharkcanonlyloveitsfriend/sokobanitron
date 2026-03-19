@@ -62,6 +62,29 @@ impl KindleApp {
         self.load_current_level();
     }
 
+    fn peek_level(&self, delta: i32) -> Option<usize> {
+        if self.levels.is_empty() {
+            return None;
+        }
+        let len = self.levels.len() as i32;
+        let next = (self.current_level as i32 + delta).rem_euclid(len);
+        Some(next as usize)
+    }
+
+    fn flash_level_number(&mut self, level_index: usize) -> Result<()> {
+        let mut rgba = vec![0u8; config::WIDTH * config::HEIGHT * 4];
+        self.renderer.draw(
+            &mut rgba,
+            config::WIDTH as u32,
+            config::HEIGHT as u32,
+            self.session.board(),
+            &self.viewport,
+        );
+        ui::draw_controls_ui(&mut rgba);
+        ui::draw_level_flash_overlay(&mut rgba, level_index + 1);
+        self.display.present_rgba(&rgba)
+    }
+
     fn compute_viewport(board: &sokobanitron_gameplay::BoardView) -> BoardViewport {
         let h_margin = config::BOARD_HORIZONTAL_MARGIN as u32;
         let v_margin = config::BOARD_VERTICAL_MARGIN as u32;
@@ -109,11 +132,17 @@ impl KindleApp {
                     return Ok(());
                 }
                 ui::ButtonAction::Previous => {
+                    if let Some(next) = self.peek_level(-1) {
+                        self.flash_level_number(next)?;
+                    }
                     self.step_level(-1);
                     self.render()?;
                     return Ok(());
                 }
                 ui::ButtonAction::Next => {
+                    if let Some(next) = self.peek_level(1) {
+                        self.flash_level_number(next)?;
+                    }
                     self.step_level(1);
                     self.render()?;
                     return Ok(());
