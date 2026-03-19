@@ -168,6 +168,46 @@ pub fn draw_level_flash_overlay(frame: &mut [u8], level_number: usize) {
     draw_outlined_text(frame, x, y, &text, best_scale, best_spacing);
 }
 
+pub fn draw_you_win_overlay(frame: &mut [u8]) {
+    let line1 = "YOU";
+    let line2 = "WIN";
+    let max_w = config::WIDTH.saturating_mul(9) / 10;
+    let max_h_total = config::HEIGHT / 2;
+
+    let mut best_scale = 1usize;
+    let mut best_spacing = 1usize;
+    let mut best_gap = 1usize;
+
+    for scale in (1..=256usize).rev() {
+        let spacing = (scale / 4).max(1);
+        let gap = (scale / 2).max(1);
+        let w = measure_text(line1, scale, spacing).max(measure_text(line2, scale, spacing));
+        let h_total = 7usize
+            .saturating_mul(scale)
+            .saturating_mul(2)
+            .saturating_add(gap);
+        if w <= max_w && h_total <= max_h_total {
+            best_scale = scale;
+            best_spacing = spacing;
+            best_gap = gap;
+            break;
+        }
+    }
+
+    let line_h = 7usize.saturating_mul(best_scale);
+    let total_h = line_h.saturating_mul(2).saturating_add(best_gap);
+    let y0 = (config::HEIGHT.saturating_sub(total_h)) / 2;
+
+    let w1 = measure_text(line1, best_scale, best_spacing);
+    let x1 = (config::WIDTH.saturating_sub(w1)) / 2;
+    draw_outlined_text(frame, x1, y0, line1, best_scale, best_spacing);
+
+    let w2 = measure_text(line2, best_scale, best_spacing);
+    let x2 = (config::WIDTH.saturating_sub(w2)) / 2;
+    let y2 = y0.saturating_add(line_h).saturating_add(best_gap);
+    draw_outlined_text(frame, x2, y2, line2, best_scale, best_spacing);
+}
+
 fn draw_outlined_text(
     frame: &mut [u8],
     x: usize,
@@ -314,6 +354,21 @@ fn glyph_pattern(ch: char) -> [u8; 7] {
         ],
         '9' => [
             0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110,
+        ],
+        'Y' => [
+            0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100,
+        ],
+        'O' => [
+            0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+        ],
+        'W' => [
+            0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b10101, 0b01010,
+        ],
+        'I' => [
+            0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b11111,
+        ],
+        'N' => [
+            0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001,
         ],
         '|' => [
             0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100,

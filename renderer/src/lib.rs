@@ -193,7 +193,9 @@ impl Renderer {
         viewport: &BoardViewport,
         box_trail: Option<&[(u32, u32)]>,
     ) {
-        self.draw_with_box_trail_options(frame, width, height, board, viewport, box_trail, true);
+        self.draw_with_box_trail_options(
+            frame, width, height, board, viewport, box_trail, true, true,
+        );
     }
 
     pub fn draw_with_box_trail_options(
@@ -205,6 +207,7 @@ impl Renderer {
         viewport: &BoardViewport,
         box_trail: Option<&[(u32, u32)]>,
         draw_player: bool,
+        draw_win_overlay: bool,
     ) {
         if width == 0 || height == 0 {
             return;
@@ -219,7 +222,7 @@ impl Renderer {
         if draw_player {
             self.draw_player(frame, width, height, board, viewport);
         }
-        if board.is_won() {
+        if draw_win_overlay && board.is_won() {
             self.draw_win_overlay(frame, width, height);
         }
     }

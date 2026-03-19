@@ -148,7 +148,7 @@ impl KindleApp {
 
     fn render(&mut self) -> Result<()> {
         let box_trail = self.session.take_pending_box_trail();
-        self.render_with_options(box_trail.as_deref(), true, false)
+        self.render_with_options(box_trail.as_deref(), true, false, true)
     }
 
     fn render_with_options(
@@ -156,6 +156,7 @@ impl KindleApp {
         box_trail: Option<&[(u32, u32)]>,
         draw_player: bool,
         fast_partial: bool,
+        show_win_overlay: bool,
     ) -> Result<()> {
         let mut rgba = vec![0u8; config::WIDTH * config::HEIGHT * 4];
         self.renderer.draw_with_box_trail_options(
@@ -166,8 +167,12 @@ impl KindleApp {
             &self.viewport,
             box_trail,
             draw_player,
+            false,
         );
         ui::draw_controls_ui(&mut rgba, self.show_play_button());
+        if show_win_overlay && self.session.board().is_won() {
+            ui::draw_you_win_overlay(&mut rgba);
+        }
         if fast_partial {
             self.display.present_rgba_fast_partial(&rgba)
         } else {
@@ -177,6 +182,13 @@ impl KindleApp {
 
     fn on_tap(&mut self, raw_x: i32, raw_y: i32) -> Result<()> {
         let (screen_x, screen_y) = platform::map_touch_to_screen(raw_x, raw_y)?;
+        if self.session.board().is_won() {
+            if let Some(next) = self.peek_level(1) {
+                self.jump_to_level(next);
+                self.render()?;
+            }
+            return Ok(());
+        }
         if let Some(action) = ui::button_action_at(screen_x, screen_y, self.show_play_button()) {
             match action {
                 ui::ButtonAction::Restart => {
@@ -225,15 +237,21 @@ impl KindleApp {
             self.viewport
                 .screen_to_cell(screen_x as f64, screen_y as f64, self.session.board())
         {
+            let was_won = self.session.board().is_won();
             let was_started = self.session.is_started();
             self.session.click_cell(x, y);
             self.record_first_move_if_needed(was_started);
             let box_trail = self.session.take_pending_box_trail();
+            let now_won = self.session.board().is_won();
+            let delay_win_overlay = !was_won && now_won;
             if box_trail.as_ref().is_some_and(|path| path.len() > 2) {
-                self.render_with_options(box_trail.as_deref(), false, false)?;
-                self.render_with_options(None, true, true)?;
+                self.render_with_options(box_trail.as_deref(), false, false, !delay_win_overlay)?;
+                self.render_with_options(None, true, true, true)?;
             } else {
-                self.render_with_options(None, true, false)?;
+                self.render_with_options(None, true, false, !delay_win_overlay)?;
+                if delay_win_overlay {
+                    self.render_with_options(None, true, true, true)?;
+                }
             }
         }
         Ok(())
