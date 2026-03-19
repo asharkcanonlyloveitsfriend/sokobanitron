@@ -19,6 +19,21 @@ pub enum ControlsButtonAction {
     Undo,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScreenRect {
+    pub x: u32,
+    pub y: u32,
+    pub w: u32,
+    pub h: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ControlsButtonRects {
+    pub menu: ScreenRect,
+    pub restart: ScreenRect,
+    pub undo: ScreenRect,
+}
+
 pub const UI_BUTTON_SIZE: u32 = 76;
 pub const UI_BUTTON_MARGIN: u32 = 16;
 pub const UI_MENU_BUTTON_HEIGHT: u32 = UI_BUTTON_SIZE / 2;
@@ -42,6 +57,25 @@ fn ui_menu_button_height() -> usize {
 
 pub fn board_viewport_margins() -> (u32, u32) {
     (BOARD_HORIZONTAL_MARGIN, BOARD_VERTICAL_MARGIN)
+}
+
+fn to_screen_rect(rect: Rect) -> ScreenRect {
+    ScreenRect {
+        x: rect.x as u32,
+        y: rect.y as u32,
+        w: rect.w as u32,
+        h: rect.h as u32,
+    }
+}
+
+pub fn controls_button_rects(width: u32, height: u32) -> ControlsButtonRects {
+    let width = width as usize;
+    let height = height as usize;
+    ControlsButtonRects {
+        menu: to_screen_rect(top_menu_button_rect(width)),
+        restart: to_screen_rect(bottom_left_button_rect(height)),
+        undo: to_screen_rect(bottom_right_button_rect(width, height)),
+    }
 }
 
 fn top_row_y() -> usize {
