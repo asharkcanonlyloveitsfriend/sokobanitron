@@ -7,12 +7,55 @@ pub struct BoardViewport {
     pub cell_size: u32,
     pub board_pixel_width: u32,
     pub board_pixel_height: u32,
+    pub outer_margin_tiles: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct BoardViewportOptions {
+    pub outer_margin_tiles: u32,
+}
+
+impl Default for BoardViewportOptions {
+    fn default() -> Self {
+        Self {
+            outer_margin_tiles: 1,
+        }
+    }
+}
+
+impl BoardViewportOptions {
+    pub fn fill_available_space() -> Self {
+        Self {
+            outer_margin_tiles: 0,
+        }
+    }
 }
 
 impl BoardViewport {
     pub fn fit_to_window(window_width: u32, window_height: u32, board: &BoardView) -> Self {
-        let cols = board.width().saturating_add(2).max(1);
-        let rows = board.height().saturating_add(2).max(1);
+        Self::fit_to_window_with_options(
+            window_width,
+            window_height,
+            board,
+            BoardViewportOptions::default(),
+        )
+    }
+
+    pub fn fit_to_window_with_options(
+        window_width: u32,
+        window_height: u32,
+        board: &BoardView,
+        options: BoardViewportOptions,
+    ) -> Self {
+        let margin = options.outer_margin_tiles;
+        let cols = board
+            .width()
+            .saturating_add(margin.saturating_mul(2))
+            .max(1);
+        let rows = board
+            .height()
+            .saturating_add(margin.saturating_mul(2))
+            .max(1);
         let max_cell_w = window_width / cols;
         let max_cell_h = window_height / rows;
         let cell_size = max_cell_w.min(max_cell_h).max(1);
@@ -29,12 +72,13 @@ impl BoardViewport {
             cell_size,
             board_pixel_width,
             board_pixel_height,
+            outer_margin_tiles: margin,
         }
     }
 
     pub fn cell_to_screen_rect(&self, x: u32, y: u32) -> (i32, i32, u32, u32) {
-        let px = self.origin_x + ((x + 1) as i32 * self.cell_size as i32);
-        let py = self.origin_y + ((y + 1) as i32 * self.cell_size as i32);
+        let px = self.origin_x + ((x + self.outer_margin_tiles) as i32 * self.cell_size as i32);
+        let py = self.origin_y + ((y + self.outer_margin_tiles) as i32 * self.cell_size as i32);
         (px, py, self.cell_size, self.cell_size)
     }
 
@@ -56,8 +100,8 @@ impl BoardViewport {
 
         let col = (rel_x / f64::from(self.cell_size)).floor() as i32;
         let row = (rel_y / f64::from(self.cell_size)).floor() as i32;
-        let inner_x = col - 1;
-        let inner_y = row - 1;
+        let inner_x = col - self.outer_margin_tiles as i32;
+        let inner_y = row - self.outer_margin_tiles as i32;
         if inner_x >= 0
             && inner_y >= 0
             && (inner_x as u32) < board.width()

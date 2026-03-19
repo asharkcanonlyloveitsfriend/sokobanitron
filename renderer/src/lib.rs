@@ -10,7 +10,7 @@ use image::RgbaImage;
 use sokobanitron_gameplay::BoardView;
 use std::collections::HashMap;
 
-pub use viewport::BoardViewport;
+pub use viewport::{BoardViewport, BoardViewportOptions};
 pub type Rgba = [u8; 4];
 
 const BG_SPACE_PNG: &[u8] = include_bytes!(concat!(

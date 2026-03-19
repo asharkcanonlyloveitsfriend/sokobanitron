@@ -1,5 +1,5 @@
 use crate::{config, level, platform, ui};
-use renderer::{BoardViewport, Renderer, RendererOverrides};
+use renderer::{BoardViewport, BoardViewportOptions, Renderer, RendererOverrides};
 use sokobanitron_gameplay::{GameplayKey, GameplaySession};
 use std::io::Result;
 
@@ -13,11 +13,7 @@ pub struct KindleApp {
 impl KindleApp {
     pub fn new() -> Result<Self> {
         let session = GameplaySession::from_level_ascii(level::portrait_level_ascii());
-        let viewport = BoardViewport::fit_to_window(
-            config::WIDTH as u32,
-            config::HEIGHT as u32,
-            session.board(),
-        );
+        let viewport = Self::compute_viewport(session.board());
         Ok(Self {
             renderer: Renderer::with_overrides(RendererOverrides {
                 selected_box_primary: Some(config::KINDLE_SELECTED_BOX_PRIMARY),
@@ -42,11 +38,24 @@ impl KindleApp {
     }
 
     fn update_viewport(&mut self) {
-        self.viewport = BoardViewport::fit_to_window(
-            config::WIDTH as u32,
-            config::HEIGHT as u32,
-            self.session.board(),
+        self.viewport = Self::compute_viewport(self.session.board());
+    }
+
+    fn compute_viewport(board: &sokobanitron_gameplay::BoardView) -> BoardViewport {
+        let h_margin = config::BOARD_HORIZONTAL_MARGIN as u32;
+        let v_margin = config::BOARD_VERTICAL_MARGIN as u32;
+        let safe_width = (config::WIDTH as u32).saturating_sub(h_margin * 2).max(1);
+        let safe_height = (config::HEIGHT as u32).saturating_sub(v_margin * 2).max(1);
+
+        let mut viewport = BoardViewport::fit_to_window_with_options(
+            safe_width,
+            safe_height,
+            board,
+            BoardViewportOptions::fill_available_space(),
         );
+        viewport.origin_x += h_margin as i32;
+        viewport.origin_y += v_margin as i32;
+        viewport
     }
 
     fn render(&mut self) -> Result<()> {
