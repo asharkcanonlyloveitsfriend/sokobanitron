@@ -33,6 +33,51 @@ impl Renderer {
             prev = next;
         }
     }
+
+    pub(crate) fn draw_box_trail_with_progress(
+        &self,
+        frame: &mut [u8],
+        frame_width: u32,
+        frame_height: u32,
+        viewport: &BoardViewport,
+        path: &[(u32, u32)],
+        consumed_segments: f32,
+    ) {
+        if path.len() <= 2 {
+            return;
+        }
+
+        let total_segments = (path.len() - 1) as f32;
+        let consumed = consumed_segments.clamp(0.0, total_segments);
+        if consumed >= total_segments {
+            return;
+        }
+
+        let color = [211, 211, 211, 255];
+        let thickness = ((viewport.cell_size as f32) * 0.2f32).round().max(1.0f32) as i32;
+        let half = thickness / 2;
+
+        let start_segment = consumed.floor() as usize;
+        let start_fraction = consumed - start_segment as f32;
+        let seg_start = cell_center(viewport, path[start_segment]);
+        let seg_end = cell_center(viewport, path[start_segment + 1]);
+        let mut prev = interpolate_point(seg_start, seg_end, start_fraction);
+
+        for index in (start_segment + 1)..path.len() {
+            let next = cell_center(viewport, path[index]);
+            draw_thick_segment(
+                frame,
+                frame_width,
+                frame_height,
+                prev,
+                next,
+                thickness,
+                half,
+                color,
+            );
+            prev = next;
+        }
+    }
 }
 
 fn cell_center(viewport: &BoardViewport, cell: (u32, u32)) -> (i32, i32) {
@@ -69,4 +114,10 @@ fn draw_thick_segment(
             color,
         );
     }
+}
+
+fn interpolate_point(start: (i32, i32), end: (i32, i32), t: f32) -> (i32, i32) {
+    let x = start.0 as f32 + (end.0 - start.0) as f32 * t;
+    let y = start.1 as f32 + (end.1 - start.1) as f32 * t;
+    (x.round() as i32, y.round() as i32)
 }

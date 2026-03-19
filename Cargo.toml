@@ -2,10 +2,10 @@
 members = [
     "sokobanitron-core",
     "game-engine",
-    "gameplay",
+    "sokobanitron-gameplay",
     "desktop-client",
     "kindle-client",
-    "renderer",
+    "sokobanitron-renderer",
 ]
 
 resolver = "2"

@@ -1,16 +1,16 @@
-use crate::config;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
+use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct Preferences {
+pub struct GameplayPreferences {
     pub last_started_level: Option<usize>,
     pub show_box_path: bool,
 }
 
-impl Default for Preferences {
+impl Default for GameplayPreferences {
     fn default() -> Self {
         Self {
             last_started_level: None,
@@ -19,9 +19,9 @@ impl Default for Preferences {
     }
 }
 
-impl Preferences {
-    pub fn load() -> Self {
-        let raw = match fs::read_to_string(config::PREFERENCES_PATH) {
+impl GameplayPreferences {
+    pub fn load(path: impl AsRef<Path>) -> Self {
+        let raw = match fs::read_to_string(path) {
             Ok(raw) => raw,
             Err(_) => return Self::default(),
         };
@@ -29,10 +29,10 @@ impl Preferences {
         serde_json::from_str(&raw).unwrap_or_default()
     }
 
-    pub fn save(&self) -> io::Result<()> {
+    pub fn save(&self, path: impl AsRef<Path>) -> io::Result<()> {
         let raw = serde_json::to_string_pretty(self)
             .map_err(|err| io::Error::other(format!("serialize preferences: {err}")))?;
-        fs::write(config::PREFERENCES_PATH, raw)
+        fs::write(path, raw)
     }
 
     pub fn level_index(&self, level_count: usize) -> Option<usize> {

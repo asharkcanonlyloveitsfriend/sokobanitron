@@ -10,3 +10,6 @@
 
 # Local level packs for Kindle testing/deployment
 /*.slc
+
+# Local preferences for desktop client
+/desktop-client-preferences.json

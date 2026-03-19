@@ -1,10 +1,8 @@
+use crate::engine::GameEngine;
 use crate::level::parse_level_ascii;
 use crate::presenter::{BoardView, GameBoardPresenter};
 use sokobanitron_core::pathfinder::Position;
-use sokobanitron_game_engine_jni::engine::GameEngine;
 use std::collections::HashSet;
-
-const DEFAULT_LEVEL_LINES: [&str; 4] = ["    ###   ", " $$     #@", " $ #...   ", "   #######"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GameplayKey {
@@ -13,12 +11,16 @@ pub enum GameplayKey {
     Other,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ClickOutcome {
-    NoOp,
-    Updated,
-    IllegalBoxDestination,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GameplayEvent {
+    SelectionChanged { selected_box: Option<(u32, u32)> },
+    PlayerMoved { to_x: u32, to_y: u32 },
+    BoxMoved { path: Vec<(u32, u32)> },
     BoxRemoved { to_x: u32, to_y: u32 },
+    MoveRejected,
+    UndoApplied,
+    Restarted,
+    LevelSolved { clean: bool },
 }
 
 pub struct GameplaySession {
@@ -26,16 +28,10 @@ pub struct GameplaySession {
     presenter: GameBoardPresenter,
     engine: GameEngine,
     selected_box: Option<(u32, u32)>,
-    pending_box_trail: Option<Vec<(u32, u32)>>,
     board: BoardView,
 }
 
 impl GameplaySession {
-    pub fn new_default_level() -> Self {
-        let level_ascii = DEFAULT_LEVEL_LINES.join("\n");
-        Self::from_level_ascii(level_ascii)
-    }
-
     pub fn from_level_ascii(level_ascii: String) -> Self {
         let parsed = parse_level_ascii(&level_ascii);
         let presenter = GameBoardPresenter::new(parsed);
@@ -56,7 +52,6 @@ impl GameplaySession {
             presenter,
             engine,
             selected_box: None,
-            pending_box_trail: None,
             board,
         }
     }
@@ -73,18 +68,12 @@ impl GameplaySession {
         self.engine.is_clean_solution()
     }
 
-    pub fn take_pending_box_trail(&mut self) -> Option<Vec<(u32, u32)>> {
-        self.pending_box_trail.take()
-    }
-
-    pub fn click_cell(&mut self, x: u32, y: u32) {
-        let _ = self.click_cell_with_feedback(x, y);
-    }
-
-    pub fn click_cell_with_feedback(&mut self, x: u32, y: u32) -> ClickOutcome {
+    pub fn click_cell_with_events(&mut self, x: u32, y: u32) -> Vec<GameplayEvent> {
+        let mut events = Vec::new();
         if self.board.is_won() {
-            return ClickOutcome::NoOp;
+            return events;
         }
+        let was_won = self.board.is_won();
 
         let clicked_has_box = self
             .engine
@@ -99,7 +88,10 @@ impl GameplaySession {
                 Some((x, y))
             };
             self.sync_board();
-            return ClickOutcome::Updated;
+            events.push(GameplayEvent::SelectionChanged {
+                selected_box: self.selected_box,
+            });
+            return events;
         }
 
         if let Some((from_x, from_y)) = self.selected_box {
@@ -110,13 +102,15 @@ impl GameplaySession {
                 );
                 if removed {
                     self.selected_box = None;
-                    self.pending_box_trail = None;
                     self.sync_board();
-                    return ClickOutcome::BoxRemoved { to_x: x, to_y: y };
+                    events.push(GameplayEvent::BoxRemoved { to_x: x, to_y: y });
+                    self.push_solved_event_if_needed(was_won, &mut events);
+                    return events;
                 }
                 self.selected_box = None;
                 self.sync_board();
-                return ClickOutcome::IllegalBoxDestination;
+                events.push(GameplayEvent::MoveRejected);
+                return events;
             }
 
             let moved_box = self.engine.move_box_to(
@@ -125,17 +119,20 @@ impl GameplaySession {
             );
             if let Some(path) = moved_box {
                 self.selected_box = None;
-                self.pending_box_trail = Some(
-                    path.into_iter()
+                self.sync_board();
+                events.push(GameplayEvent::BoxMoved {
+                    path: path
+                        .into_iter()
                         .map(|p| (p.col as u32, p.row as u32))
                         .collect(),
-                );
-                self.sync_board();
-                return ClickOutcome::Updated;
+                });
+                self.push_solved_event_if_needed(was_won, &mut events);
+                return events;
             }
             self.selected_box = None;
             self.sync_board();
-            return ClickOutcome::IllegalBoxDestination;
+            events.push(GameplayEvent::MoveRejected);
+            return events;
         }
 
         if self
@@ -143,37 +140,52 @@ impl GameplaySession {
             .move_player_to(Position::new(y as usize, x as usize))
         {
             self.sync_board();
-            return ClickOutcome::Updated;
+            events.push(GameplayEvent::PlayerMoved { to_x: x, to_y: y });
+            return events;
         }
-        ClickOutcome::NoOp
+        events.push(GameplayEvent::MoveRejected);
+        events
     }
 
-    pub fn on_key(&mut self, key: GameplayKey) {
+    pub fn on_key_with_events(&mut self, key: GameplayKey) -> Vec<GameplayEvent> {
+        let mut events = Vec::new();
         if self.board.is_won() {
             if key == GameplayKey::Escape {
                 self.restart();
+                events.push(GameplayEvent::Restarted);
             }
-            return;
+            return events;
         }
 
         match key {
             GameplayKey::Backspace => {
                 if self.engine.undo().is_some() {
                     self.selected_box = None;
-                    self.pending_box_trail = None;
                     self.sync_board();
+                    events.push(GameplayEvent::UndoApplied);
                 }
             }
-            GameplayKey::Escape => self.restart(),
+            GameplayKey::Escape => {
+                self.restart();
+                events.push(GameplayEvent::Restarted);
+            }
             GameplayKey::Other => {}
         }
+        events
     }
 
     pub fn restart(&mut self) {
         self.engine = GameEngine::from_ascii(&self.level_ascii).expect("level ascii must parse");
         self.selected_box = None;
-        self.pending_box_trail = None;
         self.sync_board();
+    }
+
+    fn push_solved_event_if_needed(&self, was_won: bool, events: &mut Vec<GameplayEvent>) {
+        if !was_won && self.board.is_won() {
+            events.push(GameplayEvent::LevelSolved {
+                clean: self.engine.is_clean_solution(),
+            });
+        }
     }
 
     fn sync_board(&mut self) {

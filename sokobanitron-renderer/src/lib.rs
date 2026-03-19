@@ -1,4 +1,5 @@
 mod background;
+mod controls;
 mod entities;
 mod overlay;
 mod pixels;
@@ -11,13 +12,36 @@ use image::RgbaImage;
 use sokobanitron_gameplay::BoardView;
 use std::collections::HashMap;
 
+pub use controls::{
+    BOARD_HORIZONTAL_MARGIN, BOARD_VERTICAL_MARGIN, ControlsButtonAction, UI_BUTTON_MARGIN,
+    UI_BUTTON_SIZE, UI_MENU_BUTTON_HEIGHT, board_viewport_margins, controls_button_action_at,
+    draw_controls_ui,
+};
 pub use viewport::{BoardViewport, BoardViewportOptions};
 pub type Rgba = [u8; 4];
 
-const BG_SPACE_PNG: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../android-client/app/src/main/res/drawable-nodpi/bg_space.png"
-));
+const BG_SPACE_PNG: &[u8] =
+    include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/bg_space.png"));
+
+pub fn fit_board_viewport_for_controls(
+    width: u32,
+    height: u32,
+    board: &BoardView,
+) -> BoardViewport {
+    let (h_margin, v_margin) = board_viewport_margins();
+    let safe_width = width.saturating_sub(h_margin * 2).max(1);
+    let safe_height = height.saturating_sub(v_margin * 2).max(1);
+
+    let mut viewport = BoardViewport::fit_to_window_with_options(
+        safe_width,
+        safe_height,
+        board,
+        BoardViewportOptions::fill_available_space(),
+    );
+    viewport.origin_x += h_margin as i32;
+    viewport.origin_y += v_margin as i32;
+    viewport
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct RendererTheme {
@@ -211,6 +235,58 @@ impl Renderer {
         draw_player: bool,
         draw_win_overlay: bool,
     ) {
+        self.draw_with_box_trail_progress_options(
+            frame,
+            width,
+            height,
+            board,
+            viewport,
+            box_trail,
+            None,
+            draw_player,
+            draw_win_overlay,
+        );
+    }
+
+    pub fn draw_with_box_trail_progress_options(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        board: &BoardView,
+        viewport: &BoardViewport,
+        box_trail: Option<&[(u32, u32)]>,
+        box_trail_consumed_segments: Option<f32>,
+        draw_player: bool,
+        draw_win_overlay: bool,
+    ) {
+        self.draw_with_box_trail_progress_effects(
+            frame,
+            width,
+            height,
+            board,
+            viewport,
+            box_trail,
+            box_trail_consumed_segments,
+            draw_player,
+            false,
+            draw_win_overlay,
+        );
+    }
+
+    pub fn draw_with_box_trail_progress_effects(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        board: &BoardView,
+        viewport: &BoardViewport,
+        box_trail: Option<&[(u32, u32)]>,
+        box_trail_consumed_segments: Option<f32>,
+        draw_player: bool,
+        draw_player_blink: bool,
+        draw_win_overlay: bool,
+    ) {
         if width == 0 || height == 0 {
             return;
         }
@@ -218,26 +294,22 @@ impl Renderer {
         frame.copy_from_slice(&self.cached_background);
         self.draw_floor_tiles(frame, width, height, board, viewport);
         if let Some(path) = box_trail {
-            self.draw_box_trail(frame, width, height, viewport, path);
+            if let Some(consumed) = box_trail_consumed_segments {
+                self.draw_box_trail_with_progress(frame, width, height, viewport, path, consumed);
+            } else {
+                self.draw_box_trail(frame, width, height, viewport, path);
+            }
         }
         self.draw_boxes(frame, width, height, board, viewport);
         if draw_player {
             self.draw_player(frame, width, height, board, viewport);
+            if draw_player_blink {
+                self.draw_player_blink(frame, width, height, board, viewport);
+            }
         }
         if draw_win_overlay && board.is_won() {
             self.draw_win_overlay(frame, width, height);
         }
-    }
-
-    pub fn draw_player_blink_overlay(
-        &mut self,
-        frame: &mut [u8],
-        width: u32,
-        height: u32,
-        board: &BoardView,
-        viewport: &BoardViewport,
-    ) {
-        self.draw_player_blink(frame, width, height, board, viewport);
     }
 }
 

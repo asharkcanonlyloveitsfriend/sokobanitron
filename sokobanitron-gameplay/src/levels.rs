@@ -2,35 +2,25 @@ use sokobanitron_core::normalize_to_walkable_region_lines;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const PORTRAIT_LEVEL_VISUAL: &str = "\
-_@_#\n\
-_#_#\n\
-___#\n\
-#_.#\n\
-#_.#\n\
-#_.#\n\
-__##\n\
-_$__\n\
-_$$_\n\
-____";
-
-pub fn portrait_level_ascii() -> String {
-    PORTRAIT_LEVEL_VISUAL
-        .chars()
-        .map(|ch| if ch == '_' { ' ' } else { ch })
-        .collect()
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OrientationPolicy {
+    Keep,
+    RotateWideToPortrait,
 }
 
-pub fn load_kindle_levels() -> Vec<String> {
+pub fn load_levels_from_default_locations(
+    orientation_policy: OrientationPolicy,
+    fallback_ascii: &str,
+) -> Vec<String> {
     let parsed = first_slc_contents()
         .map(|xml| parse_slc_levels(&xml))
         .unwrap_or_default()
         .into_iter()
-        .map(|ascii| normalize_and_orient_level(&ascii))
+        .map(|ascii| normalize_and_orient_level(&ascii, orientation_policy))
         .filter(|ascii| !ascii.trim().is_empty())
         .collect::<Vec<_>>();
     if parsed.is_empty() {
-        vec![portrait_level_ascii()]
+        vec![fallback_ascii.to_string()]
     } else {
         parsed
     }
@@ -80,10 +70,10 @@ fn first_slc_in_dir(dir: &Path) -> Option<PathBuf> {
     entries.into_iter().next()
 }
 
-fn normalize_and_orient_level(ascii: &str) -> String {
+fn normalize_and_orient_level(ascii: &str, orientation_policy: OrientationPolicy) -> String {
     let mut lines = ascii.lines().map(ToString::to_string).collect::<Vec<_>>();
     lines = normalize_to_walkable_region_lines(lines);
-    if is_wider_than_tall(&lines) {
+    if orientation_policy == OrientationPolicy::RotateWideToPortrait && is_wider_than_tall(&lines) {
         lines = rotate_clockwise_lines(&lines);
     }
     lines.join("\n")
@@ -222,7 +212,7 @@ mod tests {
     fn picks_first_slc_file_lexicographically() {
         let mut dir = std::env::temp_dir();
         dir.push(format!(
-            "kindle-level-test-{}",
+            "level-loader-test-{}",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("clock")

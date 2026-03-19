@@ -571,8 +571,8 @@ name = "desktop-client"
 version = "0.1.0"
 dependencies = [
  "pixels",
- "renderer",
  "sokobanitron-gameplay",
+ "sokobanitron-renderer",
  "winit",
 ]
 
@@ -1039,11 +1039,9 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 name = "kindle-client"
 version = "0.1.0"
 dependencies = [
- "renderer",
- "serde",
- "serde_json",
  "sokobanitron-core",
  "sokobanitron-gameplay",
+ "sokobanitron-renderer",
 ]
 
 [[package]]
@@ -1866,16 +1864,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
-name = "renderer"
-version = "0.1.0"
-dependencies = [
- "font8x8",
- "image",
- "resvg",
- "sokobanitron-gameplay",
-]
-
-[[package]]
 name = "resvg"
 version = "0.45.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2167,8 +2155,19 @@ dependencies = [
 name = "sokobanitron-gameplay"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "sokobanitron-core",
- "sokobanitron-game-engine",
+]
+
+[[package]]
+name = "sokobanitron-renderer"
+version = "0.1.0"
+dependencies = [
+ "font8x8",
+ "image",
+ "resvg",
+ "sokobanitron-gameplay",
 ]
 
 [[package]]

@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 sokobanitron-core = { path = "../sokobanitron-core" }
-sokobanitron_game_engine_jni = { package = "sokobanitron-game-engine", path = "../game-engine" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
