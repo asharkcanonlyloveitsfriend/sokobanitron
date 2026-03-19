@@ -147,18 +147,32 @@ impl KindleApp {
     }
 
     fn render(&mut self) -> Result<()> {
-        let mut rgba = vec![0u8; config::WIDTH * config::HEIGHT * 4];
         let box_trail = self.session.take_pending_box_trail();
-        self.renderer.draw_with_box_trail(
+        self.render_with_options(box_trail.as_deref(), true, false)
+    }
+
+    fn render_with_options(
+        &mut self,
+        box_trail: Option<&[(u32, u32)]>,
+        draw_player: bool,
+        fast_partial: bool,
+    ) -> Result<()> {
+        let mut rgba = vec![0u8; config::WIDTH * config::HEIGHT * 4];
+        self.renderer.draw_with_box_trail_options(
             &mut rgba,
             config::WIDTH as u32,
             config::HEIGHT as u32,
             self.session.board(),
             &self.viewport,
-            box_trail.as_deref(),
+            box_trail,
+            draw_player,
         );
         ui::draw_controls_ui(&mut rgba, self.show_play_button());
-        self.display.present_rgba(&rgba)
+        if fast_partial {
+            self.display.present_rgba_fast_partial(&rgba)
+        } else {
+            self.display.present_rgba(&rgba)
+        }
     }
 
     fn on_tap(&mut self, raw_x: i32, raw_y: i32) -> Result<()> {
@@ -214,7 +228,13 @@ impl KindleApp {
             let was_started = self.session.is_started();
             self.session.click_cell(x, y);
             self.record_first_move_if_needed(was_started);
-            self.render()?;
+            let box_trail = self.session.take_pending_box_trail();
+            if box_trail.as_ref().is_some_and(|path| path.len() > 2) {
+                self.render_with_options(box_trail.as_deref(), false, false)?;
+                self.render_with_options(None, true, true)?;
+            } else {
+                self.render_with_options(None, true, false)?;
+            }
         }
         Ok(())
     }

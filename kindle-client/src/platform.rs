@@ -179,6 +179,14 @@ impl Display {
     }
 
     pub fn present_rgba(&mut self, rgba: &[u8]) -> Result<()> {
+        self.present_rgba_inner(rgba, None)
+    }
+
+    pub fn present_rgba_fast_partial(&mut self, rgba: &[u8]) -> Result<()> {
+        self.present_rgba_inner(rgba, Some(WAVEFORM_MODE_DU))
+    }
+
+    fn present_rgba_inner(&mut self, rgba: &[u8], partial_waveform: Option<u32>) -> Result<()> {
         let next = rgba_to_grayscale_framebuffer(rgba);
         let previous = self.previous_frame.as_ref();
         let dirty = previous.and_then(|prev| compute_dirty_rect(prev, &next));
@@ -193,7 +201,7 @@ impl Display {
                 self.request_full_refresh()?;
             }
             Some(region) => {
-                self.request_partial_refresh(region)?;
+                self.request_partial_refresh(region, partial_waveform)?;
             }
         }
 
@@ -201,13 +209,14 @@ impl Display {
         Ok(())
     }
 
-    fn request_partial_refresh(&mut self, region: Region) -> Result<()> {
+    fn request_partial_refresh(&mut self, region: Region, waveform_mode: Option<u32>) -> Result<()> {
+        let waveform = waveform_mode.unwrap_or(WAVEFORM_MODE_DU);
         if let Some(abi) = self.update_abi {
             match send_update_ioctl(
                 &self.fb,
                 abi,
                 region,
-                WAVEFORM_MODE_DU,
+                waveform,
                 UPDATE_MODE_PARTIAL,
                 self.update_marker,
             ) {
@@ -222,7 +231,7 @@ impl Display {
             }
         }
 
-        self.sysfs_region_refresh(region, UPDATE_MODE_PARTIAL)
+        self.sysfs_region_refresh(region, UPDATE_MODE_PARTIAL, waveform_mode)
     }
 
     fn request_full_refresh(&mut self) -> Result<()> {
@@ -270,20 +279,37 @@ impl Display {
         );
     }
 
-    fn sysfs_region_refresh(&mut self, region: Region, update_mode: u32) -> Result<()> {
+    fn sysfs_region_refresh(
+        &mut self,
+        region: Region,
+        update_mode: u32,
+        waveform_mode: Option<u32>,
+    ) -> Result<()> {
         let aligned = align_region_for_epdc(region);
         // Observed Kindle sysfs format:
         //   <waveform> <update_mode> <top> <left> <width> <height>
-        // Use waveform=0 (AUTO) for stability.
+        // Use waveform=0 (AUTO) by default for stability; allow explicit override.
+        let waveform = waveform_mode.unwrap_or(0);
         let cmd = format!(
             "{} {} {} {} {} {}\n",
-            0,
+            waveform,
             update_mode,
             aligned.top,
             aligned.left,
             aligned.width,
             aligned.height
         );
+        if write_sysfs_refresh(&cmd).is_ok() {
+            return Ok(());
+        }
+        if waveform_mode.is_some() {
+            // Fallback to AUTO waveform if explicit mode is unsupported.
+            let fallback = format!(
+                "{} {} {} {} {} {}\n",
+                0, update_mode, aligned.top, aligned.left, aligned.width, aligned.height
+            );
+            return write_sysfs_refresh(&fallback);
+        }
         write_sysfs_refresh(&cmd)
     }
 }

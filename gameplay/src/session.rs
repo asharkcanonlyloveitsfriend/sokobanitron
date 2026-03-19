@@ -23,6 +23,7 @@ pub struct GameplaySession {
     presenter: GameBoardPresenter,
     engine: GameEngine,
     selected_box: Option<(u32, u32)>,
+    pending_box_trail: Option<Vec<(u32, u32)>>,
     board: BoardView,
 }
 
@@ -56,6 +57,7 @@ impl GameplaySession {
             presenter,
             engine,
             selected_box: None,
+            pending_box_trail: None,
             board,
         }
     }
@@ -66,6 +68,10 @@ impl GameplaySession {
 
     pub fn is_started(&self) -> bool {
         !self.engine.is_at_start()
+    }
+
+    pub fn take_pending_box_trail(&mut self) -> Option<Vec<(u32, u32)>> {
+        self.pending_box_trail.take()
     }
 
     pub fn click_cell(&mut self, x: u32, y: u32) {
@@ -94,8 +100,13 @@ impl GameplaySession {
                 Position::new(from_y as usize, from_x as usize),
                 Position::new(y as usize, x as usize),
             );
-            if moved_box.is_some() {
+            if let Some(path) = moved_box {
                 self.selected_box = None;
+                self.pending_box_trail = Some(
+                    path.into_iter()
+                        .map(|p| (p.col as u32, p.row as u32))
+                        .collect(),
+                );
             }
             self.sync_board();
             return;
@@ -118,6 +129,7 @@ impl GameplaySession {
             GameplayKey::Backspace => {
                 if self.engine.undo().is_some() {
                     self.selected_box = None;
+                    self.pending_box_trail = None;
                     self.sync_board();
                 }
             }
@@ -129,6 +141,7 @@ impl GameplaySession {
     pub fn restart(&mut self) {
         self.engine = GameEngine::from_ascii(&self.level_ascii).expect("level ascii must parse");
         self.selected_box = None;
+        self.pending_box_trail = None;
         self.sync_board();
     }
 

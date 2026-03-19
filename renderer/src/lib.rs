@@ -3,6 +3,7 @@ mod entities;
 mod overlay;
 mod pixels;
 mod sprites;
+mod trail;
 mod tiles;
 mod viewport;
 
@@ -180,14 +181,44 @@ impl Renderer {
         board: &BoardView,
         viewport: &BoardViewport,
     ) {
+        self.draw_with_box_trail(frame, width, height, board, viewport, None);
+    }
+
+    pub fn draw_with_box_trail(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        board: &BoardView,
+        viewport: &BoardViewport,
+        box_trail: Option<&[(u32, u32)]>,
+    ) {
+        self.draw_with_box_trail_options(frame, width, height, board, viewport, box_trail, true);
+    }
+
+    pub fn draw_with_box_trail_options(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        board: &BoardView,
+        viewport: &BoardViewport,
+        box_trail: Option<&[(u32, u32)]>,
+        draw_player: bool,
+    ) {
         if width == 0 || height == 0 {
             return;
         }
         self.ensure_cached_background(width, height);
         frame.copy_from_slice(&self.cached_background);
         self.draw_floor_tiles(frame, width, height, board, viewport);
+        if let Some(path) = box_trail {
+            self.draw_box_trail(frame, width, height, viewport, path);
+        }
         self.draw_boxes(frame, width, height, board, viewport);
-        self.draw_player(frame, width, height, board, viewport);
+        if draw_player {
+            self.draw_player(frame, width, height, board, viewport);
+        }
         if board.is_won() {
             self.draw_win_overlay(frame, width, height);
         }
