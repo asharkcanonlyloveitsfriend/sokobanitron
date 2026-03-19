@@ -7,6 +7,6 @@ mod ui;
 use std::io::Result;
 
 fn main() -> Result<()> {
-    let mut app = app::KindleApp::new();
+    let mut app = app::KindleApp::new()?;
     app.run()
 }

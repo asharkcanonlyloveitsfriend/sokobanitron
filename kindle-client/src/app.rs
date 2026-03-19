@@ -7,19 +7,21 @@ pub struct KindleApp {
     renderer: Renderer,
     session: GameplaySession,
     viewport: BoardViewport,
+    display: platform::Display,
 }
 
 impl KindleApp {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self> {
         let session = GameplaySession::from_level_ascii(level::portrait_level_ascii());
         let board_area_height = (config::HEIGHT.saturating_sub(config::FOOTER_HEIGHT)) as u32;
         let viewport =
             BoardViewport::fit_to_window(config::WIDTH as u32, board_area_height, session.board());
-        Self {
+        Ok(Self {
             renderer: Renderer::new(),
             session,
             viewport,
-        }
+            display: platform::Display::new()?,
+        })
     }
 
     pub fn run(&mut self) -> Result<()> {
@@ -48,7 +50,7 @@ impl KindleApp {
             &self.viewport,
         );
         ui::draw_restart_ui(&mut rgba);
-        platform::write_rgba_frame(&rgba)
+        self.display.present_rgba(&rgba)
     }
 
     fn on_tap(&mut self, raw_x: i32, raw_y: i32) -> Result<()> {

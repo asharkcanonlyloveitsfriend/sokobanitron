@@ -17,9 +17,11 @@ docker run --rm \
 
 ssh "$KINDLE_HOST" <<'EOF'
 pkill kindle-client 2>/dev/null || true
-while pgrep kindle-client >/dev/null 2>&1; do
+for _ in $(seq 1 5); do
+  pgrep kindle-client >/dev/null 2>&1 || break
   sleep 1
 done
+pkill -9 kindle-client 2>/dev/null || true
 EOF
 
 scp "$REPO_ROOT/target/$TARGET/debug/$BIN" "$KINDLE_HOST:$KINDLE_PATH"
