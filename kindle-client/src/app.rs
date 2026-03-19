@@ -82,6 +82,12 @@ impl KindleApp {
         self.render()
     }
 
+    fn advance_after_win(&mut self, target_level: usize) -> Result<()> {
+        self.navigate_with_flash(target_level)?;
+        self.persist_last_attempted_level(self.current_level);
+        Ok(())
+    }
+
     fn flash_level_number(&mut self, level_index: usize) -> Result<()> {
         let mut rgba = vec![0u8; config::WIDTH * config::HEIGHT * 4];
         self.renderer.draw_with_box_trail_options(
@@ -362,7 +368,7 @@ impl KindleApp {
         }
         if self.session.board().is_won() {
             if let Some(next) = self.peek_level(1) {
-                self.navigate_with_flash(next)?;
+                self.advance_after_win(next)?;
             }
             return Ok(());
         }
