@@ -206,12 +206,9 @@ impl KindleApp {
                 &self.viewport,
                 None,
                 true,
-                false,
+                show_win_overlay,
             );
             ui::draw_controls_ui(&mut frame, self.show_play_button());
-            if show_win_overlay && self.session.board().is_won() {
-                ui::draw_you_win_overlay(&mut frame);
-            }
 
             let remaining = steps - step;
             let size = if step + 1 == steps {
@@ -308,12 +305,9 @@ impl KindleApp {
             &self.viewport,
             box_trail,
             draw_player,
-            false,
+            show_win_overlay,
         );
         ui::draw_controls_ui(&mut rgba, self.show_play_button());
-        if show_win_overlay && self.session.board().is_won() {
-            ui::draw_you_win_overlay(&mut rgba);
-        }
         if fast_partial {
             self.display.present_rgba_fast_partial(&rgba)
         } else {

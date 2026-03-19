@@ -26,43 +26,6 @@ pub(crate) fn fill_rect(
     }
 }
 
-pub(crate) fn stroke_rect(
-    frame: &mut [u8],
-    frame_width: u32,
-    frame_height: u32,
-    x: i32,
-    y: i32,
-    w: u32,
-    h: u32,
-    color: [u8; 4],
-) {
-    if w == 0 || h == 0 {
-        return;
-    }
-    fill_rect(frame, frame_width, frame_height, x, y, w, 1, color);
-    fill_rect(
-        frame,
-        frame_width,
-        frame_height,
-        x,
-        y + h as i32 - 1,
-        w,
-        1,
-        color,
-    );
-    fill_rect(frame, frame_width, frame_height, x, y, 1, h, color);
-    fill_rect(
-        frame,
-        frame_width,
-        frame_height,
-        x + w as i32 - 1,
-        y,
-        1,
-        h,
-        color,
-    );
-}
-
 pub(crate) fn blit_rgba(
     frame: &mut [u8],
     frame_width: u32,
