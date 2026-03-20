@@ -7,12 +7,7 @@ mod presenter;
 mod session;
 
 pub use controller::{
-    BoxMovedTrailPresentation, BoxRemovedPresentation, GameplayController,
-    GameplayControllerChanges, GameplayTapEffect, GameplayTapOutcome, GameplayTapPresentationStyle,
-};
-pub use controller::{
-    GameplayPresentMode, GameplayTapPresentationPlan, GameplayTapPresentationStep,
-    build_tap_presentation_plan,
+    GameplayController, GameplayControllerChanges, GameplayTapEffect, GameplayTapOutcome,
 };
 pub use levels::{OrientationPolicy, load_levels_from_default_locations};
 pub use preferences::GameplayPreferences;

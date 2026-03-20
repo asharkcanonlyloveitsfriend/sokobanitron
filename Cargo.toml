@@ -3,6 +3,7 @@ members = [
     "sokobanitron-core",
     "game-engine",
     "sokobanitron-gameplay",
+    "sokobanitron-app",
     "desktop-client",
     "kindle-client",
     "sokobanitron-renderer",

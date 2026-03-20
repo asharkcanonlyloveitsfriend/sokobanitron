@@ -7,4 +7,5 @@ edition = "2024"
 pixels = "0.15"
 renderer = { package = "sokobanitron-renderer", path = "../sokobanitron-renderer" }
 sokobanitron-gameplay = { path = "../sokobanitron-gameplay" }
+sokobanitron-app = { path = "../sokobanitron-app" }
 winit = "0.30"

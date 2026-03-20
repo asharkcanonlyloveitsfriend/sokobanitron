@@ -571,6 +571,7 @@ name = "desktop-client"
 version = "0.1.0"
 dependencies = [
  "pixels",
+ "sokobanitron-app",
  "sokobanitron-gameplay",
  "sokobanitron-renderer",
  "winit",
@@ -1039,6 +1040,7 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 name = "kindle-client"
 version = "0.1.0"
 dependencies = [
+ "sokobanitron-app",
  "sokobanitron-core",
  "sokobanitron-gameplay",
  "sokobanitron-renderer",
@@ -2132,6 +2134,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd538fb6910ac1099850255cf94a94df6551fbdd602454387d0adb2d1ca6dead"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "sokobanitron-app"
+version = "0.1.0"
+dependencies = [
+ "sokobanitron-gameplay",
 ]
 
 [[package]]

@@ -73,7 +73,7 @@ impl GameplaySession {
         if self.board.is_won() {
             return events;
         }
-        let was_won = self.board.is_won();
+        let was_solved = self.board.is_won();
 
         let clicked_has_box = self
             .engine
@@ -104,7 +104,7 @@ impl GameplaySession {
                     self.selected_box = None;
                     self.sync_board();
                     events.push(GameplayEvent::BoxRemoved { to_x: x, to_y: y });
-                    self.push_solved_event_if_needed(was_won, &mut events);
+                    self.push_solved_event_if_needed(was_solved, &mut events);
                     return events;
                 }
                 self.selected_box = None;
@@ -126,7 +126,7 @@ impl GameplaySession {
                         .map(|p| (p.col as u32, p.row as u32))
                         .collect(),
                 });
-                self.push_solved_event_if_needed(was_won, &mut events);
+                self.push_solved_event_if_needed(was_solved, &mut events);
                 return events;
             }
             self.selected_box = None;
@@ -180,8 +180,8 @@ impl GameplaySession {
         self.sync_board();
     }
 
-    fn push_solved_event_if_needed(&self, was_won: bool, events: &mut Vec<GameplayEvent>) {
-        if !was_won && self.board.is_won() {
+    fn push_solved_event_if_needed(&self, was_solved: bool, events: &mut Vec<GameplayEvent>) {
+        if !was_solved && self.board.is_won() {
             events.push(GameplayEvent::LevelSolved {
                 clean: self.engine.is_clean_solution(),
             });
