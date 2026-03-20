@@ -32,6 +32,11 @@ const EINK_TAP_STYLE: GameplayTapPresentationStyle = GameplayTapPresentationStyl
     delayed_win_present_mode: GameplayPresentMode::FastPartial,
 };
 
+const KINDLE_BOX_PRIMARY: [u8; 4] = [60, 63, 66, 255];
+const KINDLE_BOX_SHADOW: [u8; 4] = [30, 31, 33, 255];
+const KINDLE_PLAYER_BODY: [u8; 4] = [117, 117, 117, 255];
+const KINDLE_PLAYER_LIMB: [u8; 4] = [80, 80, 80, 255];
+
 fn default_fallback_level_ascii() -> String {
     PORTRAIT_LEVEL_VISUAL
         .chars()
@@ -74,6 +79,10 @@ impl KindleApp {
         let viewport = Self::compute_viewport(controller.board());
         Ok(Self {
             renderer: Renderer::with_overrides(RendererOverrides {
+                box_primary: Some(KINDLE_BOX_PRIMARY),
+                box_shadow: Some(KINDLE_BOX_SHADOW),
+                player_body: Some(KINDLE_PLAYER_BODY),
+                player_limb: Some(KINDLE_PLAYER_LIMB),
                 selected_box_primary: Some(config::KINDLE_SELECTED_BOX_PRIMARY),
                 selected_box_highlight: Some(config::KINDLE_SELECTED_BOX_HIGHLIGHT),
                 selected_box_shadow: Some(config::KINDLE_SELECTED_BOX_SHADOW),
@@ -115,8 +124,8 @@ impl KindleApp {
         self.viewport = Self::compute_viewport(self.controller.board());
     }
 
-    fn advance_after_win(&mut self, target_level: usize) -> Result<()> {
-        let changes = self.controller.advance_after_win(target_level);
+    fn advance_after_win(&mut self, next_level: usize) -> Result<()> {
+        let changes = self.controller.advance_after_win(next_level);
         self.apply_controller_changes(changes);
         self.render()
     }
@@ -423,7 +432,7 @@ impl KindleApp {
                 return Ok(());
             }
 
-            if let Some(target) = level_select_menu_target_at(
+            if let Some(selected_level) = level_select_menu_target_at(
                 screen_x as f64,
                 screen_y as f64,
                 config::WIDTH as u32,
@@ -431,7 +440,7 @@ impl KindleApp {
                 self.levels.len(),
                 self.menu_page_start,
             ) {
-                let changes = self.controller.jump_to_level(target);
+                let changes = self.controller.jump_to_level(selected_level);
                 self.apply_controller_changes(changes);
                 self.menu_open = false;
                 self.render()?;

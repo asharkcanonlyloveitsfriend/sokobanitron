@@ -175,7 +175,7 @@ pub fn fit_board_viewport_for_controls(
 pub struct RendererTheme {
     pub floor_fill: Rgba,
     pub floor_stroke: Rgba,
-    pub target_fill: Rgba,
+    pub goal_fill: Rgba,
     pub box_primary: Rgba,
     pub box_highlight: Rgba,
     pub box_shadow: Rgba,
@@ -195,7 +195,7 @@ pub struct RendererTheme {
 pub struct RendererOverrides {
     pub floor_fill: Option<Rgba>,
     pub floor_stroke: Option<Rgba>,
-    pub target_fill: Option<Rgba>,
+    pub goal_fill: Option<Rgba>,
     pub box_primary: Option<Rgba>,
     pub box_highlight: Option<Rgba>,
     pub box_shadow: Option<Rgba>,
@@ -216,7 +216,7 @@ impl Default for RendererTheme {
         Self {
             floor_fill: [255, 255, 255, 255],
             floor_stroke: [240, 240, 240, 255],
-            target_fill: [224, 224, 224, 255],
+            goal_fill: [224, 224, 224, 255],
             box_primary: [120, 129, 144, 255],
             box_highlight: [156, 163, 175, 255],
             box_shadow: [75, 85, 99, 255],
@@ -242,8 +242,8 @@ impl RendererTheme {
         if let Some(v) = overrides.floor_stroke {
             self.floor_stroke = v;
         }
-        if let Some(v) = overrides.target_fill {
-            self.target_fill = v;
+        if let Some(v) = overrides.goal_fill {
+            self.goal_fill = v;
         }
         if let Some(v) = overrides.box_primary {
             self.box_primary = v;
