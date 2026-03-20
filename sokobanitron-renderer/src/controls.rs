@@ -46,8 +46,8 @@ pub const UI_MENU_BUTTON_HEIGHT: u32 = UI_BUTTON_SIZE / 2;
 pub const BOARD_HORIZONTAL_MARGIN: u32 = UI_BUTTON_MARGIN;
 pub const BOARD_VERTICAL_MARGIN: u32 = UI_BUTTON_MARGIN + UI_MENU_BUTTON_HEIGHT;
 
-const UI_TEXT_SCALE: usize = 8;
-const UI_MENU_TEXT_SCALE: usize = UI_TEXT_SCALE / 2;
+const UI_MENU_TEXT_SCALE: usize = 4;
+const UI_TEXT_SCALE: usize = UI_MENU_TEXT_SCALE;
 
 fn ui_button_size() -> usize {
     UI_BUTTON_SIZE as usize
