@@ -201,6 +201,10 @@ impl GameplayController {
         self.session.board()
     }
 
+    pub fn current_level(&self) -> usize {
+        self.current_level
+    }
+
     pub fn peek_level(&self, delta: i32) -> Option<usize> {
         if self.levels.is_empty() {
             return None;
@@ -210,7 +214,7 @@ impl GameplayController {
         Some(next as usize)
     }
 
-    fn jump_to_level(&mut self, index: usize) -> GameplayControllerChanges {
+    pub fn jump_to_level(&mut self, index: usize) -> GameplayControllerChanges {
         if self.levels.is_empty() {
             return GameplayControllerChanges::default();
         }

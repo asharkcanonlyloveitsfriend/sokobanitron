@@ -1,10 +1,11 @@
 use pixels::{Pixels, SurfaceTexture};
 use renderer::{
-    BoardViewport, ControlsButtonAction, Renderer, controls_button_action_at, draw_controls_ui,
-    fit_board_viewport_for_controls,
+    BoardViewport, ControlsButtonAction, ControlsUiMode, Renderer, controls_button_action_at,
+    draw_controls_ui, fit_board_viewport_for_controls, level_select_menu_nav_action_at,
+    level_select_menu_start_for_nav, level_select_menu_start_index, level_select_menu_target_at,
 };
 use sokobanitron_gameplay::{
-    BoxMovedTrailPresentation, BoxRemovedPresentation, GameplayController,
+    BoardView, BoxMovedTrailPresentation, BoxRemovedPresentation, GameplayController,
     GameplayControllerChanges, GameplayKey, GameplayPreferences, GameplayPresentMode,
     GameplayTapPresentationPlan, GameplayTapPresentationStep, GameplayTapPresentationStyle,
     OrientationPolicy, build_tap_presentation_plan, load_levels_from_default_locations,
@@ -50,18 +51,32 @@ struct App {
     window: Option<Arc<Window>>,
     pixels: Option<Pixels<'static>>,
     renderer: Renderer,
+    levels: Vec<String>,
+    preview_boards: Vec<BoardView>,
     controller: GameplayController,
     preferences: GameplayPreferences,
     board_viewport: BoardViewport,
+    menu_open: bool,
+    menu_page_start: usize,
     cursor_position: Option<(f64, f64)>,
     surface_width: u32,
     surface_height: u32,
 }
 
 impl App {
+    fn build_preview_board(level_ascii: &str) -> BoardView {
+        GameplayController::new(vec![level_ascii.to_string()], None)
+            .board()
+            .clone()
+    }
+
     fn new() -> Self {
         let preferences = GameplayPreferences::load(PREFERENCES_PATH);
         let levels = initial_levels();
+        let preview_boards = levels
+            .iter()
+            .map(|level| Self::build_preview_board(level))
+            .collect::<Vec<_>>();
         let controller =
             GameplayController::new(levels.clone(), preferences.level_index(levels.len()));
         let board_viewport =
@@ -70,9 +85,13 @@ impl App {
             window: None,
             pixels: None,
             renderer: Renderer::new(),
+            levels,
+            preview_boards,
             controller,
             preferences,
             board_viewport,
+            menu_open: false,
+            menu_page_start: 0,
             cursor_position: None,
             surface_width: INITIAL_WIDTH,
             surface_height: INITIAL_HEIGHT,
@@ -115,17 +134,41 @@ impl App {
     ) {
         if let Some(pixels) = &mut self.pixels {
             let frame = pixels.frame_mut();
-            self.renderer.draw_with_box_trail_options(
-                frame,
-                self.surface_width,
-                self.surface_height,
-                self.controller.board(),
-                &self.board_viewport,
-                box_trail,
-                draw_player,
-                show_win_overlay,
-            );
-            draw_controls_ui(frame, self.surface_width, self.surface_height);
+            if self.menu_open {
+                self.renderer
+                    .draw_background_only(frame, self.surface_width, self.surface_height);
+                self.renderer.draw_level_select_menu_contents(
+                    frame,
+                    self.surface_width,
+                    self.surface_height,
+                    &self.preview_boards,
+                    self.controller.current_level(),
+                    self.menu_page_start,
+                );
+                draw_controls_ui(
+                    frame,
+                    self.surface_width,
+                    self.surface_height,
+                    ControlsUiMode::MenuOpen,
+                );
+            } else {
+                self.renderer.draw_with_box_trail_options(
+                    frame,
+                    self.surface_width,
+                    self.surface_height,
+                    self.controller.board(),
+                    &self.board_viewport,
+                    box_trail,
+                    draw_player,
+                    show_win_overlay,
+                );
+                draw_controls_ui(
+                    frame,
+                    self.surface_width,
+                    self.surface_height,
+                    ControlsUiMode::Gameplay,
+                );
+            }
             pixels.render().expect("render");
         }
     }
@@ -145,7 +188,12 @@ impl App {
                 true,
                 false,
             );
-            draw_controls_ui(frame, self.surface_width, self.surface_height);
+            draw_controls_ui(
+                frame,
+                self.surface_width,
+                self.surface_height,
+                ControlsUiMode::Gameplay,
+            );
             pixels.render().expect("render");
         }
         thread::sleep(Duration::from_millis(BLINK_ON_MS));
@@ -175,7 +223,12 @@ impl App {
                     false,
                     show_win_overlay,
                 );
-                draw_controls_ui(frame, self.surface_width, self.surface_height);
+                draw_controls_ui(
+                    frame,
+                    self.surface_width,
+                    self.surface_height,
+                    ControlsUiMode::Gameplay,
+                );
                 pixels.render().expect("render");
             }
             thread::sleep(Duration::from_millis(ANIMATION_TICK_MS));
@@ -280,16 +333,64 @@ impl ApplicationHandler for App {
                     ) {
                         match action {
                             ControlsButtonAction::Restart => {
-                                let changes = self.controller.restart_with_changes();
-                                self.handle_gameplay_changes(changes);
-                                self.render_with_options(None, true, true);
+                                if !self.menu_open {
+                                    let changes = self.controller.restart_with_changes();
+                                    self.handle_gameplay_changes(changes);
+                                    self.render_with_options(None, true, true);
+                                    return;
+                                }
                             }
                             ControlsButtonAction::Undo => {
-                                let changes = self.controller.undo_with_changes();
-                                self.handle_gameplay_changes(changes);
-                                self.render_with_options(None, true, true);
+                                if !self.menu_open {
+                                    let changes = self.controller.undo_with_changes();
+                                    self.handle_gameplay_changes(changes);
+                                    self.render_with_options(None, true, true);
+                                    return;
+                                }
                             }
-                            ControlsButtonAction::ShowMenu => {}
+                            ControlsButtonAction::ShowMenu => {
+                                self.menu_open = !self.menu_open;
+                                if self.menu_open {
+                                    self.menu_page_start = level_select_menu_start_index(
+                                        self.levels.len(),
+                                        self.controller.current_level(),
+                                    );
+                                }
+                                self.render_with_options(None, true, true);
+                                return;
+                            }
+                        }
+                    }
+
+                    if self.menu_open {
+                        if let Some(nav_action) = level_select_menu_nav_action_at(
+                            cursor_x,
+                            cursor_y,
+                            self.surface_width,
+                            self.surface_height,
+                        ) {
+                            self.menu_page_start = level_select_menu_start_for_nav(
+                                self.levels.len(),
+                                self.controller.current_level(),
+                                self.menu_page_start,
+                                nav_action,
+                            );
+                            self.render_with_options(None, true, true);
+                            return;
+                        }
+
+                        if let Some(target) = level_select_menu_target_at(
+                            cursor_x,
+                            cursor_y,
+                            self.surface_width,
+                            self.surface_height,
+                            self.levels.len(),
+                            self.menu_page_start,
+                        ) {
+                            let changes = self.controller.jump_to_level(target);
+                            self.handle_gameplay_changes(changes);
+                            self.menu_open = false;
+                            self.render_with_options(None, true, true);
                         }
                         return;
                     }
@@ -328,6 +429,9 @@ impl ApplicationHandler for App {
                     Key::Named(NamedKey::Backspace) => GameplayKey::Backspace,
                     _ => GameplayKey::Other,
                 };
+                if self.menu_open {
+                    return;
+                }
                 let changes = self.controller.on_key_with_changes(key);
                 self.handle_gameplay_changes(changes);
             }

@@ -20,6 +20,12 @@ pub enum ControlsButtonAction {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ControlsUiMode {
+    Gameplay,
+    MenuOpen,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ScreenRect {
     pub x: u32,
     pub y: u32,
@@ -95,6 +101,19 @@ fn top_menu_button_rect(width: usize) -> Rect {
     }
 }
 
+fn top_menu_button_hit_rect(width: usize) -> Rect {
+    let base = top_menu_button_rect(width);
+    let extra_h = base.h / 4;
+    let hit_h = base.h + extra_h;
+    let hit_y = base.y.saturating_sub(extra_h / 2);
+    Rect {
+        x: base.x,
+        y: hit_y,
+        w: base.w,
+        h: hit_h,
+    }
+}
+
 fn bottom_left_button_rect(height: usize) -> Rect {
     Rect {
         x: ui_button_margin(),
@@ -128,7 +147,7 @@ pub fn controls_button_action_at(
     let px = px as usize;
     let py = py as usize;
 
-    if top_menu_button_rect(width).contains(px, py) {
+    if top_menu_button_hit_rect(width).contains(px, py) {
         return Some(ControlsButtonAction::ShowMenu);
     }
     if bottom_left_button_rect(height).contains(px, py) {
@@ -140,29 +159,35 @@ pub fn controls_button_action_at(
     None
 }
 
-pub fn draw_controls_ui(frame: &mut [u8], width: u32, height: u32) {
+pub fn draw_controls_ui(frame: &mut [u8], width: u32, height: u32, mode: ControlsUiMode) {
     let width = width as usize;
     let height = height as usize;
     if width == 0 || height == 0 {
         return;
     }
 
+    let top_glyph = match mode {
+        ControlsUiMode::Gameplay => "\\/",
+        ControlsUiMode::MenuOpen => "/\\",
+    };
     draw_button_scaled(
         frame,
         width,
         height,
         top_menu_button_rect(width),
-        "\\/",
+        top_glyph,
         UI_MENU_TEXT_SCALE,
     );
-    draw_button(frame, width, height, bottom_left_button_rect(height), "R");
-    draw_button(
-        frame,
-        width,
-        height,
-        bottom_right_button_rect(width, height),
-        "U",
-    );
+    if matches!(mode, ControlsUiMode::Gameplay) {
+        draw_button(frame, width, height, bottom_left_button_rect(height), "R");
+        draw_button(
+            frame,
+            width,
+            height,
+            bottom_right_button_rect(width, height),
+            "U",
+        );
+    }
 }
 
 fn draw_button(frame: &mut [u8], width: usize, height: usize, rect: Rect, label: &str) {

@@ -1,10 +1,12 @@
 use crate::{config, platform};
 use renderer::{
-    BoardViewport, ControlsButtonAction, Renderer, RendererOverrides, controls_button_action_at,
-    draw_controls_ui, fit_board_viewport_for_controls,
+    BoardViewport, ControlsButtonAction, ControlsUiMode, Renderer, RendererOverrides,
+    controls_button_action_at, draw_controls_ui, fit_board_viewport_for_controls,
+    level_select_menu_nav_action_at, level_select_menu_start_for_nav,
+    level_select_menu_start_index, level_select_menu_target_at,
 };
 use sokobanitron_gameplay::{
-    BoxMovedTrailPresentation, BoxRemovedPresentation, GameplayController,
+    BoardView, BoxMovedTrailPresentation, BoxRemovedPresentation, GameplayController,
     GameplayControllerChanges, GameplayPreferences, GameplayPresentMode,
     GameplayTapPresentationPlan, GameplayTapPresentationStep, GameplayTapPresentationStyle,
     OrientationPolicy, build_tap_presentation_plan, load_levels_from_default_locations,
@@ -39,22 +41,36 @@ fn default_fallback_level_ascii() -> String {
 
 pub struct KindleApp {
     renderer: Renderer,
+    levels: Vec<String>,
+    preview_boards: Vec<BoardView>,
     controller: GameplayController,
     preferences: GameplayPreferences,
     viewport: BoardViewport,
+    menu_open: bool,
+    menu_page_start: usize,
     display: platform::Display,
 }
 
 impl KindleApp {
+    fn build_preview_board(level_ascii: &str) -> BoardView {
+        GameplayController::new(vec![level_ascii.to_string()], None)
+            .board()
+            .clone()
+    }
+
     pub fn new() -> Result<Self> {
         let fallback_level = default_fallback_level_ascii();
         let levels = load_levels_from_default_locations(
             OrientationPolicy::RotateWideToPortrait,
             &fallback_level,
         );
+        let preview_boards = levels
+            .iter()
+            .map(|level| Self::build_preview_board(level))
+            .collect::<Vec<_>>();
         let preferences = GameplayPreferences::load(config::PREFERENCES_PATH);
         let last_attempted_level = preferences.level_index(levels.len());
-        let controller = GameplayController::new(levels, last_attempted_level);
+        let controller = GameplayController::new(levels.clone(), last_attempted_level);
         let viewport = Self::compute_viewport(controller.board());
         Ok(Self {
             renderer: Renderer::with_overrides(RendererOverrides {
@@ -63,9 +79,13 @@ impl KindleApp {
                 selected_box_shadow: Some(config::KINDLE_SELECTED_BOX_SHADOW),
                 ..RendererOverrides::default()
             }),
+            levels,
+            preview_boards,
             controller,
             preferences,
             viewport,
+            menu_open: false,
+            menu_page_start: 0,
             display: platform::Display::new()?,
         })
     }
@@ -119,6 +139,7 @@ impl KindleApp {
             &mut blink_frame,
             config::WIDTH as u32,
             config::HEIGHT as u32,
+            ControlsUiMode::Gameplay,
         );
         self.display.present_rgba_fast_partial(&blink_frame)?;
         thread::sleep(Duration::from_millis(config::BLINK_ON_MS));
@@ -209,7 +230,12 @@ impl KindleApp {
                 true,
                 show_win_overlay,
             );
-            draw_controls_ui(&mut frame, config::WIDTH as u32, config::HEIGHT as u32);
+            draw_controls_ui(
+                &mut frame,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+                ControlsUiMode::Gameplay,
+            );
 
             let remaining = steps - step;
             let size = if step + 1 == steps {
@@ -297,17 +323,44 @@ impl KindleApp {
         show_win_overlay: bool,
     ) -> Result<()> {
         let mut rgba = vec![0u8; config::WIDTH * config::HEIGHT * 4];
-        self.renderer.draw_with_box_trail_options(
-            &mut rgba,
-            config::WIDTH as u32,
-            config::HEIGHT as u32,
-            self.controller.board(),
-            &self.viewport,
-            box_trail,
-            draw_player,
-            show_win_overlay,
-        );
-        draw_controls_ui(&mut rgba, config::WIDTH as u32, config::HEIGHT as u32);
+        if self.menu_open {
+            self.renderer.draw_background_only(
+                &mut rgba,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+            );
+            self.renderer.draw_level_select_menu_contents(
+                &mut rgba,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+                &self.preview_boards,
+                self.controller.current_level(),
+                self.menu_page_start,
+            );
+            draw_controls_ui(
+                &mut rgba,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+                ControlsUiMode::MenuOpen,
+            );
+        } else {
+            self.renderer.draw_with_box_trail_options(
+                &mut rgba,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+                self.controller.board(),
+                &self.viewport,
+                box_trail,
+                draw_player,
+                show_win_overlay,
+            );
+            draw_controls_ui(
+                &mut rgba,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+                ControlsUiMode::Gameplay,
+            );
+        }
         if fast_partial {
             self.display.present_rgba_fast_partial(&rgba)
         } else {
@@ -325,21 +378,65 @@ impl KindleApp {
         ) {
             match action {
                 ControlsButtonAction::Restart => {
-                    let changes = self.controller.restart_with_changes();
-                    self.apply_controller_changes(changes);
-                    self.render()?;
-                    return Ok(());
+                    if !self.menu_open {
+                        let changes = self.controller.restart_with_changes();
+                        self.apply_controller_changes(changes);
+                        self.render()?;
+                        return Ok(());
+                    }
                 }
                 ControlsButtonAction::Undo => {
-                    let changes = self.controller.undo_with_changes();
-                    self.apply_controller_changes(changes);
-                    self.render()?;
-                    return Ok(());
+                    if !self.menu_open {
+                        let changes = self.controller.undo_with_changes();
+                        self.apply_controller_changes(changes);
+                        self.render()?;
+                        return Ok(());
+                    }
                 }
                 ControlsButtonAction::ShowMenu => {
+                    self.menu_open = !self.menu_open;
+                    if self.menu_open {
+                        self.menu_page_start = level_select_menu_start_index(
+                            self.levels.len(),
+                            self.controller.current_level(),
+                        );
+                    }
+                    self.render()?;
                     return Ok(());
                 }
             }
+        }
+        if self.menu_open {
+            if let Some(nav_action) = level_select_menu_nav_action_at(
+                screen_x as f64,
+                screen_y as f64,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+            ) {
+                self.menu_page_start = level_select_menu_start_for_nav(
+                    self.levels.len(),
+                    self.controller.current_level(),
+                    self.menu_page_start,
+                    nav_action,
+                );
+                self.render()?;
+                return Ok(());
+            }
+
+            if let Some(target) = level_select_menu_target_at(
+                screen_x as f64,
+                screen_y as f64,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+                self.levels.len(),
+                self.menu_page_start,
+            ) {
+                let changes = self.controller.jump_to_level(target);
+                self.apply_controller_changes(changes);
+                self.menu_open = false;
+                self.render()?;
+            }
+            return Ok(());
         }
         if self.controller.board().is_won() {
             if let Some(next) = self.controller.peek_level(1) {

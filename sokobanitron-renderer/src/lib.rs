@@ -1,6 +1,7 @@
 mod background;
 mod controls;
 mod entities;
+mod menu;
 mod overlay;
 mod pixels;
 mod sprites;
@@ -14,8 +15,14 @@ use std::collections::HashMap;
 
 pub use controls::{
     BOARD_HORIZONTAL_MARGIN, BOARD_VERTICAL_MARGIN, ControlsButtonAction, ControlsButtonRects,
-    ScreenRect, UI_BUTTON_MARGIN, UI_BUTTON_SIZE, UI_MENU_BUTTON_HEIGHT, board_viewport_margins,
-    controls_button_action_at, controls_button_rects, draw_controls_ui,
+    ControlsUiMode, ScreenRect, UI_BUTTON_MARGIN, UI_BUTTON_SIZE, UI_MENU_BUTTON_HEIGHT,
+    board_viewport_margins, controls_button_action_at, controls_button_rects, draw_controls_ui,
+};
+pub use menu::{
+    MenuNavAction, level_select_menu_clamp_start, level_select_menu_indices,
+    level_select_menu_nav_action_at, level_select_menu_nav_button_rects,
+    level_select_menu_slot_rects, level_select_menu_start_for_nav, level_select_menu_start_index,
+    level_select_menu_step_start, level_select_menu_target_at,
 };
 pub use viewport::{BoardViewport, BoardViewportOptions};
 pub type Rgba = [u8; 4];
@@ -329,6 +336,37 @@ impl Renderer {
         viewport: &BoardViewport,
     ) {
         self.draw_with_box_trail(frame, width, height, board, viewport, None);
+    }
+
+    pub fn draw_background_only(&mut self, frame: &mut [u8], width: u32, height: u32) {
+        if width == 0 || height == 0 {
+            return;
+        }
+        self.ensure_cached_background(width, height);
+        frame.copy_from_slice(&self.cached_background);
+    }
+
+    pub fn draw_board_on_frame(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        board: &BoardView,
+        viewport: &BoardViewport,
+        draw_player: bool,
+        draw_win_overlay: bool,
+    ) {
+        if width == 0 || height == 0 {
+            return;
+        }
+        self.draw_floor_tiles(frame, width, height, board, viewport);
+        self.draw_boxes(frame, width, height, board, viewport);
+        if draw_player {
+            self.draw_player(frame, width, height, board, viewport);
+        }
+        if draw_win_overlay && board.is_won() {
+            self.draw_win_overlay(frame, width, height);
+        }
     }
 
     pub fn draw_with_box_trail(
