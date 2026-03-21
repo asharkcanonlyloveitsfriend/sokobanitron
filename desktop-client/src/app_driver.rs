@@ -1,7 +1,7 @@
 use pixels::{Pixels, SurfaceTexture};
 use renderer::{
-    BoardViewport, ControlsButtonAction, Renderer, controls_button_action_at,
-    fit_board_viewport_for_controls, level_select_menu_nav_action_at,
+    BoardViewport, ControlsButtonAction, Renderer, UI_BUTTON_MARGIN, UI_BUTTON_SIZE,
+    controls_button_action_at, fit_board_viewport_for_controls, level_select_menu_nav_action_at,
     level_select_menu_start_for_nav, level_select_menu_start_index, level_select_menu_target_at,
 };
 use sokobanitron_app::{
@@ -13,11 +13,15 @@ use sokobanitron_gameplay::{
     BoardView, GameplayController, GameplayControllerChanges, GameplayPreferences,
     OrientationPolicy, load_levels_from_default_locations,
 };
+use sokobanitron_level_creator::{
+    LevelCreatorSession, ScreenRect, TouchInputPhase, mode_toggle_button_rect,
+    top_menu_button_contains,
+};
 use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
     dpi::{LogicalSize, PhysicalSize},
-    event::{ElementState, MouseButton, WindowEvent},
+    event::{ElementState, MouseButton, TouchPhase, WindowEvent},
     event_loop::ActiveEventLoop,
     keyboard::{Key, NamedKey},
     window::{Window, WindowAttributes},
@@ -33,6 +37,21 @@ const DESKTOP_PRESENTATION_PROFILE: PresentationProfile = PresentationProfile {
     delayed_solved_present_mode: PresentMode::Full,
     allow_delays: true,
 };
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ActiveScreen {
+    Gameplay,
+    Create,
+}
+
+pub(crate) fn create_menu_return_button_rect(width: u32) -> ScreenRect {
+    ScreenRect {
+        x: width.saturating_sub(UI_BUTTON_MARGIN + UI_BUTTON_SIZE),
+        y: UI_BUTTON_MARGIN,
+        w: UI_BUTTON_SIZE,
+        h: UI_BUTTON_SIZE,
+    }
+}
 
 fn initial_levels() -> Vec<String> {
     let fallback = DEFAULT_LEVEL_LINES.join("\n");
@@ -58,6 +77,9 @@ pub struct App {
     cursor_position: Option<(f64, f64)>,
     pub(crate) surface_width: u32,
     pub(crate) surface_height: u32,
+    pub(crate) active_screen: ActiveScreen,
+    pub(crate) create_menu_open: bool,
+    pub(crate) create_session: LevelCreatorSession,
 }
 
 impl App {
@@ -91,6 +113,9 @@ impl App {
             cursor_position: None,
             surface_width: INITIAL_WIDTH,
             surface_height: INITIAL_HEIGHT,
+            active_screen: ActiveScreen::Gameplay,
+            create_menu_open: false,
+            create_session: LevelCreatorSession::new(),
         }
     }
 
@@ -146,6 +171,82 @@ impl App {
         let action = interpret_input(&self.app_state, input);
         self.apply_app_action(action);
     }
+
+    fn enter_create_mode(&mut self) {
+        if is_menu_open(&self.app_state) {
+            self.apply_app_input(AppInput::ControlToggleMenu);
+        }
+        self.active_screen = ActiveScreen::Create;
+        self.create_menu_open = false;
+        self.create_session.reset_interaction_state();
+    }
+
+    fn enter_gameplay_mode(&mut self) {
+        self.active_screen = ActiveScreen::Gameplay;
+        self.create_menu_open = false;
+        self.create_session.reset_interaction_state();
+    }
+
+    fn on_create_press(&mut self, x: f64, y: f64) {
+        self.create_session.cursor_moved(x, y);
+
+        if self.create_menu_open {
+            if top_menu_button_contains(x, y, self.surface_width) {
+                self.create_menu_open = false;
+                self.create_session.reset_interaction_state();
+                return;
+            }
+
+            if create_menu_return_button_rect(self.surface_width).contains(x, y) {
+                self.enter_gameplay_mode();
+            }
+            return;
+        }
+
+        if top_menu_button_contains(x, y, self.surface_width) {
+            self.create_menu_open = true;
+            self.create_session.reset_interaction_state();
+            return;
+        }
+
+        self.create_session.mouse_pressed_left();
+    }
+
+    fn on_create_touch(&mut self, id: u64, phase: TouchPhase, x: f64, y: f64) {
+        let touch_phase = match phase {
+            TouchPhase::Started => Some(TouchInputPhase::Started),
+            TouchPhase::Moved => Some(TouchInputPhase::Moved),
+            TouchPhase::Ended => Some(TouchInputPhase::Ended),
+            TouchPhase::Cancelled => Some(TouchInputPhase::Cancelled),
+        };
+
+        if self.create_menu_open {
+            if matches!(phase, TouchPhase::Started) {
+                if top_menu_button_contains(x, y, self.surface_width) {
+                    self.create_menu_open = false;
+                    self.create_session.reset_interaction_state();
+                    return;
+                }
+                if create_menu_return_button_rect(self.surface_width).contains(x, y) {
+                    self.enter_gameplay_mode();
+                    return;
+                }
+            }
+            return;
+        }
+
+        if matches!(phase, TouchPhase::Started)
+            && top_menu_button_contains(x, y, self.surface_width)
+        {
+            self.create_menu_open = true;
+            self.create_session.reset_interaction_state();
+            return;
+        }
+
+        if let Some(phase) = touch_phase {
+            self.create_session.touch(id, phase, x, y);
+        }
+    }
 }
 
 impl AppDriverContext for App {
@@ -165,6 +266,8 @@ impl ApplicationHandler for App {
         self.surface_width = size.width.max(1);
         self.surface_height = size.height.max(1);
         self.update_viewport();
+        self.create_session
+            .resize_surface(self.surface_width, self.surface_height);
 
         let surface_texture =
             SurfaceTexture::new(self.surface_width, self.surface_height, window.clone());
@@ -195,6 +298,8 @@ impl ApplicationHandler for App {
                         .expect("resize buffer");
                 }
                 self.update_viewport();
+                self.create_session
+                    .resize_surface(self.surface_width, self.surface_height);
             }
             WindowEvent::ScaleFactorChanged { .. } => {
                 if let (Some(window), Some(pixels)) = (&self.window, &mut self.pixels) {
@@ -208,10 +313,15 @@ impl ApplicationHandler for App {
                         .resize_buffer(self.surface_width, self.surface_height)
                         .expect("resize buffer");
                     self.update_viewport();
+                    self.create_session
+                        .resize_surface(self.surface_width, self.surface_height);
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor_position = Some((position.x, position.y));
+                if matches!(self.active_screen, ActiveScreen::Create) && !self.create_menu_open {
+                    self.create_session.cursor_moved(position.x, position.y);
+                }
             }
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
@@ -219,92 +329,128 @@ impl ApplicationHandler for App {
                 ..
             } => {
                 if let Some((cursor_x, cursor_y)) = self.cursor_position {
-                    if let Some(action) = controls_button_action_at(
-                        cursor_x,
-                        cursor_y,
-                        self.surface_width,
-                        self.surface_height,
-                    ) {
-                        match action {
-                            ControlsButtonAction::Restart => {
-                                if !is_menu_open(&self.app_state) {
-                                    self.apply_app_input(AppInput::ControlRestart);
-                                    self.render_with_options(None, true, true);
-                                    return;
+                    match self.active_screen {
+                        ActiveScreen::Create => {
+                            self.on_create_press(cursor_x, cursor_y);
+                            self.render_current();
+                            return;
+                        }
+                        ActiveScreen::Gameplay => {
+                            if let Some(action) = controls_button_action_at(
+                                cursor_x,
+                                cursor_y,
+                                self.surface_width,
+                                self.surface_height,
+                            ) {
+                                match action {
+                                    ControlsButtonAction::Restart => {
+                                        if !is_menu_open(&self.app_state) {
+                                            self.apply_app_input(AppInput::ControlRestart);
+                                            self.render_with_options(None, true, true);
+                                            return;
+                                        }
+                                    }
+                                    ControlsButtonAction::Undo => {
+                                        if !is_menu_open(&self.app_state) {
+                                            self.apply_app_input(AppInput::ControlUndo);
+                                            self.render_with_options(None, true, true);
+                                            return;
+                                        }
+                                    }
+                                    ControlsButtonAction::ShowMenu => {
+                                        self.apply_app_input(AppInput::ControlToggleMenu);
+                                        if is_menu_open(&self.app_state) {
+                                            let page_start = level_select_menu_start_index(
+                                                self.levels.len(),
+                                                self.controller.current_level(),
+                                            );
+                                            self.apply_app_input(AppInput::MenuNavigate {
+                                                page_start,
+                                            });
+                                        }
+                                        self.render_with_options(None, true, true);
+                                        return;
+                                    }
                                 }
                             }
-                            ControlsButtonAction::Undo => {
-                                if !is_menu_open(&self.app_state) {
-                                    self.apply_app_input(AppInput::ControlUndo);
-                                    self.render_with_options(None, true, true);
+
+                            if is_menu_open(&self.app_state) {
+                                if mode_toggle_button_rect().contains(cursor_x, cursor_y) {
+                                    self.enter_create_mode();
+                                    self.render_current();
                                     return;
                                 }
-                            }
-                            ControlsButtonAction::ShowMenu => {
-                                self.apply_app_input(AppInput::ControlToggleMenu);
-                                if is_menu_open(&self.app_state) {
-                                    let page_start = level_select_menu_start_index(
+
+                                if let Some(nav_action) = level_select_menu_nav_action_at(
+                                    cursor_x,
+                                    cursor_y,
+                                    self.surface_width,
+                                    self.surface_height,
+                                ) {
+                                    let menu_page_start =
+                                        menu_page_start(&self.app_state).unwrap_or(0);
+                                    let page_start = level_select_menu_start_for_nav(
                                         self.levels.len(),
                                         self.controller.current_level(),
+                                        menu_page_start,
+                                        nav_action,
                                     );
                                     self.apply_app_input(AppInput::MenuNavigate { page_start });
+                                    self.render_with_options(None, true, true);
+                                    return;
                                 }
+
+                                let menu_page_start = menu_page_start(&self.app_state).unwrap_or(0);
+                                if let Some(target) = level_select_menu_target_at(
+                                    cursor_x,
+                                    cursor_y,
+                                    self.surface_width,
+                                    self.surface_height,
+                                    self.levels.len(),
+                                    menu_page_start,
+                                ) {
+                                    self.apply_app_input(AppInput::MenuSelectLevel(target));
+                                    self.render_with_options(None, true, true);
+                                }
+                                return;
+                            }
+
+                            if self.controller.board().is_won() {
+                                self.apply_app_input(AppInput::SolvedAdvance);
                                 self.render_with_options(None, true, true);
                                 return;
                             }
+
+                            if let Some((x, y)) = self.board_viewport.screen_to_cell(
+                                cursor_x,
+                                cursor_y,
+                                self.controller.board(),
+                            ) {
+                                self.apply_app_input(AppInput::BoardTap { x, y });
+                            }
                         }
-                    }
-
-                    if is_menu_open(&self.app_state) {
-                        if let Some(nav_action) = level_select_menu_nav_action_at(
-                            cursor_x,
-                            cursor_y,
-                            self.surface_width,
-                            self.surface_height,
-                        ) {
-                            let menu_page_start = menu_page_start(&self.app_state).unwrap_or(0);
-                            let page_start = level_select_menu_start_for_nav(
-                                self.levels.len(),
-                                self.controller.current_level(),
-                                menu_page_start,
-                                nav_action,
-                            );
-                            self.apply_app_input(AppInput::MenuNavigate { page_start });
-                            self.render_with_options(None, true, true);
-                            return;
-                        }
-
-                        let menu_page_start = menu_page_start(&self.app_state).unwrap_or(0);
-                        if let Some(target) = level_select_menu_target_at(
-                            cursor_x,
-                            cursor_y,
-                            self.surface_width,
-                            self.surface_height,
-                            self.levels.len(),
-                            menu_page_start,
-                        ) {
-                            self.apply_app_input(AppInput::MenuSelectLevel(target));
-                            self.render_with_options(None, true, true);
-                        }
-                        return;
-                    }
-
-                    if self.controller.board().is_won() {
-                        self.apply_app_input(AppInput::SolvedAdvance);
-                        self.render_with_options(None, true, true);
-                        return;
-                    }
-
-                    if let Some((x, y)) = self.board_viewport.screen_to_cell(
-                        cursor_x,
-                        cursor_y,
-                        self.controller.board(),
-                    ) {
-                        self.apply_app_input(AppInput::BoardTap { x, y });
                     }
                 }
             }
+            WindowEvent::MouseInput {
+                state: ElementState::Released,
+                button: MouseButton::Left,
+                ..
+            } => {
+                if matches!(self.active_screen, ActiveScreen::Create) {
+                    self.create_session.mouse_released_left();
+                }
+            }
+            WindowEvent::Touch(touch) => {
+                if matches!(self.active_screen, ActiveScreen::Create) {
+                    self.on_create_touch(touch.id, touch.phase, touch.location.x, touch.location.y);
+                    self.render_current();
+                }
+            }
             WindowEvent::KeyboardInput { event, .. } => {
+                if !matches!(self.active_screen, ActiveScreen::Gameplay) {
+                    return;
+                }
                 if event.state != ElementState::Pressed || event.repeat {
                     return;
                 }
@@ -318,7 +464,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
-                self.render_with_options(None, true, true);
+                self.render_current();
             }
             _ => {}
         }

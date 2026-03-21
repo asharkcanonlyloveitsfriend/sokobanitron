@@ -1,12 +1,10 @@
 [package]
-name = "desktop-client"
+name = "sokobanitron-level-creator"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 pixels = "0.15"
 renderer = { package = "sokobanitron-renderer", path = "../sokobanitron-renderer" }
-sokobanitron-level-creator = { path = "../sokobanitron-level-creator" }
 sokobanitron-gameplay = { path = "../sokobanitron-gameplay" }
-sokobanitron-app = { path = "../sokobanitron-app" }
 winit = "0.30"

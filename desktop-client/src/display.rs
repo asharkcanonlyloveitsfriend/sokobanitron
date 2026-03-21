@@ -1,6 +1,9 @@
-use crate::app_driver::App;
+use crate::app_driver::{ActiveScreen, App, create_menu_return_button_rect};
 use renderer::{ControlsUiMode, draw_controls_ui};
 use sokobanitron_app::{AppMode, FrameRequest, FrameSink};
+use sokobanitron_level_creator::{
+    ModeIcon, draw_mode_icon_in_rect, draw_top_menu_toggle, mode_toggle_button_rect,
+};
 use std::thread;
 use std::time::Duration;
 
@@ -10,6 +13,13 @@ const BOX_PATH_SPEED_EXPONENT: f32 = 0.5;
 const BLINK_ON_MS: u64 = 120;
 
 impl App {
+    pub(crate) fn render_current(&mut self) {
+        match self.active_screen {
+            ActiveScreen::Gameplay => self.render_with_options(None, true, true),
+            ActiveScreen::Create => self.render_create_mode(),
+        }
+    }
+
     pub(crate) fn render_with_options(
         &mut self,
         box_trail: Option<&[(u32, u32)]>,
@@ -35,6 +45,13 @@ impl App {
                     self.surface_height,
                     ControlsUiMode::MenuOpen,
                 );
+                draw_mode_icon_in_rect(
+                    frame,
+                    self.surface_width,
+                    self.surface_height,
+                    mode_toggle_button_rect(),
+                    ModeIcon::Draw,
+                );
             } else {
                 self.renderer.draw_with_box_trail_options(
                     frame,
@@ -52,6 +69,29 @@ impl App {
                     self.surface_height,
                     ControlsUiMode::Gameplay,
                 );
+            }
+            pixels.render().expect("render");
+        }
+    }
+
+    pub(crate) fn render_create_mode(&mut self) {
+        if let Some(pixels) = &mut self.pixels {
+            let frame = pixels.frame_mut();
+            if self.create_menu_open {
+                self.renderer
+                    .draw_background_only(frame, self.surface_width, self.surface_height);
+                draw_top_menu_toggle(frame, self.surface_width, self.surface_height, true);
+                draw_mode_icon_in_rect(
+                    frame,
+                    self.surface_width,
+                    self.surface_height,
+                    create_menu_return_button_rect(self.surface_width),
+                    ModeIcon::Manipulate,
+                );
+            } else {
+                self.create_session
+                    .render(frame, self.surface_width, self.surface_height);
+                draw_top_menu_toggle(frame, self.surface_width, self.surface_height, false);
             }
             pixels.render().expect("render");
         }
@@ -127,6 +167,10 @@ impl FrameSink for App {
     type Error = ();
 
     fn render_frame(&mut self, request: &FrameRequest) -> Result<(), Self::Error> {
+        if !matches!(self.active_screen, ActiveScreen::Gameplay) {
+            return Ok(());
+        }
+
         match request {
             FrameRequest::Gameplay {
                 box_trail,
@@ -142,7 +186,9 @@ impl FrameSink for App {
     }
 
     fn animate_player_blink(&mut self) -> Result<(), Self::Error> {
-        self.run_player_blink_animation();
+        if matches!(self.active_screen, ActiveScreen::Gameplay) {
+            self.run_player_blink_animation();
+        }
         Ok(())
     }
 
@@ -160,7 +206,9 @@ impl FrameSink for App {
         path: &[(u32, u32)],
         show_solved_overlay: bool,
     ) -> Result<(), Self::Error> {
-        self.run_box_path_disappear_animation(path, show_solved_overlay);
+        if matches!(self.active_screen, ActiveScreen::Gameplay) {
+            self.run_box_path_disappear_animation(path, show_solved_overlay);
+        }
         Ok(())
     }
 }
