@@ -1,6 +1,33 @@
-use crate::optimizer::model::{BoxMovePath, Coord, ReverseOptimizationInput};
+// Replay trace for reverse pull histories.
+//
+// This module is the legality oracle for candidate histories: proposed moves
+// are re-run through pull pathfinding and realized paths/snapshots are emitted.
+// The optimizer uses the trace to evaluate candidates; tests also use it to
+// assert replay validity and state transitions.
+#[cfg(test)]
+use crate::optimizer::model::ReverseOptimizationInput;
+use crate::optimizer::model::{BoxMovePath, Coord};
 use crate::pathfinder::{Position, PullPathfinder};
 use std::collections::HashSet;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ReplayStateSnapshot {
+    pub boxes: Vec<Coord>,
+    pub player: Option<Coord>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ReplayStepSnapshot {
+    pub before: ReplayStateSnapshot,
+    pub after: ReplayStateSnapshot,
+    pub realized_path: BoxMovePath,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ReplaySolutionTrace {
+    pub steps: Vec<ReplayStepSnapshot>,
+    pub final_state: ReplayStateSnapshot,
+}
 
 #[inline]
 fn to_grid_position(coord: Coord, min_x: i32, min_y: i32) -> Option<Position> {
@@ -82,14 +109,24 @@ fn build_grid(
     Some((grid, min_x, min_y))
 }
 
-pub(crate) fn replay_reverse_solution(
-    input: &ReverseOptimizationInput,
+fn snapshot_state(boxes: &HashSet<Coord>, player: Option<Coord>) -> ReplayStateSnapshot {
+    let mut sorted_boxes = boxes.iter().copied().collect::<Vec<_>>();
+    sorted_boxes.sort_unstable();
+    ReplayStateSnapshot {
+        boxes: sorted_boxes,
+        player,
+    }
+}
+
+pub(crate) fn replay_reverse_solution_trace_from_state(
+    walkable: &HashSet<Coord>,
+    box_positions: &[Coord],
+    player: Option<Coord>,
     proposed_paths: &[BoxMovePath],
-) -> Option<Vec<BoxMovePath>> {
-    let walkable = input.walkable_cells.iter().copied().collect::<HashSet<_>>();
-    let mut boxes = input.box_positions.iter().copied().collect::<HashSet<_>>();
-    let mut player = input.player;
-    let mut realized = Vec::with_capacity(proposed_paths.len());
+) -> Option<ReplaySolutionTrace> {
+    let mut boxes = box_positions.iter().copied().collect::<HashSet<_>>();
+    let mut player = player;
+    let mut steps = Vec::with_capacity(proposed_paths.len());
 
     for proposed in proposed_paths {
         let from = proposed.first().copied()?;
@@ -120,11 +157,87 @@ pub(crate) fn replay_reverse_solution(
             .map(|pos| to_world_position(pos, min_x, min_y))
             .collect::<Vec<_>>();
 
+        let before = snapshot_state(&boxes, player);
         boxes.remove(&from);
         boxes.insert(to);
         player = Some(to_world_position(result.player_start, min_x, min_y));
-        realized.push(realized_path);
+        let after = snapshot_state(&boxes, player);
+        steps.push(ReplayStepSnapshot {
+            before,
+            after,
+            realized_path,
+        });
     }
 
-    Some(realized)
+    Some(ReplaySolutionTrace {
+        steps,
+        final_state: snapshot_state(&boxes, player),
+    })
+}
+
+#[cfg(test)]
+pub(crate) fn replay_reverse_solution_trace(
+    input: &ReverseOptimizationInput,
+    proposed_paths: &[BoxMovePath],
+) -> Option<ReplaySolutionTrace> {
+    let walkable = input.walkable_cells.iter().copied().collect::<HashSet<_>>();
+    replay_reverse_solution_trace_from_state(
+        &walkable,
+        &input.box_positions,
+        input.player,
+        proposed_paths,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::replay_reverse_solution_trace;
+    use crate::optimizer::ReverseOptimizationInput;
+
+    fn walkable_square(size: i32) -> Vec<(i32, i32)> {
+        let mut walkable = Vec::new();
+        for y in 0..size {
+            for x in 0..size {
+                walkable.push((x, y));
+            }
+        }
+        walkable
+    }
+
+    #[test]
+    fn trace_records_before_and_after_for_each_move() {
+        let input = ReverseOptimizationInput {
+            walkable_cells: walkable_square(5),
+            box_positions: vec![(3, 2)],
+            player: None,
+        };
+        let proposed = vec![vec![(3, 2), (1, 2)]];
+
+        let trace = replay_reverse_solution_trace(&input, &proposed).expect("trace should replay");
+        assert_eq!(trace.steps.len(), 1);
+        let step = &trace.steps[0];
+        assert_eq!(step.before.boxes, vec![(3, 2)]);
+        assert_eq!(step.after.boxes, vec![(1, 2)]);
+        assert_eq!(step.realized_path.first().copied(), Some((3, 2)));
+        assert_eq!(step.realized_path.last().copied(), Some((1, 2)));
+        assert_eq!(trace.final_state.boxes, vec![(1, 2)]);
+    }
+
+    #[test]
+    fn trace_keeps_step_boundaries_in_order() {
+        let input = ReverseOptimizationInput {
+            walkable_cells: walkable_square(5),
+            box_positions: vec![(3, 2)],
+            player: None,
+        };
+        let proposed = vec![vec![(3, 2), (2, 2)], vec![(2, 2), (1, 2)]];
+
+        let trace = replay_reverse_solution_trace(&input, &proposed).expect("trace should replay");
+        assert_eq!(trace.steps.len(), 2);
+        assert_eq!(trace.steps[0].before.boxes, vec![(3, 2)]);
+        assert_eq!(trace.steps[0].after.boxes, vec![(2, 2)]);
+        assert_eq!(trace.steps[1].before.boxes, trace.steps[0].after.boxes);
+        assert_eq!(trace.steps[1].after.boxes, vec![(1, 2)]);
+        assert_eq!(trace.final_state.boxes, vec![(1, 2)]);
+    }
 }

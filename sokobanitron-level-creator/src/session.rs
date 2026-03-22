@@ -4,16 +4,20 @@ use crate::constants::{
 };
 use crate::ui::{
     ManipulateButtonAction, ScreenRect, ZoomButtonAction, draw_box_move_count, draw_controls,
-    draw_move_hint_count, manipulate_button_action_at, mode_toggle_button_rect,
-    zoom_button_action_at,
+    draw_move_hint_count, draw_move_hint_pending, manipulate_button_action_at,
+    mode_toggle_button_rect, zoom_button_action_at,
 };
 use crate::world::{EditableTile, EditableWorld, NonVoidBounds};
 use renderer::{BoardViewport, Renderer};
-use sokobanitron_core::optimizer::{ReverseOptimizationInput, optimize_reverse_solution_in_place};
+use sokobanitron_core::optimizer::{
+    ReverseOptimizationInput, optimize_reverse_solution_in_place,
+    optimize_reverse_solution_in_place_with_stats,
+};
 use sokobanitron_core::pathfinder::{Position, PullPathfinder};
 use sokobanitron_gameplay::{BoardView, TileKind};
-use std::collections::HashMap;
-use std::time::Instant;
+use std::collections::{HashMap, VecDeque};
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum EditorMode {
@@ -57,6 +61,53 @@ struct PullMovePlan {
     box_path: Vec<(i32, i32)>,
 }
 
+struct PullPlanningContext {
+    grid: Vec<Vec<bool>>,
+    min_x: i32,
+    min_y: i32,
+}
+
+#[derive(Default)]
+struct HintComputationProfile {
+    total_time: Duration,
+    destination_enumeration_time: Duration,
+    destination_count: usize,
+    optimization_calls: usize,
+    optimization_time: Duration,
+    rewrite_plan_count: usize,
+    rewrite_plan_generation_time: Duration,
+    replay_count: usize,
+    replay_time: Duration,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PullHintState {
+    Pending,
+    Ready(u32),
+}
+
+struct PullHintCandidate {
+    destination: (i32, i32),
+    box_path: Vec<(i32, i32)>,
+}
+
+#[derive(Clone, Copy)]
+struct TrackedBox {
+    start_index: usize,
+    position: (i32, i32),
+    count: u32,
+}
+
+struct ActivePullHintJob {
+    generation: u64,
+    selected: (i32, i32),
+    selected_start_index: usize,
+    optimization_input: ReverseOptimizationInput,
+    pending_candidates: VecDeque<PullHintCandidate>,
+    profile: HintComputationProfile,
+    started_at: Instant,
+}
+
 #[derive(Clone)]
 struct UndoSnapshot {
     world: EditableWorld,
@@ -91,8 +142,10 @@ pub struct LevelCreatorSession {
     solution_start_player: Option<(i32, i32)>,
     solution_history: Vec<Vec<(i32, i32)>>,
     undo_history: Vec<UndoSnapshot>,
-    pull_destination_hints: HashMap<(i32, i32), u32>,
+    pull_destination_hints: HashMap<(i32, i32), PullHintState>,
     pull_hints_dirty: bool,
+    pull_hint_generation: u64,
+    active_pull_hint_job: Option<ActivePullHintJob>,
 }
 
 impl LevelCreatorSession {
@@ -124,6 +177,8 @@ impl LevelCreatorSession {
             undo_history: Vec::new(),
             pull_destination_hints: HashMap::new(),
             pull_hints_dirty: false,
+            pull_hint_generation: 0,
+            active_pull_hint_job: None,
         }
     }
 
@@ -213,6 +268,8 @@ impl LevelCreatorSession {
             can_undo,
             can_restart,
         );
+        // Intentionally budget one hint evaluation step per render cycle.
+        self.advance_pull_destination_hints_job(1);
     }
 
     fn build_visible_window(&self) -> VisibleBoardWindow {
@@ -558,16 +615,21 @@ impl LevelCreatorSession {
         self.pull_hints_dirty = true;
     }
 
-    fn box_move_counts_by_position_for_history(
-        &self,
-        history: &[Vec<(i32, i32)>],
-    ) -> HashMap<(i32, i32), u32> {
-        let mut box_counts = self
+    // Correctness-first replay of box identity (by start index).
+    // This recomputes from history each call; a faster index map can be added
+    // later if profiling shows this path is hot.
+    fn tracked_boxes_for_history(&self, history: &[Vec<(i32, i32)>]) -> Vec<TrackedBox> {
+        let mut tracked = self
             .solution_start_boxes
             .iter()
             .copied()
-            .map(|pos| (pos, 0u32))
-            .collect::<HashMap<_, _>>();
+            .enumerate()
+            .map(|(start_index, position)| TrackedBox {
+                start_index,
+                position,
+                count: 0,
+            })
+            .collect::<Vec<_>>();
 
         for movement in history {
             let Some(start_pos) = movement.first().copied() else {
@@ -576,17 +638,48 @@ impl LevelCreatorSession {
             let Some(end_pos) = movement.last().copied() else {
                 continue;
             };
-            let Some(current_count) = box_counts.remove(&start_pos) else {
+            let Some(entry) = tracked.iter_mut().find(|entry| entry.position == start_pos) else {
                 continue;
             };
-            box_counts.insert(end_pos, current_count.saturating_add(1));
+            entry.position = end_pos;
+            entry.count = entry.count.saturating_add(1);
         }
 
-        box_counts
+        tracked
+    }
+
+    fn box_move_counts_by_position_for_history(
+        &self,
+        history: &[Vec<(i32, i32)>],
+    ) -> HashMap<(i32, i32), u32> {
+        self.tracked_boxes_for_history(history)
+            .into_iter()
+            .map(|entry| (entry.position, entry.count))
+            .collect::<HashMap<_, _>>()
     }
 
     fn box_move_counts_by_position(&self) -> HashMap<(i32, i32), u32> {
         self.box_move_counts_by_position_for_history(&self.solution_history)
+    }
+
+    fn box_start_index_for_position_in_history(
+        &self,
+        history: &[Vec<(i32, i32)>],
+        target: (i32, i32),
+    ) -> Option<usize> {
+        self.tracked_boxes_for_history(history)
+            .into_iter()
+            .find_map(|entry| (entry.position == target).then_some(entry.start_index))
+    }
+
+    fn box_move_count_for_start_index_in_history(
+        &self,
+        history: &[Vec<(i32, i32)>],
+        start_index: usize,
+    ) -> Option<u32> {
+        self.tracked_boxes_for_history(history)
+            .into_iter()
+            .find_map(|entry| (entry.start_index == start_index).then_some(entry.count))
     }
 
     fn draw_box_move_counts_on_visible_window(
@@ -637,7 +730,7 @@ impl LevelCreatorSession {
 
         let width = visible.board.width() as i32;
         let height = visible.board.height() as i32;
-        for (&(world_x, world_y), &count) in &self.pull_destination_hints {
+        for (&(world_x, world_y), hint_state) in &self.pull_destination_hints {
             let local_x = world_x - visible.world_origin_x;
             let local_y = world_y - visible.world_origin_y;
             if local_x < 0 || local_y < 0 || local_x >= width || local_y >= height {
@@ -655,57 +748,293 @@ impl LevelCreatorSession {
                 w: cell_w,
                 h: cell_h,
             };
-            draw_move_hint_count(frame, self.surface_width, self.surface_height, rect, count);
+            match hint_state {
+                PullHintState::Pending => {
+                    draw_move_hint_pending(frame, self.surface_width, self.surface_height, rect)
+                }
+                PullHintState::Ready(count) => draw_move_hint_count(
+                    frame,
+                    self.surface_width,
+                    self.surface_height,
+                    rect,
+                    *count,
+                ),
+            }
         }
     }
 
     fn clear_pull_destination_hints(&mut self) {
         self.pull_destination_hints.clear();
         self.pull_hints_dirty = false;
+        self.pull_hint_generation = self.pull_hint_generation.wrapping_add(1);
+        self.active_pull_hint_job = None;
     }
 
     fn mark_pull_destination_hints_dirty(&mut self) {
         if matches!(self.mode, EditorMode::Manipulate) && self.selected_box.is_some() {
+            self.pull_destination_hints.clear();
             self.pull_hints_dirty = true;
+            self.pull_hint_generation = self.pull_hint_generation.wrapping_add(1);
+            self.active_pull_hint_job = None;
         } else {
             self.clear_pull_destination_hints();
         }
     }
 
-    fn compute_pull_destination_hints(&self, selected: (i32, i32)) -> HashMap<(i32, i32), u32> {
-        let Some(bounds) = self.world.non_void_bounds() else {
-            return HashMap::new();
-        };
+    // Optional debug profiling for hint generation cost breakdowns.
+    fn hint_profiling_enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            std::env::var("SOKOBANITRON_HINT_PROFILE")
+                .ok()
+                .map(|value| {
+                    let normalized = value.trim().to_ascii_lowercase();
+                    normalized == "1" || normalized == "true" || normalized == "yes"
+                })
+                .unwrap_or(false)
+        })
+    }
+
+    fn duration_ms(duration: Duration) -> f64 {
+        duration.as_secs_f64() * 1_000.0
+    }
+
+    fn log_hint_profile(selected: (i32, i32), profile: &HintComputationProfile) {
+        if !Self::hint_profiling_enabled() {
+            return;
+        }
+        eprintln!(
+            "hint_profile selected=({}, {}) legal_destinations={} enumerate_ms={:.3} optimize_calls={} optimize_ms={:.3} rewrite_plans={} rewrite_gen_ms={:.3} replay_count={} replay_ms={:.3} total_ms={:.3}",
+            selected.0,
+            selected.1,
+            profile.destination_count,
+            Self::duration_ms(profile.destination_enumeration_time),
+            profile.optimization_calls,
+            Self::duration_ms(profile.optimization_time),
+            profile.rewrite_plan_count,
+            Self::duration_ms(profile.rewrite_plan_generation_time),
+            profile.replay_count,
+            Self::duration_ms(profile.replay_time),
+            Self::duration_ms(profile.total_time),
+        );
+    }
+
+    fn manhattan_distance(a: (i32, i32), b: (i32, i32)) -> i32 {
+        (a.0 - b.0).abs() + (a.1 - b.1).abs()
+    }
+
+    fn has_chain_continuation_in_history(&self) -> bool {
+        for i in 0..self.solution_history.len() {
+            let Some(end_i) = self.solution_history[i].last().copied() else {
+                continue;
+            };
+            for path in self.solution_history.iter().skip(i + 1) {
+                if path.first().copied() == Some(end_i) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    // Conservative fast-path gate:
+    // - cheap to compute
+    // - false positives are acceptable (we may still optimize)
+    // - false negatives should be uncommon for practical editor flows
+    fn quick_rewrite_feasibility_check(&self, selected: (i32, i32)) -> bool {
+        if self.solution_history.len() < 2 {
+            return false;
+        }
+        if self.has_chain_continuation_in_history() {
+            return true;
+        }
+        self.solution_history
+            .iter()
+            .any(|path| path.last().copied() == Some(selected))
+    }
+
+    fn start_pull_destination_hints_job(&mut self, selected: (i32, i32)) {
+        self.pull_destination_hints.clear();
+        self.active_pull_hint_job = None;
+
+        let discovery_started = Instant::now();
+        let mut profile = HintComputationProfile::default();
+        let enumeration_started = Instant::now();
+        let legal_pull_destinations = self
+            .enumerate_pull_move_plans(selected.0, selected.1)
+            .into_iter()
+            .map(|(destination, plan)| PullHintCandidate {
+                destination,
+                box_path: plan.box_path,
+            })
+            .collect::<Vec<_>>();
+        profile.destination_enumeration_time = enumeration_started.elapsed();
+        profile.destination_count = legal_pull_destinations.len();
+        if legal_pull_destinations.is_empty() {
+            profile.total_time = discovery_started.elapsed();
+            Self::log_hint_profile(selected, &profile);
+            return;
+        }
+
+        let selected_start_index = self
+            .box_start_index_for_position_in_history(&self.solution_history, selected)
+            .expect("selected box must map to a tracked start position");
+        let base_selected_count = self
+            .box_move_count_for_start_index_in_history(&self.solution_history, selected_start_index)
+            .unwrap_or(0)
+            .saturating_add(1);
+        if !self.quick_rewrite_feasibility_check(selected) {
+            for candidate in legal_pull_destinations {
+                self.pull_destination_hints.insert(
+                    candidate.destination,
+                    PullHintState::Ready(base_selected_count),
+                );
+            }
+            profile.total_time = discovery_started.elapsed();
+            Self::log_hint_profile(selected, &profile);
+            return;
+        }
+
+        let mut candidates = legal_pull_destinations;
+        candidates.sort_unstable_by_key(|candidate| {
+            (
+                Self::manhattan_distance(selected, candidate.destination),
+                candidate.destination.1,
+                candidate.destination.0,
+            )
+        });
+        let mut pending_candidates = VecDeque::new();
+        for candidate in candidates {
+            self.pull_destination_hints
+                .insert(candidate.destination, PullHintState::Pending);
+            pending_candidates.push_back(candidate);
+        }
+
         let optimization_input = ReverseOptimizationInput {
             walkable_cells: self.walkable_cells_for_optimizer(),
             box_positions: self.solution_start_boxes.clone(),
             player: self.solution_start_player,
         };
-        let mut hints = HashMap::new();
-        for y in bounds.min_y..=bounds.max_y {
-            for x in bounds.min_x..=bounds.max_x {
-                if (x, y) == selected {
-                    continue;
-                }
-                match self.world.tile(x, y) {
-                    EditableTile::Void | EditableTile::Box | EditableTile::BoxOnGoal => continue,
-                    EditableTile::Floor | EditableTile::Goal => {}
-                }
-                let Some(plan) = self.find_pull_move_plan(selected.0, selected.1, x, y) else {
-                    continue;
-                };
+        if pending_candidates.is_empty() {
+            profile.total_time = discovery_started.elapsed();
+            Self::log_hint_profile(selected, &profile);
+            return;
+        }
+        self.active_pull_hint_job = Some(ActivePullHintJob {
+            generation: self.pull_hint_generation,
+            selected,
+            selected_start_index,
+            optimization_input,
+            pending_candidates,
+            profile,
+            started_at: discovery_started,
+        });
+    }
 
-                let mut candidate_history = self.solution_history.clone();
-                candidate_history.push(plan.box_path);
-                optimize_reverse_solution_in_place(&optimization_input, &mut candidate_history);
-                let candidate_counts =
-                    self.box_move_counts_by_position_for_history(&candidate_history);
-                if let Some(count) = candidate_counts.get(&(x, y)).copied() {
-                    hints.insert((x, y), count);
-                }
+    fn evaluate_pull_hint_candidate(
+        &self,
+        candidate: &PullHintCandidate,
+        optimization_input: &ReverseOptimizationInput,
+        selected_start_index: usize,
+    ) -> (u32, HintComputationProfile) {
+        let mut profile = HintComputationProfile::default();
+        let profiling_enabled = Self::hint_profiling_enabled();
+        let mut candidate_history = self.solution_history.clone();
+        candidate_history.push(candidate.box_path.clone());
+        profile.optimization_calls = 1;
+        let optimization_started = Instant::now();
+        if profiling_enabled {
+            let (_, optimization_stats) = optimize_reverse_solution_in_place_with_stats(
+                optimization_input,
+                &mut candidate_history,
+            );
+            profile.rewrite_plan_count = optimization_stats.rewrite_plan_count;
+            profile.rewrite_plan_generation_time = optimization_stats.rewrite_plan_generation_time;
+            profile.replay_count = optimization_stats.replay_count;
+            profile.replay_time = optimization_stats.replay_time;
+        } else {
+            optimize_reverse_solution_in_place(optimization_input, &mut candidate_history);
+        }
+        profile.optimization_time = optimization_started.elapsed();
+
+        let Some(count) = self
+            .box_move_count_for_start_index_in_history(&candidate_history, selected_start_index)
+        else {
+            panic!(
+                "hint count missing for selected_start_index={} destination=({}, {})",
+                selected_start_index, candidate.destination.0, candidate.destination.1,
+            );
+        };
+        (count, profile)
+    }
+
+    fn advance_pull_destination_hints_job(&mut self, steps: usize) {
+        if steps == 0 {
+            return;
+        }
+        for _ in 0..steps {
+            let Some((generation, selected, selected_start_index, optimization_input, candidate)) =
+                ({
+                    let job = match self.active_pull_hint_job.as_mut() {
+                        Some(job) => job,
+                        None => return,
+                    };
+                    let Some(candidate) = job.pending_candidates.pop_front() else {
+                        let mut finished = self
+                            .active_pull_hint_job
+                            .take()
+                            .expect("active pull hint job");
+                        finished.profile.total_time = finished.started_at.elapsed();
+                        Self::log_hint_profile(finished.selected, &finished.profile);
+                        return;
+                    };
+                    Some((
+                        job.generation,
+                        job.selected,
+                        job.selected_start_index,
+                        job.optimization_input.clone(),
+                        candidate,
+                    ))
+                })
+            else {
+                return;
+            };
+
+            let (count, step_profile) = self.evaluate_pull_hint_candidate(
+                &candidate,
+                &optimization_input,
+                selected_start_index,
+            );
+
+            if generation != self.pull_hint_generation || self.selected_box != Some(selected) {
+                return;
+            }
+
+            let Some(job) = self.active_pull_hint_job.as_mut() else {
+                return;
+            };
+            if job.generation != generation {
+                return;
+            }
+            job.profile.optimization_calls += step_profile.optimization_calls;
+            job.profile.optimization_time += step_profile.optimization_time;
+            job.profile.rewrite_plan_count += step_profile.rewrite_plan_count;
+            job.profile.rewrite_plan_generation_time += step_profile.rewrite_plan_generation_time;
+            job.profile.replay_count += step_profile.replay_count;
+            job.profile.replay_time += step_profile.replay_time;
+            self.pull_destination_hints
+                .insert(candidate.destination, PullHintState::Ready(count));
+
+            if job.pending_candidates.is_empty() {
+                let mut finished = self
+                    .active_pull_hint_job
+                    .take()
+                    .expect("active pull hint job");
+                finished.profile.total_time = finished.started_at.elapsed();
+                Self::log_hint_profile(finished.selected, &finished.profile);
+                return;
             }
         }
-        hints
     }
 
     fn refresh_pull_destination_hints_if_needed(&mut self) {
@@ -720,7 +1049,7 @@ impl LevelCreatorSession {
             self.clear_pull_destination_hints();
             return;
         }
-        self.pull_destination_hints = self.compute_pull_destination_hints(selected);
+        self.start_pull_destination_hints_job(selected);
         self.pull_hints_dirty = false;
     }
 
@@ -837,21 +1166,23 @@ impl LevelCreatorSession {
         (min_x + grid.col as i32, min_y + grid.row as i32)
     }
 
-    fn find_pull_move_plan(
+    fn build_pull_planning_context(
         &self,
         from_x: i32,
         from_y: i32,
-        to_x: i32,
-        to_y: i32,
-    ) -> Option<PullMovePlan> {
-        let Some(bounds) = self.world.non_void_bounds() else {
-            return None;
-        };
-
-        let mut min_x = bounds.min_x.min(from_x).min(to_x);
-        let mut max_x = bounds.max_x.max(from_x).max(to_x);
-        let mut min_y = bounds.min_y.min(from_y).min(to_y);
-        let mut max_y = bounds.max_y.max(from_y).max(to_y);
+        target: Option<(i32, i32)>,
+    ) -> Option<PullPlanningContext> {
+        let bounds = self.world.non_void_bounds()?;
+        let mut min_x = bounds.min_x.min(from_x);
+        let mut max_x = bounds.max_x.max(from_x);
+        let mut min_y = bounds.min_y.min(from_y);
+        let mut max_y = bounds.max_y.max(from_y);
+        if let Some((to_x, to_y)) = target {
+            min_x = min_x.min(to_x);
+            max_x = max_x.max(to_x);
+            min_y = min_y.min(to_y);
+            max_y = max_y.max(to_y);
+        }
         if let Some((px, py)) = self.world.player() {
             min_x = min_x.min(px);
             max_x = max_x.max(px);
@@ -873,6 +1204,55 @@ impl LevelCreatorSession {
             }
         }
 
+        Some(PullPlanningContext { grid, min_x, min_y })
+    }
+
+    fn enumerate_pull_move_plans(
+        &self,
+        from_x: i32,
+        from_y: i32,
+    ) -> Vec<((i32, i32), PullMovePlan)> {
+        let Some(context) = self.build_pull_planning_context(from_x, from_y, None) else {
+            return Vec::new();
+        };
+        let PullPlanningContext { grid, min_x, min_y } = context;
+        let box_start = Self::to_grid_position(from_x, from_y, min_x, min_y);
+        let player_start = self
+            .world
+            .player()
+            .map(|(x, y)| Self::to_grid_position(x, y, min_x, min_y));
+        let mut pathfinder = PullPathfinder::new(grid, box_start, player_start);
+
+        pathfinder
+            .find_all_pull_paths()
+            .into_iter()
+            .map(|(origin, result)| {
+                let destination = Self::to_world_position(origin, min_x, min_y);
+                let box_path = result
+                    .box_path
+                    .into_iter()
+                    .map(|pos| Self::to_world_position(pos, min_x, min_y))
+                    .collect::<Vec<_>>();
+                (
+                    destination,
+                    PullMovePlan {
+                        player_start: Self::to_world_position(result.player_start, min_x, min_y),
+                        box_path,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    fn find_pull_move_plan(
+        &self,
+        from_x: i32,
+        from_y: i32,
+        to_x: i32,
+        to_y: i32,
+    ) -> Option<PullMovePlan> {
+        let context = self.build_pull_planning_context(from_x, from_y, Some((to_x, to_y)))?;
+        let PullPlanningContext { grid, min_x, min_y } = context;
         let box_start = Self::to_grid_position(from_x, from_y, min_x, min_y);
         let origin = Self::to_grid_position(to_x, to_y, min_x, min_y);
         let player_start = self
@@ -924,12 +1304,11 @@ impl LevelCreatorSession {
             self.clear_pull_destination_hints();
             return;
         }
-
         let Some(plan) = self.find_pull_move_plan(from_x, from_y, world_x, world_y) else {
             return;
         };
-        let undo_snapshot = self.make_undo_snapshot();
 
+        let undo_snapshot = self.make_undo_snapshot();
         let from_base = match from_tile {
             EditableTile::BoxOnGoal => EditableTile::Goal,
             EditableTile::Box => EditableTile::Floor,
@@ -972,8 +1351,20 @@ impl Default for LevelCreatorSession {
 
 #[cfg(test)]
 mod tests {
-    use super::LevelCreatorSession;
+    use super::{LevelCreatorSession, PullHintState};
     use crate::world::EditableTile;
+
+    fn clear_world(session: &mut LevelCreatorSession) {
+        let Some(bounds) = session.world.non_void_bounds() else {
+            return;
+        };
+        for y in bounds.min_y..=bounds.max_y {
+            for x in bounds.min_x..=bounds.max_x {
+                session.world.set_tile(x, y, EditableTile::Void);
+            }
+        }
+        session.world.set_player(None);
+    }
 
     #[test]
     fn consecutive_moves_of_the_same_box_are_consolidated() {
@@ -1044,5 +1435,172 @@ mod tests {
         for (x, y) in session.world.box_positions() {
             assert_eq!(session.world.tile(x, y), EditableTile::BoxOnGoal);
         }
+    }
+
+    #[test]
+    fn tracked_box_identity_preserves_selected_box_count() {
+        let mut session = LevelCreatorSession::new();
+        session.solution_start_boxes = vec![(0, 0), (2, 0)];
+        let history = vec![
+            vec![(0, 0), (1, 0)],
+            vec![(2, 0), (0, 0)],
+            vec![(1, 0), (2, 0)],
+        ];
+
+        assert_eq!(
+            session.box_start_index_for_position_in_history(&history, (2, 0)),
+            Some(0)
+        );
+        assert_eq!(
+            session.box_start_index_for_position_in_history(&history, (0, 0)),
+            Some(1)
+        );
+        assert_eq!(
+            session.box_move_count_for_start_index_in_history(&history, 0),
+            Some(2)
+        );
+        assert_eq!(
+            session.box_move_count_for_start_index_in_history(&history, 1),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn trivial_hint_path_marks_all_destinations_ready_without_job() {
+        let mut session = LevelCreatorSession::new();
+        clear_world(&mut session);
+        for x in 0..=4 {
+            for y in 0..=1 {
+                session.world.set_tile(x, y, EditableTile::Floor);
+            }
+        }
+        session.world.set_tile(2, 0, EditableTile::Box);
+        session.world.set_player(None);
+        session.solution_start_boxes = vec![(2, 0)];
+        session.solution_start_player = None;
+        session.solution_history.clear();
+        session.selected_box = Some((2, 0));
+
+        session.start_pull_destination_hints_job((2, 0));
+
+        assert!(!session.pull_destination_hints.is_empty());
+        assert!(session.active_pull_hint_job.is_none());
+        for hint in session.pull_destination_hints.values() {
+            assert_eq!(*hint, PullHintState::Ready(1));
+        }
+    }
+
+    #[test]
+    fn nontrivial_hint_path_starts_incremental_pending_job() {
+        let mut session = LevelCreatorSession::new();
+        clear_world(&mut session);
+        for x in 0..=4 {
+            for y in 0..=1 {
+                session.world.set_tile(x, y, EditableTile::Floor);
+            }
+        }
+        session.world.set_tile(2, 0, EditableTile::Box);
+        session.world.set_player(None);
+        session.solution_start_boxes = vec![(2, 0)];
+        session.solution_start_player = None;
+        session.solution_history = vec![vec![(2, 0), (3, 0)], vec![(3, 0), (2, 0)]];
+        session.selected_box = Some((2, 0));
+
+        session.start_pull_destination_hints_job((2, 0));
+
+        assert!(!session.pull_destination_hints.is_empty());
+        assert!(session.active_pull_hint_job.is_some());
+        assert!(
+            session
+                .pull_destination_hints
+                .values()
+                .any(|hint| matches!(hint, PullHintState::Pending))
+        );
+
+        let pending_before = session
+            .pull_destination_hints
+            .values()
+            .filter(|hint| matches!(hint, PullHintState::Pending))
+            .count();
+        session.advance_pull_destination_hints_job(1);
+        let pending_after = session
+            .pull_destination_hints
+            .values()
+            .filter(|hint| matches!(hint, PullHintState::Pending))
+            .count();
+        assert!(pending_after < pending_before);
+    }
+
+    #[test]
+    fn stale_hint_results_are_ignored_when_selection_changes() {
+        let mut session = LevelCreatorSession::new();
+        clear_world(&mut session);
+        for x in 0..=4 {
+            for y in 0..=1 {
+                session.world.set_tile(x, y, EditableTile::Floor);
+            }
+        }
+        session.world.set_tile(2, 0, EditableTile::Box);
+        session.world.set_player(None);
+        session.solution_start_boxes = vec![(2, 0)];
+        session.solution_start_player = None;
+        session.solution_history = vec![vec![(2, 0), (3, 0)], vec![(3, 0), (2, 0)]];
+        session.selected_box = Some((2, 0));
+
+        session.start_pull_destination_hints_job((2, 0));
+        assert!(session.active_pull_hint_job.is_some());
+        assert!(
+            session
+                .pull_destination_hints
+                .values()
+                .all(|hint| matches!(hint, PullHintState::Pending))
+        );
+
+        session.selected_box = None;
+        session.advance_pull_destination_hints_job(1);
+
+        assert!(
+            session
+                .pull_destination_hints
+                .values()
+                .all(|hint| matches!(hint, PullHintState::Pending)),
+            "stale computation must not write ready results after selection changes",
+        );
+    }
+
+    #[test]
+    fn hint_job_completes_and_clears_active_state() {
+        let mut session = LevelCreatorSession::new();
+        clear_world(&mut session);
+        for x in 0..=4 {
+            for y in 0..=1 {
+                session.world.set_tile(x, y, EditableTile::Floor);
+            }
+        }
+        session.world.set_tile(2, 0, EditableTile::Box);
+        session.world.set_player(None);
+        session.solution_start_boxes = vec![(2, 0)];
+        session.solution_start_player = None;
+        session.solution_history = vec![vec![(2, 0), (3, 0)], vec![(3, 0), (2, 0)]];
+        session.selected_box = Some((2, 0));
+
+        session.start_pull_destination_hints_job((2, 0));
+        assert!(session.active_pull_hint_job.is_some());
+
+        let mut steps = 0usize;
+        while session.active_pull_hint_job.is_some() && steps < 64 {
+            session.advance_pull_destination_hints_job(1);
+            steps += 1;
+        }
+
+        assert!(session.active_pull_hint_job.is_none());
+        assert!(steps > 0);
+        assert!(
+            session
+                .pull_destination_hints
+                .values()
+                .all(|hint| matches!(hint, PullHintState::Ready(_))),
+            "all hints should be resolved once the active job is exhausted",
+        );
     }
 }

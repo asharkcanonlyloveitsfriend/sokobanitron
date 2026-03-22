@@ -136,20 +136,10 @@ impl PullPathfinder {
         queue.push_back(state);
     }
 
-    pub fn find_pull_path(&mut self, origin: Position) -> Option<PullPathResult> {
-        if self.box_start == origin {
-            return None;
-        }
-        if !self.is_inside(origin) || !self.is_walkable(origin) {
-            return None;
-        }
-        self.generation = self.generation.wrapping_add(1);
-        let generation = self.generation;
-
-        let mut queue = VecDeque::new();
+    fn seed_start_states(&mut self, queue: &mut VecDeque<State>, generation: u32) {
         if let Some(player_start) = self.player_start {
             self.enqueue_start_state(
-                &mut queue,
+                queue,
                 State {
                     box_pos: self.box_start,
                     player_pos: player_start,
@@ -160,7 +150,7 @@ impl PullPathfinder {
             for row in 0..self.height {
                 for col in 0..self.width {
                     self.enqueue_start_state(
-                        &mut queue,
+                        queue,
                         State {
                             box_pos: self.box_start,
                             player_pos: Position::new(row, col),
@@ -170,10 +160,20 @@ impl PullPathfinder {
                 }
             }
         }
+    }
+
+    fn traverse_pull_states<Visit>(&mut self, mut visit: Visit)
+    where
+        Visit: FnMut(&Self, State) -> bool,
+    {
+        self.generation = self.generation.wrapping_add(1);
+        let generation = self.generation;
+        let mut queue = VecDeque::new();
+        self.seed_start_states(&mut queue, generation);
 
         while let Some(state) = queue.pop_front() {
-            if state.box_pos == origin {
-                return Some(self.build_result(state));
+            if !visit(self, state) {
+                return;
             }
 
             for (dr, dc) in Self::DIRECTIONS {
@@ -215,8 +215,40 @@ impl PullPathfinder {
                 queue.push_back(next_state);
             }
         }
+    }
 
-        None
+    pub fn find_pull_path(&mut self, origin: Position) -> Option<PullPathResult> {
+        if self.box_start == origin {
+            return None;
+        }
+        if !self.is_inside(origin) || !self.is_walkable(origin) {
+            return None;
+        }
+        let mut found = None;
+        self.traverse_pull_states(|pathfinder, state| {
+            if state.box_pos == origin {
+                found = Some(pathfinder.build_result(state));
+                return false;
+            }
+            true
+        });
+        found
+    }
+
+    pub fn find_all_pull_paths(&mut self) -> Vec<(Position, PullPathResult)> {
+        let mut found_origin = vec![false; self.cell_count];
+        let mut results = Vec::new();
+
+        self.traverse_pull_states(|pathfinder, state| {
+            let box_idx = pathfinder.idx(state.box_pos);
+            if state.box_pos != pathfinder.box_start && !found_origin[box_idx] {
+                found_origin[box_idx] = true;
+                results.push((state.box_pos, pathfinder.build_result(state)));
+            }
+            true
+        });
+
+        results
     }
 }
 
@@ -253,5 +285,14 @@ mod tests {
             .find_pull_path(Position::new(2, 1))
             .expect("expected pull path");
         assert_eq!(result.player_start, Position::new(2, 0));
+    }
+
+    #[test]
+    fn find_all_pull_paths_returns_reachable_origins() {
+        let grid = vec![vec![true; 5]; 5];
+        let mut pathfinder = PullPathfinder::new(grid, Position::new(2, 3), None);
+        let all = pathfinder.find_all_pull_paths();
+        assert!(all.iter().any(|(origin, _)| *origin == Position::new(2, 1)));
+        assert!(all.iter().all(|(origin, _)| *origin != Position::new(2, 3)));
     }
 }

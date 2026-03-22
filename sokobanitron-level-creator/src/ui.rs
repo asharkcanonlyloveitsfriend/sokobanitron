@@ -219,6 +219,15 @@ pub fn draw_move_hint_count(
     draw_centered_label(frame, width, height, rect, &label, scale, HINT_TEXT_COLOR);
 }
 
+pub fn draw_move_hint_pending(frame: &mut [u8], width: u32, height: u32, rect: ScreenRect) {
+    let max_text_width = measure_text("99", 1).max(1);
+    let scale_x = (rect.w as usize / max_text_width).max(1);
+    let scale_y = (rect.h as usize / 7).max(1);
+    let max_fit_scale = scale_x.min(scale_y).max(1);
+    let scale = ((max_fit_scale * 5) / 25).max(1);
+    draw_centered_label(frame, width, height, rect, "?", scale, HINT_TEXT_COLOR);
+}
+
 pub fn draw_controls(
     frame: &mut [u8],
     width: u32,
@@ -488,6 +497,9 @@ fn glyph_pattern(ch: char) -> [u8; 7] {
         ],
         '\\' => [
             0b10000, 0b01000, 0b00100, 0b00010, 0b00001, 0b00000, 0b00000,
+        ],
+        '?' => [
+            0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b00000, 0b00100,
         ],
         _ => [
             0b11111, 0b10001, 0b00110, 0b00100, 0b00110, 0b10001, 0b11111,
