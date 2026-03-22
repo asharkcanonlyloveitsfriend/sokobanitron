@@ -16,7 +16,7 @@ use sokobanitron_gameplay::{
     BoardView, GameplayController, GameplayControllerChanges, GameplayPreferences,
     OrientationPolicy, load_levels_from_default_locations,
 };
-use sokobanitron_level_creator::{LevelCreatorSession, TouchInputPhase};
+use sokobanitron_level_editor::{LevelEditorSession, TouchInputPhase};
 use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
@@ -62,7 +62,7 @@ pub struct App {
     cursor_position: Option<(f64, f64)>,
     pub(crate) surface_width: u32,
     pub(crate) surface_height: u32,
-    pub(crate) editor_session: LevelCreatorSession,
+    pub(crate) editor_session: LevelEditorSession,
 }
 
 impl App {
@@ -96,7 +96,7 @@ impl App {
             cursor_position: None,
             surface_width: INITIAL_WIDTH,
             surface_height: INITIAL_HEIGHT,
-            editor_session: LevelCreatorSession::new(),
+            editor_session: LevelEditorSession::new(),
         }
     }
 

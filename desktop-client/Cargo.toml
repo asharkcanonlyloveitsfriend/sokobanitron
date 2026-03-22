@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 pixels = "0.15"
 renderer = { package = "sokobanitron-renderer", path = "../sokobanitron-renderer" }
-sokobanitron-level-creator = { path = "../sokobanitron-level-creator" }
+sokobanitron-level-editor = { path = "../sokobanitron-level-editor" }
 sokobanitron-gameplay = { path = "../sokobanitron-gameplay" }
 sokobanitron-app = { path = "../sokobanitron-app" }
 winit = "0.30"

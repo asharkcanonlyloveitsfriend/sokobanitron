@@ -1,5 +1,5 @@
 use crate::constants::{INITIAL_HEIGHT, INITIAL_WIDTH};
-use crate::session::{LevelCreatorSession, TouchInputPhase};
+use crate::session::{LevelEditorSession, TouchInputPhase};
 use pixels::{Pixels, SurfaceTexture};
 use std::sync::Arc;
 use winit::{
@@ -11,22 +11,22 @@ use winit::{
     window::{Window, WindowAttributes},
 };
 
-pub struct LevelCreatorApp {
+pub struct LevelEditorApp {
     window: Option<Arc<Window>>,
     pixels: Option<Pixels<'static>>,
     surface_width: u32,
     surface_height: u32,
-    session: LevelCreatorSession,
+    session: LevelEditorSession,
 }
 
-impl LevelCreatorApp {
+impl LevelEditorApp {
     pub fn new() -> Self {
         Self {
             window: None,
             pixels: None,
             surface_width: INITIAL_WIDTH,
             surface_height: INITIAL_HEIGHT,
-            session: LevelCreatorSession::new(),
+            session: LevelEditorSession::new(),
         }
     }
 
@@ -65,16 +65,16 @@ impl LevelCreatorApp {
     }
 }
 
-impl Default for LevelCreatorApp {
+impl Default for LevelEditorApp {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ApplicationHandler for LevelCreatorApp {
+impl ApplicationHandler for LevelEditorApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let attrs = WindowAttributes::default()
-            .with_title("Sokobanitron Level Creator")
+            .with_title("Sokobanitron Level Editor")
             .with_inner_size(LogicalSize::new(INITIAL_WIDTH, INITIAL_HEIGHT));
 
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
@@ -155,6 +155,6 @@ impl ApplicationHandler for LevelCreatorApp {
 
 pub fn run() {
     let event_loop = EventLoop::new().expect("event loop");
-    let mut app = LevelCreatorApp::new();
+    let mut app = LevelEditorApp::new();
     event_loop.run_app(&mut app).expect("run app");
 }

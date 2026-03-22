@@ -573,7 +573,7 @@ dependencies = [
  "pixels",
  "sokobanitron-app",
  "sokobanitron-gameplay",
- "sokobanitron-level-creator",
+ "sokobanitron-level-editor",
  "sokobanitron-renderer",
  "winit",
 ]
@@ -2171,7 +2171,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sokobanitron-level-creator"
+name = "sokobanitron-level-editor"
 version = "0.1.0"
 dependencies = [
  "pixels",

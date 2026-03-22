@@ -124,7 +124,7 @@ pub enum TouchInputPhase {
     Cancelled,
 }
 
-pub struct LevelCreatorSession {
+pub struct LevelEditorSession {
     renderer: Renderer,
     surface_width: u32,
     surface_height: u32,
@@ -148,7 +148,7 @@ pub struct LevelCreatorSession {
     active_pull_hint_job: Option<ActivePullHintJob>,
 }
 
-impl LevelCreatorSession {
+impl LevelEditorSession {
     pub fn new() -> Self {
         let world = EditableWorld::new();
         let solution_start_boxes = world.box_positions();
@@ -1339,7 +1339,7 @@ impl LevelCreatorSession {
     }
 }
 
-impl Default for LevelCreatorSession {
+impl Default for LevelEditorSession {
     fn default() -> Self {
         Self::new()
     }
@@ -1347,10 +1347,10 @@ impl Default for LevelCreatorSession {
 
 #[cfg(test)]
 mod tests {
-    use super::{LevelCreatorSession, PullHintState};
+    use super::{LevelEditorSession, PullHintState};
     use crate::world::EditableTile;
 
-    fn clear_world(session: &mut LevelCreatorSession) {
+    fn clear_world(session: &mut LevelEditorSession) {
         let Some(bounds) = session.world.non_void_bounds() else {
             return;
         };
@@ -1364,7 +1364,7 @@ mod tests {
 
     #[test]
     fn consecutive_moves_of_the_same_box_are_consolidated() {
-        let mut session = LevelCreatorSession::new();
+        let mut session = LevelEditorSession::new();
         session.solution_start_boxes = vec![(0, 0)];
         session.solution_history.clear();
 
@@ -1384,7 +1384,7 @@ mod tests {
 
     #[test]
     fn non_consecutive_moves_are_not_consolidated() {
-        let mut session = LevelCreatorSession::new();
+        let mut session = LevelEditorSession::new();
         session.solution_start_boxes = vec![(0, 0), (2, 0)];
         session.solution_history.clear();
 
@@ -1401,7 +1401,7 @@ mod tests {
 
     #[test]
     fn undo_restores_previous_solution_snapshot() {
-        let mut session = LevelCreatorSession::new();
+        let mut session = LevelEditorSession::new();
         let snapshot = session.make_undo_snapshot();
 
         session.world.set_tile(0, 0, EditableTile::Void);
@@ -1417,7 +1417,7 @@ mod tests {
 
     #[test]
     fn restart_resets_boxes_on_goals_and_clears_undo_history() {
-        let mut session = LevelCreatorSession::new();
+        let mut session = LevelEditorSession::new();
         session.world.set_tile(-2, -1, EditableTile::Goal);
         session.world.set_tile(0, 0, EditableTile::Box);
         session.solution_history.push(vec![(-2, -1), (0, 0)]);
@@ -1435,7 +1435,7 @@ mod tests {
 
     #[test]
     fn tracked_box_identity_preserves_selected_box_count() {
-        let mut session = LevelCreatorSession::new();
+        let mut session = LevelEditorSession::new();
         session.solution_start_boxes = vec![(0, 0), (2, 0)];
         let history = vec![
             vec![(0, 0), (1, 0)],
@@ -1463,7 +1463,7 @@ mod tests {
 
     #[test]
     fn trivial_hint_path_marks_all_destinations_ready_without_job() {
-        let mut session = LevelCreatorSession::new();
+        let mut session = LevelEditorSession::new();
         clear_world(&mut session);
         for x in 0..=4 {
             for y in 0..=1 {
@@ -1488,7 +1488,7 @@ mod tests {
 
     #[test]
     fn nontrivial_hint_path_starts_incremental_pending_job() {
-        let mut session = LevelCreatorSession::new();
+        let mut session = LevelEditorSession::new();
         clear_world(&mut session);
         for x in 0..=4 {
             for y in 0..=1 {
@@ -1529,7 +1529,7 @@ mod tests {
 
     #[test]
     fn stale_hint_results_are_ignored_when_selection_changes() {
-        let mut session = LevelCreatorSession::new();
+        let mut session = LevelEditorSession::new();
         clear_world(&mut session);
         for x in 0..=4 {
             for y in 0..=1 {
@@ -1566,7 +1566,7 @@ mod tests {
 
     #[test]
     fn hint_job_completes_and_clears_active_state() {
-        let mut session = LevelCreatorSession::new();
+        let mut session = LevelEditorSession::new();
         clear_world(&mut session);
         for x in 0..=4 {
             for y in 0..=1 {

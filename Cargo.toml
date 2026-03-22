@@ -5,7 +5,7 @@ members = [
     "sokobanitron-gameplay",
     "sokobanitron-app",
     "desktop-client",
-    "sokobanitron-level-creator",
+    "sokobanitron-level-editor",
     "kindle-client",
     "sokobanitron-renderer",
 ]

@@ -5,4 +5,4 @@ mod ui;
 mod world;
 
 pub use app::run;
-pub use session::{LevelCreatorSession, TouchInputPhase};
+pub use session::{LevelEditorSession, TouchInputPhase};
