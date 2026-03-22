@@ -1,8 +1,11 @@
 mod background;
 mod controls;
 mod entities;
+mod icons;
 mod menu;
 mod overlay;
+mod overlay_chrome;
+mod pixel_ui;
 mod pixels;
 mod sprites;
 mod tiles;
@@ -17,12 +20,22 @@ pub use controls::{
     BOARD_HORIZONTAL_MARGIN, BOARD_VERTICAL_MARGIN, ControlsButtonAction, ControlsButtonRects,
     ControlsUiMode, ScreenRect, UI_BUTTON_MARGIN, UI_BUTTON_SIZE, UI_MENU_BUTTON_HEIGHT,
     board_viewport_margins, controls_button_action_at, controls_button_rects, draw_controls_ui,
+    draw_top_left_level_button, draw_top_menu_toggle, top_left_level_button_rect,
+    top_menu_toggle_button_contains, top_menu_toggle_button_hit_rect, top_menu_toggle_button_rect,
 };
+pub use icons::{UiIcon, draw_ui_icon_in_rect};
 pub use menu::{
     MenuNavAction, level_select_menu_clamp_start, level_select_menu_indices,
     level_select_menu_nav_action_at, level_select_menu_nav_button_rects,
     level_select_menu_slot_rects, level_select_menu_start_for_nav, level_select_menu_start_index,
     level_select_menu_step_start, level_select_menu_target_at,
+};
+pub use overlay_chrome::{
+    draw_overlay_primary_action_button, overlay_primary_action_button_contains,
+    overlay_primary_action_button_rect,
+};
+pub use pixel_ui::{
+    PIXEL_FONT_HEIGHT, draw_centered_text_in_rect, draw_icon_bits_in_rect, measure_text_width,
 };
 pub use viewport::{BoardViewport, BoardViewportOptions};
 pub type Rgba = [u8; 4];
@@ -100,6 +113,7 @@ pub fn fit_board_viewport_for_controls(
     let side_margin_cap = UI_BUTTON_SIZE;
     let controls: ControlsButtonRects = controls_button_rects(width, height);
     let forbidden = [
+        to_pixel_rect(top_left_level_button_rect()),
         to_pixel_rect(controls.restart),
         to_pixel_rect(controls.undo),
     ];

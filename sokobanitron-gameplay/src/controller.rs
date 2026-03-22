@@ -56,6 +56,14 @@ impl GameplayController {
         self.current_level
     }
 
+    pub fn can_restart(&self) -> bool {
+        self.session.can_restart()
+    }
+
+    pub fn can_undo(&self) -> bool {
+        self.session.can_undo()
+    }
+
     pub fn peek_level(&self, delta: i32) -> Option<usize> {
         if self.levels.is_empty() {
             return None;

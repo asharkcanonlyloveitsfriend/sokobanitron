@@ -2,12 +2,14 @@ use crate::{config, platform};
 use renderer::{
     BoardViewport, ControlsButtonAction, controls_button_action_at,
     fit_board_viewport_for_controls, level_select_menu_nav_action_at,
-    level_select_menu_start_for_nav, level_select_menu_start_index, level_select_menu_target_at,
+    level_select_menu_start_for_nav, level_select_menu_target_at,
+    overlay_primary_action_button_contains, top_left_level_button_rect,
 };
 use sokobanitron_app::{
     AppAction, AppDriverContext, AppInput, AppState, BoxPathStyle, BoxRemovedStyle, PresentMode,
-    PresentationProfile, apply_action_and_present_in_context, interpret_input, is_menu_open,
-    menu_page_start,
+    PresentationProfile, apply_action_and_present_in_context, interpret_input, is_editor_menu_open,
+    is_gameplay_menu_open, is_gameplay_screen, is_level_select_open, is_overlay_open,
+    level_select_page_start,
 };
 use sokobanitron_gameplay::{
     BoardView, GameplayController, GameplayControllerChanges, GameplayPreferences,
@@ -152,83 +154,115 @@ impl KindleApp {
 
     fn on_tap(&mut self, raw_x: i32, raw_y: i32) -> Result<()> {
         let (screen_x, screen_y) = platform::map_touch_to_screen(raw_x, raw_y)?;
+        if is_gameplay_menu_open(&self.app_state)
+            && overlay_primary_action_button_contains(
+                screen_x as f64,
+                screen_y as f64,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+            )
+        {
+            self.apply_app_input(AppInput::EnterEditorMode)?;
+            self.render()?;
+            return Ok(());
+        }
+        if is_editor_menu_open(&self.app_state)
+            && overlay_primary_action_button_contains(
+                screen_x as f64,
+                screen_y as f64,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+            )
+        {
+            self.apply_app_input(AppInput::EnterGameplayMode)?;
+            self.render()?;
+            return Ok(());
+        }
+
+        if !is_overlay_open(&self.app_state)
+            && top_left_level_button_rect().contains(screen_x as f64, screen_y as f64)
+        {
+            self.apply_app_input(AppInput::OpenLevelSelect)?;
+            self.render()?;
+            return Ok(());
+        }
         if let Some(action) = controls_button_action_at(
             screen_x as f64,
             screen_y as f64,
             config::WIDTH as u32,
             config::HEIGHT as u32,
+            self.controller.can_undo(),
+            self.controller.can_restart(),
         ) {
             match action {
                 ControlsButtonAction::Restart => {
-                    if !is_menu_open(&self.app_state) {
+                    if !is_overlay_open(&self.app_state) && is_gameplay_screen(&self.app_state) {
                         self.apply_app_input(AppInput::ControlRestart)?;
                         self.render()?;
                         return Ok(());
                     }
                 }
                 ControlsButtonAction::Undo => {
-                    if !is_menu_open(&self.app_state) {
+                    if !is_overlay_open(&self.app_state) && is_gameplay_screen(&self.app_state) {
                         self.apply_app_input(AppInput::ControlUndo)?;
                         self.render()?;
                         return Ok(());
                     }
                 }
                 ControlsButtonAction::ShowMenu => {
-                    self.apply_app_input(AppInput::ControlToggleMenu)?;
-                    if is_menu_open(&self.app_state) {
-                        let page_start = level_select_menu_start_index(
-                            self.levels.len(),
-                            self.controller.current_level(),
-                        );
-                        self.apply_app_input(AppInput::MenuNavigate { page_start })?;
-                    }
+                    self.apply_app_input(AppInput::OverlayToggle)?;
                     self.render()?;
                     return Ok(());
                 }
             }
         }
-        if is_menu_open(&self.app_state) {
+        if is_level_select_open(&self.app_state) {
             if let Some(nav_action) = level_select_menu_nav_action_at(
                 screen_x as f64,
                 screen_y as f64,
                 config::WIDTH as u32,
                 config::HEIGHT as u32,
             ) {
-                let menu_page_start = menu_page_start(&self.app_state).unwrap_or(0);
+                let page_start_idx = level_select_page_start(&self.app_state).unwrap_or(0);
                 let page_start = level_select_menu_start_for_nav(
                     self.levels.len(),
                     self.controller.current_level(),
-                    menu_page_start,
+                    page_start_idx,
                     nav_action,
                 );
-                self.apply_app_input(AppInput::MenuNavigate { page_start })?;
+                self.apply_app_input(AppInput::LevelSelectNavigate { page_start })?;
                 self.render()?;
                 return Ok(());
             }
 
-            let menu_page_start = menu_page_start(&self.app_state).unwrap_or(0);
+            let page_start_idx = level_select_page_start(&self.app_state).unwrap_or(0);
             if let Some(selected_level) = level_select_menu_target_at(
                 screen_x as f64,
                 screen_y as f64,
                 config::WIDTH as u32,
                 config::HEIGHT as u32,
                 self.levels.len(),
-                menu_page_start,
+                page_start_idx,
             ) {
-                self.apply_app_input(AppInput::MenuSelectLevel(selected_level))?;
+                self.apply_app_input(AppInput::LevelSelectSelect(selected_level))?;
                 self.render()?;
             }
             return Ok(());
         }
         if self.controller.board().is_won() {
-            self.apply_app_input(AppInput::SolvedAdvance)?;
-            self.render()?;
-            return Ok(());
+            if is_gameplay_screen(&self.app_state) {
+                self.apply_app_input(AppInput::SolvedAdvance)?;
+                self.render()?;
+                return Ok(());
+            }
         }
 
-        if let Some((x, y)) =
-            self.viewport
-                .screen_to_cell(screen_x as f64, screen_y as f64, self.controller.board())
+        if is_gameplay_screen(&self.app_state)
+            && let Some((x, y)) = self.viewport.screen_to_cell(
+                screen_x as f64,
+                screen_y as f64,
+                self.controller.board(),
+            )
         {
             self.apply_app_input(AppInput::BoardTap { x, y })?;
         }

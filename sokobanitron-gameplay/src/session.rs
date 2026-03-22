@@ -64,6 +64,14 @@ impl GameplaySession {
         !self.engine.is_at_start()
     }
 
+    pub fn can_restart(&self) -> bool {
+        self.engine.can_restart()
+    }
+
+    pub fn can_undo(&self) -> bool {
+        self.engine.can_undo()
+    }
+
     pub fn is_clean_solution(&self) -> bool {
         self.engine.is_clean_solution()
     }

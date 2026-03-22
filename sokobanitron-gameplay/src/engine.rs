@@ -99,6 +99,14 @@ impl GameEngine {
         self.player == self.initial_player && self.boxes == self.initial_boxes
     }
 
+    pub fn can_restart(&self) -> bool {
+        !self.is_at_start()
+    }
+
+    pub fn can_undo(&self) -> bool {
+        !self.has_undone_once && !self.box_move_history.is_empty()
+    }
+
     fn is_inside(&self, row: usize, col: usize) -> bool {
         row < self.height && col < self.width
     }

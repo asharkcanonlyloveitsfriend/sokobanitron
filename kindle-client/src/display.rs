@@ -1,6 +1,12 @@
 use crate::{app_driver::KindleApp, config};
-use renderer::{ControlsUiMode, Renderer, RendererOverrides, draw_controls_ui};
-use sokobanitron_app::{AppMode, FrameRequest, FrameSink, PresentMode};
+use renderer::{
+    ControlsUiMode, Renderer, RendererOverrides, UiIcon, draw_controls_ui,
+    draw_overlay_primary_action_button, draw_top_left_level_button,
+};
+use sokobanitron_app::{
+    AppScreen, FrameRequest, FrameSink, PresentMode, active_screen, is_editor_menu_open,
+    is_gameplay_menu_open, is_gameplay_screen, is_level_select_open, level_select_page_start,
+};
 use std::io::Result;
 use std::thread;
 use std::time::Duration;
@@ -36,7 +42,8 @@ impl KindleApp {
         show_solved_overlay: bool,
     ) -> Result<()> {
         let mut rgba = vec![0u8; config::WIDTH * config::HEIGHT * 4];
-        if let AppMode::Menu { page_start } = &self.app_state.ui.mode {
+        if is_level_select_open(&self.app_state) {
+            let page_start = level_select_page_start(&self.app_state).unwrap_or(0);
             self.renderer.draw_background_only(
                 &mut rgba,
                 config::WIDTH as u32,
@@ -48,13 +55,71 @@ impl KindleApp {
                 config::HEIGHT as u32,
                 &self.preview_boards,
                 self.controller.current_level(),
-                *page_start,
+                page_start,
             );
             draw_controls_ui(
                 &mut rgba,
                 config::WIDTH as u32,
                 config::HEIGHT as u32,
                 ControlsUiMode::MenuOpen,
+                false,
+                false,
+            );
+        } else if is_gameplay_menu_open(&self.app_state) {
+            self.renderer.draw_background_only(
+                &mut rgba,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+            );
+            draw_controls_ui(
+                &mut rgba,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+                ControlsUiMode::MenuOpen,
+                false,
+                false,
+            );
+            draw_overlay_primary_action_button(
+                &mut rgba,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+                UiIcon::Draw,
+                [220, 220, 220, 255],
+            );
+        } else if is_editor_menu_open(&self.app_state) {
+            self.renderer.draw_background_only(
+                &mut rgba,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+            );
+            draw_controls_ui(
+                &mut rgba,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+                ControlsUiMode::MenuOpen,
+                false,
+                false,
+            );
+            draw_overlay_primary_action_button(
+                &mut rgba,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+                UiIcon::Manipulate,
+                [220, 220, 220, 255],
+            );
+        } else if matches!(active_screen(&self.app_state), AppScreen::Editor) {
+            self.renderer.draw_background_only(
+                &mut rgba,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+            );
+            draw_controls_ui(
+                &mut rgba,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+                ControlsUiMode::Gameplay,
+                false,
+                false,
             );
         } else {
             self.renderer.draw_with_box_trail_options(
@@ -72,6 +137,14 @@ impl KindleApp {
                 config::WIDTH as u32,
                 config::HEIGHT as u32,
                 ControlsUiMode::Gameplay,
+                self.controller.can_undo(),
+                self.controller.can_restart(),
+            );
+            draw_top_left_level_button(
+                &mut rgba,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+                self.controller.current_level() + 1,
             );
         }
         if fast_partial {
@@ -100,6 +173,8 @@ impl KindleApp {
             config::WIDTH as u32,
             config::HEIGHT as u32,
             ControlsUiMode::Gameplay,
+            self.controller.can_undo(),
+            self.controller.can_restart(),
         );
         self.display.present_rgba_fast_partial(&blink_frame)?;
         thread::sleep(Duration::from_millis(config::BLINK_ON_MS));
@@ -200,6 +275,8 @@ impl KindleApp {
                 config::WIDTH as u32,
                 config::HEIGHT as u32,
                 ControlsUiMode::Gameplay,
+                self.controller.can_undo(),
+                self.controller.can_restart(),
             );
 
             let remaining = steps - step;
@@ -233,6 +310,9 @@ impl FrameSink for KindleApp {
     type Error = std::io::Error;
 
     fn render_frame(&mut self, request: &FrameRequest) -> std::result::Result<(), Self::Error> {
+        if !is_gameplay_screen(&self.app_state) {
+            return Ok(());
+        }
         match request {
             FrameRequest::Gameplay {
                 box_trail,

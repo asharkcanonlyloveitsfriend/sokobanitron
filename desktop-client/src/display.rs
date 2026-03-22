@@ -1,8 +1,11 @@
-use crate::app_driver::{ActiveScreen, App, create_menu_return_button_rect};
-use renderer::{ControlsUiMode, draw_controls_ui};
-use sokobanitron_app::{AppMode, FrameRequest, FrameSink};
-use sokobanitron_level_creator::{
-    ModeIcon, draw_mode_icon_in_rect, draw_top_menu_toggle, mode_toggle_button_rect,
+use crate::app_driver::App;
+use renderer::{
+    ControlsUiMode, UiIcon, draw_controls_ui, draw_overlay_primary_action_button,
+    draw_top_left_level_button, draw_top_menu_toggle,
+};
+use sokobanitron_app::{
+    AppScreen, FrameRequest, FrameSink, active_screen, is_editor_menu_open, is_gameplay_menu_open,
+    is_gameplay_screen, is_level_select_open, level_select_page_start,
 };
 use std::thread;
 use std::time::Duration;
@@ -14,9 +17,9 @@ const BLINK_ON_MS: u64 = 120;
 
 impl App {
     pub(crate) fn render_current(&mut self) {
-        match self.active_screen {
-            ActiveScreen::Gameplay => self.render_with_options(None, true, true),
-            ActiveScreen::Create => self.render_create_mode(),
+        match active_screen(&self.app_state) {
+            AppScreen::Gameplay => self.render_with_options(None, true, true),
+            AppScreen::Editor => self.render_editor_mode(),
         }
     }
 
@@ -28,7 +31,8 @@ impl App {
     ) {
         if let Some(pixels) = &mut self.pixels {
             let frame = pixels.frame_mut();
-            if let AppMode::Menu { page_start } = &self.app_state.ui.mode {
+            if is_level_select_open(&self.app_state) {
+                let page_start = level_select_page_start(&self.app_state).unwrap_or(0);
                 self.renderer
                     .draw_background_only(frame, self.surface_width, self.surface_height);
                 self.renderer.draw_level_select_menu_contents(
@@ -37,20 +41,26 @@ impl App {
                     self.surface_height,
                     &self.preview_boards,
                     self.controller.current_level(),
-                    *page_start,
+                    page_start,
                 );
                 draw_controls_ui(
                     frame,
                     self.surface_width,
                     self.surface_height,
                     ControlsUiMode::MenuOpen,
+                    false,
+                    false,
                 );
-                draw_mode_icon_in_rect(
+            } else if is_gameplay_menu_open(&self.app_state) {
+                self.renderer
+                    .draw_background_only(frame, self.surface_width, self.surface_height);
+                draw_top_menu_toggle(frame, self.surface_width, self.surface_height, true);
+                draw_overlay_primary_action_button(
                     frame,
                     self.surface_width,
                     self.surface_height,
-                    mode_toggle_button_rect(),
-                    ModeIcon::Draw,
+                    UiIcon::Draw,
+                    [220, 220, 220, 255],
                 );
             } else {
                 self.renderer.draw_with_box_trail_options(
@@ -68,28 +78,36 @@ impl App {
                     self.surface_width,
                     self.surface_height,
                     ControlsUiMode::Gameplay,
+                    self.controller.can_undo(),
+                    self.controller.can_restart(),
+                );
+                draw_top_left_level_button(
+                    frame,
+                    self.surface_width,
+                    self.surface_height,
+                    self.controller.current_level() + 1,
                 );
             }
             pixels.render().expect("render");
         }
     }
 
-    pub(crate) fn render_create_mode(&mut self) {
+    pub(crate) fn render_editor_mode(&mut self) {
         if let Some(pixels) = &mut self.pixels {
             let frame = pixels.frame_mut();
-            if self.create_menu_open {
+            if is_editor_menu_open(&self.app_state) {
                 self.renderer
                     .draw_background_only(frame, self.surface_width, self.surface_height);
                 draw_top_menu_toggle(frame, self.surface_width, self.surface_height, true);
-                draw_mode_icon_in_rect(
+                draw_overlay_primary_action_button(
                     frame,
                     self.surface_width,
                     self.surface_height,
-                    create_menu_return_button_rect(self.surface_width),
-                    ModeIcon::Manipulate,
+                    UiIcon::Manipulate,
+                    [220, 220, 220, 255],
                 );
             } else {
-                self.create_session
+                self.editor_session
                     .render(frame, self.surface_width, self.surface_height);
                 draw_top_menu_toggle(frame, self.surface_width, self.surface_height, false);
             }
@@ -117,6 +135,8 @@ impl App {
                 self.surface_width,
                 self.surface_height,
                 ControlsUiMode::Gameplay,
+                self.controller.can_undo(),
+                self.controller.can_restart(),
             );
             pixels.render().expect("render");
         }
@@ -152,6 +172,8 @@ impl App {
                     self.surface_width,
                     self.surface_height,
                     ControlsUiMode::Gameplay,
+                    self.controller.can_undo(),
+                    self.controller.can_restart(),
                 );
                 pixels.render().expect("render");
             }
@@ -167,7 +189,7 @@ impl FrameSink for App {
     type Error = ();
 
     fn render_frame(&mut self, request: &FrameRequest) -> Result<(), Self::Error> {
-        if !matches!(self.active_screen, ActiveScreen::Gameplay) {
+        if !is_gameplay_screen(&self.app_state) {
             return Ok(());
         }
 
@@ -186,7 +208,7 @@ impl FrameSink for App {
     }
 
     fn animate_player_blink(&mut self) -> Result<(), Self::Error> {
-        if matches!(self.active_screen, ActiveScreen::Gameplay) {
+        if is_gameplay_screen(&self.app_state) {
             self.run_player_blink_animation();
         }
         Ok(())
@@ -206,7 +228,7 @@ impl FrameSink for App {
         path: &[(u32, u32)],
         show_solved_overlay: bool,
     ) -> Result<(), Self::Error> {
-        if matches!(self.active_screen, ActiveScreen::Gameplay) {
+        if is_gameplay_screen(&self.app_state) {
             self.run_box_path_disappear_animation(path, show_solved_overlay);
         }
         Ok(())

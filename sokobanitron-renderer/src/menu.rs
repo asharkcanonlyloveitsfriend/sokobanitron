@@ -1,6 +1,6 @@
 use crate::{
-    BOARD_VERTICAL_MARGIN, BoardViewport, BoardViewportOptions, Renderer, UI_BUTTON_MARGIN,
-    UI_BUTTON_SIZE,
+    BOARD_VERTICAL_MARGIN, BoardViewport, BoardViewportOptions, Renderer, ScreenRect,
+    UI_BUTTON_MARGIN, UI_BUTTON_SIZE, UiIcon, draw_ui_icon_in_rect,
 };
 use sokobanitron_gameplay::BoardView;
 
@@ -215,84 +215,14 @@ fn draw_filled_rect(
     }
 }
 
-const MENU_ICON_SCALE: i32 = 4;
-const MENU_ICON_COLS: usize = 7;
-const MENU_ICON_ROWS: usize = 10;
-type MenuIcon = [[bool; MENU_ICON_COLS]; MENU_ICON_ROWS];
-
-fn set_icon_pixel(icon: &mut MenuIcon, x: i32, y: i32) {
-    if x >= 0 && y >= 0 && (x as usize) < MENU_ICON_COLS && (y as usize) < MENU_ICON_ROWS {
-        icon[y as usize][x as usize] = true;
-    }
-}
-
-fn draw_icon_points(icon: &mut MenuIcon, points: &[(i32, i32)], dx: i32, dy: i32) {
-    for (x, y) in points {
-        set_icon_pixel(icon, x + dx, y + dy);
-    }
-}
-
-// These points are the exact `/\` menu-caret pixels rotated 90 degrees.
-const RIGHT_CARET_POINTS: [(i32, i32); 10] = [
-    (2, 0),
-    (3, 1),
-    (4, 2),
-    (5, 3),
-    (6, 4),
-    (6, 5),
-    (5, 6),
-    (4, 7),
-    (3, 8),
-    (2, 9),
-];
-
-const LEFT_CARET_POINTS: [(i32, i32); 10] = [
-    (4, 0),
-    (3, 1),
-    (2, 2),
-    (1, 3),
-    (0, 4),
-    (0, 5),
-    (1, 6),
-    (2, 7),
-    (3, 8),
-    (4, 9),
-];
-
-fn build_menu_icon(action: MenuNavAction) -> MenuIcon {
-    let mut icon = [[false; MENU_ICON_COLS]; MENU_ICON_ROWS];
-
+fn nav_action_icon(action: MenuNavAction) -> UiIcon {
     match action {
-        MenuNavAction::PageUp => {
-            // Centered "<", same pixel style as the top caret rotated 90 degrees.
-            draw_icon_points(&mut icon, &LEFT_CARET_POINTS, 1, 0);
-        }
-        MenuNavAction::PageDown => {
-            // Centered ">", same pixel style as the top caret rotated 90 degrees.
-            draw_icon_points(&mut icon, &RIGHT_CARET_POINTS, -1, 0);
-        }
-        MenuNavAction::First => {
-            draw_icon_points(&mut icon, &LEFT_CARET_POINTS, 1, 0);
-            for y in 0..MENU_ICON_ROWS as i32 {
-                set_icon_pixel(&mut icon, 0, y);
-            }
-        }
-        MenuNavAction::Last => {
-            draw_icon_points(&mut icon, &RIGHT_CARET_POINTS, -1, 0);
-            for y in 0..MENU_ICON_ROWS as i32 {
-                set_icon_pixel(&mut icon, 6, y);
-            }
-        }
-        MenuNavAction::Current => {
-            // Closed triangle: exact ">" caret plus a straight closing bar.
-            draw_icon_points(&mut icon, &RIGHT_CARET_POINTS, -1, 0);
-            for y in 0..MENU_ICON_ROWS as i32 {
-                set_icon_pixel(&mut icon, 0, y);
-            }
-        }
+        MenuNavAction::First => UiIcon::MenuFirst,
+        MenuNavAction::PageUp => UiIcon::MenuPageUp,
+        MenuNavAction::Current => UiIcon::MenuCurrent,
+        MenuNavAction::PageDown => UiIcon::MenuPageDown,
+        MenuNavAction::Last => UiIcon::MenuLast,
     }
-
-    icon
 }
 
 fn draw_menu_nav_icon(
@@ -303,29 +233,20 @@ fn draw_menu_nav_icon(
     action: MenuNavAction,
 ) {
     let (x, y, w, h) = rect;
-    let color = [220, 220, 220, 255];
-    let icon = build_menu_icon(action);
-    let icon_w = MENU_ICON_COLS as i32 * MENU_ICON_SCALE;
-    let icon_h = MENU_ICON_ROWS as i32 * MENU_ICON_SCALE;
-    let origin_x = x + ((w as i32 - icon_w) / 2);
-    let origin_y = y + ((h as i32 - icon_h) / 2);
-
-    for (row, row_pixels) in icon.iter().enumerate() {
-        for (col, on) in row_pixels.iter().enumerate() {
-            if *on {
-                draw_filled_rect(
-                    frame,
-                    frame_width,
-                    frame_height,
-                    origin_x + col as i32 * MENU_ICON_SCALE,
-                    origin_y + row as i32 * MENU_ICON_SCALE,
-                    MENU_ICON_SCALE as u32,
-                    MENU_ICON_SCALE as u32,
-                    color,
-                );
-            }
-        }
-    }
+    let icon_rect = ScreenRect {
+        x: x.max(0) as u32,
+        y: y.max(0) as u32,
+        w,
+        h,
+    };
+    draw_ui_icon_in_rect(
+        frame,
+        frame_width,
+        frame_height,
+        icon_rect,
+        nav_action_icon(action),
+        [220, 220, 220, 255],
+    );
 }
 
 fn draw_selection_brackets(

@@ -1,14 +1,14 @@
 use crate::constants::{
     BASE_VISIBLE_COLS, DOUBLE_TAP_WINDOW, GRID_MARGIN_TILES, INITIAL_HEIGHT, INITIAL_WIDTH,
-    MAX_VISIBLE_COLS, MIN_VISIBLE_COLS, START_IN_MANIPULATE_MODE,
+    MAX_VISIBLE_COLS, MIN_VISIBLE_COLS,
 };
 use crate::ui::{
     ManipulateButtonAction, ScreenRect, ZoomButtonAction, draw_box_move_count, draw_controls,
     draw_move_hint_count, draw_move_hint_pending, manipulate_button_action_at,
-    mode_toggle_button_rect, zoom_button_action_at,
+    zoom_button_action_at,
 };
 use crate::world::{EditableTile, EditableWorld, NonVoidBounds};
-use renderer::{BoardViewport, Renderer};
+use renderer::{BoardViewport, Renderer, top_left_level_button_rect};
 use sokobanitron_core::optimizer::{
     ReverseOptimizationInput, optimize_reverse_solution_in_place,
     optimize_reverse_solution_in_place_with_stats,
@@ -160,11 +160,7 @@ impl LevelCreatorSession {
             cursor_position: None,
             mouse_paint_mode: None,
             active_touch_paint: None,
-            mode: if START_IN_MANIPULATE_MODE {
-                EditorMode::Manipulate
-            } else {
-                EditorMode::Draw
-            },
+            mode: EditorMode::Draw,
             view_center_x: 0,
             view_center_y: 0,
             zoom_steps: 0,
@@ -1101,7 +1097,7 @@ impl LevelCreatorSession {
     }
 
     fn begin_paint_stroke(&mut self, screen_x: f64, screen_y: f64) -> Option<PaintMode> {
-        if mode_toggle_button_rect().contains(screen_x, screen_y) {
+        if top_left_level_button_rect().contains(screen_x, screen_y) {
             self.toggle_mode();
             return None;
         }

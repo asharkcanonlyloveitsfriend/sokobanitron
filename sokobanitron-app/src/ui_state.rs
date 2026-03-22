@@ -1,18 +1,27 @@
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AppMode {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppScreen {
     Gameplay,
-    Menu { page_start: usize },
+    Editor,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppOverlay {
+    GameplayMenu,
+    LevelSelect { page_start: usize },
+    EditorMenu,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UiState {
-    pub mode: AppMode,
+    pub screen: AppScreen,
+    pub overlay: Option<AppOverlay>,
 }
 
 impl Default for UiState {
     fn default() -> Self {
         Self {
-            mode: AppMode::Gameplay,
+            screen: AppScreen::Gameplay,
+            overlay: None,
         }
     }
 }

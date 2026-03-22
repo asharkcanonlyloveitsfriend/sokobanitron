@@ -35,17 +35,6 @@ impl EditableWorld {
             }
         }
 
-        // Temporary starter layout: carve out a few voids for more interesting manipulation tests.
-        tiles.remove(&(-1, -2));
-        tiles.remove(&(2, -1));
-        tiles.remove(&(-2, 1));
-        tiles.remove(&(1, 2));
-
-        // Seed a few box-on-goal tiles for pull-path manipulation testing.
-        tiles.insert((-2, -1), EditableTile::BoxOnGoal);
-        tiles.insert((1, 0), EditableTile::BoxOnGoal);
-        tiles.insert((0, 2), EditableTile::BoxOnGoal);
-
         Self {
             tiles,
             player: None,
@@ -149,31 +138,19 @@ mod tests {
     use crate::constants::INITIAL_PATCH_SIZE;
 
     #[test]
-    fn seeded_world_starts_with_center_patch_and_test_boxes() {
+    fn seeded_world_starts_with_center_three_by_three_floor() {
         let world = EditableWorld::new();
         let start = -INITIAL_PATCH_SIZE / 2;
         let end = start + INITIAL_PATCH_SIZE;
-        let expected_voids = [(-1, -2), (2, -1), (-2, 1), (1, 2)];
-        let mut non_void_count = 0;
+        let mut floor_count = 0;
         for y in start..end {
             for x in start..end {
-                if expected_voids.contains(&(x, y)) {
-                    assert_eq!(world.tile(x, y), EditableTile::Void);
-                } else {
-                    assert_ne!(world.tile(x, y), EditableTile::Void);
-                    non_void_count += 1;
-                }
+                assert_eq!(world.tile(x, y), EditableTile::Floor);
+                floor_count += 1;
             }
         }
-        assert_eq!(
-            non_void_count,
-            (INITIAL_PATCH_SIZE * INITIAL_PATCH_SIZE - expected_voids.len() as i32) as i32
-        );
+        assert_eq!(floor_count, INITIAL_PATCH_SIZE * INITIAL_PATCH_SIZE);
         assert_eq!(world.tile(end, 0), EditableTile::Void);
-
-        assert_eq!(world.tile(-2, -1), EditableTile::BoxOnGoal);
-        assert_eq!(world.tile(1, 0), EditableTile::BoxOnGoal);
-        assert_eq!(world.tile(0, 2), EditableTile::BoxOnGoal);
     }
 
     #[test]
