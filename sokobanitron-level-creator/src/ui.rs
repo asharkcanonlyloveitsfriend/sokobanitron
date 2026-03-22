@@ -135,6 +135,22 @@ pub fn draw_mode_icon_in_rect(
     draw_mode_toggle_icon(frame, width, height, rect, icon);
 }
 
+pub fn draw_box_move_count(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    rect: ScreenRect,
+    count: u32,
+) {
+    let label = count.min(99).to_string();
+    let max_text_width = measure_text("99", 1).max(1);
+    let scale_x = (rect.w as usize / max_text_width).max(1);
+    let scale_y = (rect.h as usize / 7).max(1);
+    let max_fit_scale = scale_x.min(scale_y).max(1);
+    let scale = ((max_fit_scale * 6) / 25).max(1);
+    draw_centered_label(frame, width, height, rect, &label, scale, BUTTON_TEXT_COLOR);
+}
+
 pub fn draw_controls(
     frame: &mut [u8],
     width: u32,
@@ -319,6 +335,36 @@ fn glyph_width(ch: char) -> usize {
 
 fn glyph_pattern(ch: char) -> [u8; 7] {
     match ch {
+        '0' => [
+            0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110,
+        ],
+        '1' => [
+            0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110,
+        ],
+        '2' => [
+            0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111,
+        ],
+        '3' => [
+            0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110,
+        ],
+        '4' => [
+            0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010,
+        ],
+        '5' => [
+            0b11111, 0b10000, 0b10000, 0b11110, 0b00001, 0b00001, 0b11110,
+        ],
+        '6' => [
+            0b01110, 0b10000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110,
+        ],
+        '7' => [
+            0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000,
+        ],
+        '8' => [
+            0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110,
+        ],
+        '9' => [
+            0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110,
+        ],
         '+' => [
             0b00100, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00100,
         ],

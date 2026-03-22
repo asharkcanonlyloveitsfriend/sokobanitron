@@ -2175,6 +2175,7 @@ name = "sokobanitron-level-creator"
 version = "0.1.0"
 dependencies = [
  "pixels",
+ "sokobanitron-core",
  "sokobanitron-gameplay",
  "sokobanitron-renderer",
  "winit",

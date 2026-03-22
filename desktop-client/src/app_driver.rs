@@ -29,6 +29,7 @@ use winit::{
 
 const INITIAL_WIDTH: u32 = 670;
 const INITIAL_HEIGHT: u32 = 891;
+const FORCE_OPEN_CREATE_MODE: bool = true;
 const DEFAULT_LEVEL_LINES: [&str; 4] = ["    ###   ", " $$     #@", " $ #...   ", "   #######"];
 const PREFERENCES_PATH: &str = "desktop-client-preferences.json";
 const DESKTOP_PRESENTATION_PROFILE: PresentationProfile = PresentationProfile {
@@ -113,7 +114,11 @@ impl App {
             cursor_position: None,
             surface_width: INITIAL_WIDTH,
             surface_height: INITIAL_HEIGHT,
-            active_screen: ActiveScreen::Gameplay,
+            active_screen: if FORCE_OPEN_CREATE_MODE {
+                ActiveScreen::Create
+            } else {
+                ActiveScreen::Gameplay
+            },
             create_menu_open: false,
             create_session: LevelCreatorSession::new(),
         }

@@ -2,10 +2,15 @@ use crate::constants::{
     BASE_VISIBLE_COLS, DOUBLE_TAP_WINDOW, GRID_MARGIN_TILES, INITIAL_HEIGHT, INITIAL_WIDTH,
     MAX_VISIBLE_COLS, MIN_VISIBLE_COLS,
 };
-use crate::ui::{ZoomButtonAction, draw_controls, mode_toggle_button_rect, zoom_button_action_at};
+use crate::ui::{
+    ScreenRect, ZoomButtonAction, draw_box_move_count, draw_controls, mode_toggle_button_rect,
+    zoom_button_action_at,
+};
 use crate::world::{EditableTile, EditableWorld, NonVoidBounds};
 use renderer::{BoardViewport, Renderer};
+use sokobanitron_core::pathfinder::{Position, PullPathfinder};
 use sokobanitron_gameplay::{BoardView, TileKind};
+use std::collections::HashMap;
 use std::time::Instant;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,6 +50,44 @@ struct LastTap {
     at: Instant,
 }
 
+#[derive(Clone, Debug)]
+struct ConsolidatedBoxMove {
+    box_path: Vec<(i32, i32)>,
+}
+
+impl ConsolidatedBoxMove {
+    fn from_path(box_path: Vec<(i32, i32)>) -> Option<Self> {
+        if box_path.len() < 2 {
+            return None;
+        }
+        Some(Self { box_path })
+    }
+
+    fn start_pos(&self) -> (i32, i32) {
+        self.box_path[0]
+    }
+
+    fn end_pos(&self) -> (i32, i32) {
+        *self
+            .box_path
+            .last()
+            .expect("consolidated move path always has at least one position")
+    }
+
+    fn append_contiguous_path(&mut self, mut next_path: Vec<(i32, i32)>) -> bool {
+        if next_path.len() < 2 || self.end_pos() != next_path[0] {
+            return false;
+        }
+        self.box_path.extend(next_path.drain(1..));
+        true
+    }
+}
+
+struct PullMovePlan {
+    player_start: (i32, i32),
+    box_path: Vec<(i32, i32)>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TouchInputPhase {
     Started,
@@ -67,10 +110,14 @@ pub struct LevelCreatorSession {
     selected_box: Option<(i32, i32)>,
     last_tap: Option<LastTap>,
     world: EditableWorld,
+    solution_start_boxes: Vec<(i32, i32)>,
+    solution_history: Vec<ConsolidatedBoxMove>,
 }
 
 impl LevelCreatorSession {
     pub fn new() -> Self {
+        let world = EditableWorld::new();
+        let solution_start_boxes = world.box_positions();
         Self {
             renderer: Renderer::new(),
             surface_width: INITIAL_WIDTH,
@@ -84,7 +131,9 @@ impl LevelCreatorSession {
             zoom_steps: 0,
             selected_box: None,
             last_tap: None,
-            world: EditableWorld::new(),
+            world,
+            solution_start_boxes,
+            solution_history: Vec::new(),
         }
     }
 
@@ -156,9 +205,10 @@ impl LevelCreatorSession {
             self.surface_height,
             &visible.board,
             &visible.viewport,
-            false,
+            true,
             false,
         );
+        self.draw_box_move_counts_on_visible_window(frame, &visible);
         draw_controls(
             frame,
             self.surface_width,
@@ -178,10 +228,14 @@ impl LevelCreatorSession {
         let mut tiles = Vec::with_capacity((board_cols * board_rows) as usize);
         let mut boxes = Vec::with_capacity((board_cols * board_rows) as usize);
         let mut selected_box_local = None;
+        let mut player_local = None;
         for y in 0..board_rows {
             for x in 0..board_cols {
                 let world_x = world_origin_x + x as i32;
                 let world_y = world_origin_y + y as i32;
+                if self.world.player() == Some((world_x, world_y)) {
+                    player_local = Some((x, y));
+                }
                 match self.world.tile(world_x, world_y) {
                     EditableTile::Void => {
                         tiles.push(TileKind::Void);
@@ -221,7 +275,7 @@ impl LevelCreatorSession {
             board_rows,
             tiles,
             boxes,
-            None,
+            player_local,
             selected_box_local,
             false,
         );
@@ -404,7 +458,96 @@ impl LevelCreatorSession {
             })
     }
 
+    fn reset_solution_tracking(&mut self) {
+        let goals = self.world.goal_positions();
+        for (x, y) in self.world.box_positions() {
+            let cleared = match self.world.tile(x, y) {
+                EditableTile::BoxOnGoal => EditableTile::Goal,
+                EditableTile::Box => EditableTile::Floor,
+                other => other,
+            };
+            self.world.set_tile(x, y, cleared);
+        }
+        for (x, y) in goals {
+            self.world.set_tile(x, y, EditableTile::BoxOnGoal);
+        }
+        self.solution_start_boxes = self.world.box_positions();
+        self.solution_history.clear();
+    }
+
+    fn record_box_move(&mut self, box_path: Vec<(i32, i32)>) {
+        let Some(next_move) = ConsolidatedBoxMove::from_path(box_path.clone()) else {
+            return;
+        };
+
+        if let Some(last_move) = self.solution_history.last_mut()
+            && last_move.append_contiguous_path(box_path)
+        {
+            return;
+        }
+
+        self.solution_history.push(next_move);
+    }
+
+    fn box_move_counts_by_position(&self) -> HashMap<(i32, i32), u32> {
+        let mut box_counts = self
+            .solution_start_boxes
+            .iter()
+            .copied()
+            .map(|pos| (pos, 0u32))
+            .collect::<HashMap<_, _>>();
+
+        for movement in &self.solution_history {
+            let start_pos = movement.start_pos();
+            let end_pos = movement.end_pos();
+            let Some(current_count) = box_counts.remove(&start_pos) else {
+                continue;
+            };
+            box_counts.insert(end_pos, current_count.saturating_add(1));
+        }
+
+        box_counts
+    }
+
+    fn draw_box_move_counts_on_visible_window(
+        &self,
+        frame: &mut [u8],
+        visible: &VisibleBoardWindow,
+    ) {
+        let box_counts = self.box_move_counts_by_position();
+        for y in 0..visible.board.height() {
+            for x in 0..visible.board.width() {
+                let world_x = visible.world_origin_x + x as i32;
+                let world_y = visible.world_origin_y + y as i32;
+                if !Self::is_box_tile(self.world.tile(world_x, world_y)) {
+                    continue;
+                }
+
+                let count = box_counts.get(&(world_x, world_y)).copied().unwrap_or(0);
+                let (cell_x, cell_y, cell_w, cell_h) = visible.viewport.cell_to_screen_rect(x, y);
+                let inset = (cell_w / 24).max(1);
+                let box_x = cell_x + inset as i32;
+                let box_y = cell_y + inset as i32;
+                if box_x < 0 || box_y < 0 {
+                    continue;
+                }
+
+                let rect = ScreenRect {
+                    x: box_x as u32,
+                    y: box_y as u32,
+                    w: cell_w.saturating_sub(inset * 2),
+                    h: cell_h.saturating_sub(inset * 2),
+                };
+                if rect.w == 0 || rect.h == 0 {
+                    continue;
+                }
+                draw_box_move_count(frame, self.surface_width, self.surface_height, rect, count);
+            }
+        }
+    }
+
     fn paint_world_cell(&mut self, world_x: i32, world_y: i32, mode: PaintMode) {
+        let original_tile = self.world.tile(world_x, world_y);
         match mode {
             PaintMode::SetFloor => self.world.set_tile(world_x, world_y, EditableTile::Floor),
             PaintMode::SetBoxOnGoal => {
@@ -416,6 +559,9 @@ impl LevelCreatorSession {
         let updated_tile = self.world.tile(world_x, world_y);
         if self.selected_box == Some((world_x, world_y)) && !Self::is_box_tile(updated_tile) {
             self.selected_box = None;
+        }
+        if original_tile != updated_tile {
+            self.reset_solution_tracking();
         }
     }
 
@@ -491,6 +637,70 @@ impl LevelCreatorSession {
         matches!(tile, EditableTile::Box | EditableTile::BoxOnGoal)
     }
 
+    fn to_grid_position(world_x: i32, world_y: i32, min_x: i32, min_y: i32) -> Position {
+        Position::new((world_y - min_y) as usize, (world_x - min_x) as usize)
+    }
+
+    fn to_world_position(grid: Position, min_x: i32, min_y: i32) -> (i32, i32) {
+        (min_x + grid.col as i32, min_y + grid.row as i32)
+    }
+
+    fn find_pull_move_plan(
+        &self,
+        from_x: i32,
+        from_y: i32,
+        to_x: i32,
+        to_y: i32,
+    ) -> Option<PullMovePlan> {
+        let Some(bounds) = self.world.non_void_bounds() else {
+            return None;
+        };
+
+        let mut min_x = bounds.min_x.min(from_x).min(to_x);
+        let mut max_x = bounds.max_x.max(from_x).max(to_x);
+        let mut min_y = bounds.min_y.min(from_y).min(to_y);
+        let mut max_y = bounds.max_y.max(from_y).max(to_y);
+        if let Some((px, py)) = self.world.player() {
+            min_x = min_x.min(px);
+            max_x = max_x.max(px);
+            min_y = min_y.min(py);
+            max_y = max_y.max(py);
+        }
+
+        let width = (max_x - min_x + 1) as usize;
+        let height = (max_y - min_y + 1) as usize;
+        let mut grid = vec![vec![false; width]; height];
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                let walkable = match self.world.tile(x, y) {
+                    EditableTile::Void => false,
+                    EditableTile::Box | EditableTile::BoxOnGoal => (x, y) == (from_x, from_y),
+                    EditableTile::Floor | EditableTile::Goal => true,
+                };
+                grid[(y - min_y) as usize][(x - min_x) as usize] = walkable;
+            }
+        }
+
+        let box_start = Self::to_grid_position(from_x, from_y, min_x, min_y);
+        let origin = Self::to_grid_position(to_x, to_y, min_x, min_y);
+        let player_start = self
+            .world
+            .player()
+            .map(|(x, y)| Self::to_grid_position(x, y, min_x, min_y));
+
+        let mut pathfinder = PullPathfinder::new(grid, box_start, player_start);
+        let result = pathfinder.find_pull_path(origin)?;
+        let box_path = result
+            .box_path
+            .into_iter()
+            .map(|pos| Self::to_world_position(pos, min_x, min_y))
+            .collect::<Vec<_>>();
+        Some(PullMovePlan {
+            player_start: Self::to_world_position(result.player_start, min_x, min_y),
+            box_path,
+        })
+    }
+
     fn handle_manipulate_tap(&mut self, world_x: i32, world_y: i32) {
         let tapped_tile = self.world.tile(world_x, world_y);
         if Self::is_box_tile(tapped_tile) {
@@ -499,6 +709,11 @@ impl LevelCreatorSession {
             } else {
                 Some((world_x, world_y))
             };
+            return;
+        }
+
+        if matches!(tapped_tile, EditableTile::Void) {
+            self.selected_box = None;
             return;
         }
 
@@ -515,6 +730,10 @@ impl LevelCreatorSession {
             return;
         }
 
+        let Some(plan) = self.find_pull_move_plan(from_x, from_y, world_x, world_y) else {
+            return;
+        };
+
         let from_base = match from_tile {
             EditableTile::BoxOnGoal => EditableTile::Goal,
             EditableTile::Box => EditableTile::Floor,
@@ -529,6 +748,8 @@ impl LevelCreatorSession {
             _ => EditableTile::Box,
         };
         self.world.set_tile(world_x, world_y, to_with_box);
+        self.world.set_player(Some(plan.player_start));
+        self.record_box_move(plan.box_path);
         self.selected_box = None;
     }
 
@@ -547,5 +768,47 @@ impl LevelCreatorSession {
 impl Default for LevelCreatorSession {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LevelCreatorSession;
+
+    #[test]
+    fn consecutive_moves_of_the_same_box_are_consolidated() {
+        let mut session = LevelCreatorSession::new();
+        session.solution_start_boxes = vec![(0, 0)];
+        session.solution_history.clear();
+
+        session.record_box_move(vec![(0, 0), (1, 0)]);
+        session.record_box_move(vec![(1, 0), (2, 0)]);
+        session.record_box_move(vec![(2, 0), (3, 0)]);
+
+        assert_eq!(session.solution_history.len(), 1);
+        assert_eq!(
+            session.solution_history[0].box_path,
+            vec![(0, 0), (1, 0), (2, 0), (3, 0)]
+        );
+
+        let counts = session.box_move_counts_by_position();
+        assert_eq!(counts.get(&(3, 0)).copied(), Some(1));
+    }
+
+    #[test]
+    fn non_consecutive_moves_are_not_consolidated() {
+        let mut session = LevelCreatorSession::new();
+        session.solution_start_boxes = vec![(0, 0), (2, 0)];
+        session.solution_history.clear();
+
+        session.record_box_move(vec![(0, 0), (1, 0)]);
+        session.record_box_move(vec![(2, 0), (3, 0)]);
+        session.record_box_move(vec![(1, 0), (0, 0)]);
+
+        assert_eq!(session.solution_history.len(), 3);
+
+        let counts = session.box_move_counts_by_position();
+        assert_eq!(counts.get(&(0, 0)).copied(), Some(2));
+        assert_eq!(counts.get(&(3, 0)).copied(), Some(1));
     }
 }
