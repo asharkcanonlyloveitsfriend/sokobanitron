@@ -18,6 +18,7 @@ pub struct NonVoidBounds {
     pub max_y: i32,
 }
 
+#[derive(Clone)]
 pub struct EditableWorld {
     tiles: HashMap<(i32, i32), EditableTile>,
     player: Option<(i32, i32)>,
@@ -33,6 +34,12 @@ impl EditableWorld {
                 tiles.insert((x, y), EditableTile::Floor);
             }
         }
+
+        // Temporary starter layout: carve out a few voids for more interesting manipulation tests.
+        tiles.remove(&(-1, -2));
+        tiles.remove(&(2, -1));
+        tiles.remove(&(-2, 1));
+        tiles.remove(&(1, 2));
 
         // Seed a few box-on-goal tiles for pull-path manipulation testing.
         tiles.insert((-2, -1), EditableTile::BoxOnGoal);
@@ -146,16 +153,21 @@ mod tests {
         let world = EditableWorld::new();
         let start = -INITIAL_PATCH_SIZE / 2;
         let end = start + INITIAL_PATCH_SIZE;
+        let expected_voids = [(-1, -2), (2, -1), (-2, 1), (1, 2)];
         let mut non_void_count = 0;
         for y in start..end {
             for x in start..end {
-                assert_ne!(world.tile(x, y), EditableTile::Void);
-                non_void_count += 1;
+                if expected_voids.contains(&(x, y)) {
+                    assert_eq!(world.tile(x, y), EditableTile::Void);
+                } else {
+                    assert_ne!(world.tile(x, y), EditableTile::Void);
+                    non_void_count += 1;
+                }
             }
         }
         assert_eq!(
             non_void_count,
-            (INITIAL_PATCH_SIZE * INITIAL_PATCH_SIZE) as i32
+            (INITIAL_PATCH_SIZE * INITIAL_PATCH_SIZE - expected_voids.len() as i32) as i32
         );
         assert_eq!(world.tile(end, 0), EditableTile::Void);
 

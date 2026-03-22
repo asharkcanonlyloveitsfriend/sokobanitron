@@ -1,4 +1,6 @@
-use crate::constants::{BUTTON_TEXT_COLOR, MODE_ICON_SCALE, MODE_ICON_SIZE, UI_TEXT_SCALE};
+use crate::constants::{
+    BUTTON_TEXT_COLOR, HINT_TEXT_COLOR, MODE_ICON_SCALE, MODE_ICON_SIZE, UI_TEXT_SCALE,
+};
 use renderer::{UI_BUTTON_MARGIN, UI_BUTTON_SIZE, UI_MENU_BUTTON_HEIGHT};
 
 #[derive(Clone, Copy)]
@@ -21,6 +23,11 @@ impl ScreenRect {
 pub enum ZoomButtonAction {
     ZoomOut,
     ZoomIn,
+}
+
+pub enum ManipulateButtonAction {
+    Restart,
+    Undo,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,6 +79,23 @@ pub fn zoom_button_action_at(
         if plus.contains(px, py) {
             return Some(ZoomButtonAction::ZoomIn);
         }
+    }
+    None
+}
+
+pub fn manipulate_button_action_at(
+    px: f64,
+    py: f64,
+    width: u32,
+    height: u32,
+) -> Option<ManipulateButtonAction> {
+    let restart = restart_button_rect(height);
+    if restart.contains(px, py) {
+        return Some(ManipulateButtonAction::Restart);
+    }
+    let undo = undo_button_rect(width, height);
+    if undo.contains(px, py) {
+        return Some(ManipulateButtonAction::Undo);
     }
     None
 }
@@ -151,6 +175,22 @@ pub fn draw_box_move_count(
     draw_centered_label(frame, width, height, rect, &label, scale, BUTTON_TEXT_COLOR);
 }
 
+pub fn draw_move_hint_count(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    rect: ScreenRect,
+    count: u32,
+) {
+    let label = count.min(99).to_string();
+    let max_text_width = measure_text("99", 1).max(1);
+    let scale_x = (rect.w as usize / max_text_width).max(1);
+    let scale_y = (rect.h as usize / 7).max(1);
+    let max_fit_scale = scale_x.min(scale_y).max(1);
+    let scale = ((max_fit_scale * 5) / 25).max(1);
+    draw_centered_label(frame, width, height, rect, &label, scale, HINT_TEXT_COLOR);
+}
+
 pub fn draw_controls(
     frame: &mut [u8],
     width: u32,
@@ -167,26 +207,49 @@ pub fn draw_controls(
     };
     draw_mode_toggle_icon(frame, width, height, mode_rect, mode_icon);
 
-    if can_zoom_out {
-        let minus = zoom_out_button_rect(height);
+    if draw_mode_active {
+        if can_zoom_out {
+            let minus = zoom_out_button_rect(height);
+            draw_centered_label(
+                frame,
+                width,
+                height,
+                minus,
+                "-",
+                UI_TEXT_SCALE,
+                BUTTON_TEXT_COLOR,
+            );
+        }
+        if can_zoom_in {
+            let plus = zoom_in_button_rect(width, height);
+            draw_centered_label(
+                frame,
+                width,
+                height,
+                plus,
+                "+",
+                UI_TEXT_SCALE,
+                BUTTON_TEXT_COLOR,
+            );
+        }
+    } else {
+        let restart = restart_button_rect(height);
         draw_centered_label(
             frame,
             width,
             height,
-            minus,
-            "-",
+            restart,
+            "R",
             UI_TEXT_SCALE,
             BUTTON_TEXT_COLOR,
         );
-    }
-    if can_zoom_in {
-        let plus = zoom_in_button_rect(width, height);
+        let undo = undo_button_rect(width, height);
         draw_centered_label(
             frame,
             width,
             height,
-            plus,
-            "+",
+            undo,
+            "U",
             UI_TEXT_SCALE,
             BUTTON_TEXT_COLOR,
         );
@@ -209,6 +272,14 @@ fn zoom_in_button_rect(width: u32, height: u32) -> ScreenRect {
         w: UI_BUTTON_SIZE,
         h: UI_BUTTON_SIZE,
     }
+}
+
+fn restart_button_rect(height: u32) -> ScreenRect {
+    zoom_out_button_rect(height)
+}
+
+fn undo_button_rect(width: u32, height: u32) -> ScreenRect {
+    zoom_in_button_rect(width, height)
 }
 
 fn draw_mode_toggle_icon(
