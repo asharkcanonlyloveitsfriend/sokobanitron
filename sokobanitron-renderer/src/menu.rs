@@ -1,6 +1,6 @@
 use crate::{
-    BOARD_VERTICAL_MARGIN, BoardViewport, BoardViewportOptions, Renderer, ScreenRect,
-    UI_BUTTON_MARGIN, UI_BUTTON_SIZE, UiIcon, draw_ui_icon_in_rect,
+    BOARD_VERTICAL_MARGIN, BoardViewport, BoardViewportOptions, Renderer, UI_BUTTON_MARGIN,
+    level_select_scrollbar::{self, ScrollbarTapTarget},
 };
 use sokobanitron_gameplay::BoardView;
 
@@ -73,14 +73,8 @@ pub fn level_select_menu_indices(level_count: usize, start: usize) -> [Option<us
     out
 }
 
-fn menu_right_rail_width(width: u32) -> u32 {
-    (UI_BUTTON_SIZE + UI_BUTTON_MARGIN)
-        .min(width / 3)
-        .max(UI_BUTTON_SIZE / 2)
-}
-
 fn menu_content_width(width: u32) -> u32 {
-    width.saturating_sub(menu_right_rail_width(width))
+    width.saturating_sub(level_select_scrollbar::right_rail_width(width))
 }
 
 pub fn level_select_menu_slot_rects(width: u32, height: u32) -> [(i32, i32, u32, u32); 4] {
@@ -112,55 +106,34 @@ pub fn level_select_menu_slot_rects(width: u32, height: u32) -> [(i32, i32, u32,
     ]
 }
 
-pub fn level_select_menu_nav_button_rects(width: u32, height: u32) -> [(i32, i32, u32, u32); 5] {
-    let rail_w = menu_right_rail_width(width);
-    let rail_x = width.saturating_sub(rail_w) as i32;
-    let btn_w = UI_BUTTON_SIZE
-        .min(rail_w.saturating_sub(UI_BUTTON_MARGIN))
-        .max(24);
-    let btn_h = btn_w;
-    let content_top = BOARD_VERTICAL_MARGIN.saturating_add(UI_BUTTON_MARGIN);
-    let content_bottom = height.saturating_sub(UI_BUTTON_MARGIN);
-    let available_h = content_bottom.saturating_sub(content_top);
-    let total_btn_h = btn_h.saturating_mul(5);
-    let gap = if available_h > total_btn_h {
-        (available_h - total_btn_h) / 4
-    } else {
-        0
-    };
-    let offset_x = (rail_w.saturating_sub(btn_w) / 2) as i32;
-    let mut out = [(0, 0, 0, 0); 5];
-    for (i, slot) in out.iter_mut().enumerate() {
-        let y = content_top.saturating_add((i as u32).saturating_mul(btn_h.saturating_add(gap)));
-        *slot = (rail_x + offset_x, y as i32, btn_w, btn_h);
-    }
-    out
-}
-
 pub fn level_select_menu_nav_action_at(
     px: f64,
     py: f64,
     width: u32,
     height: u32,
+    level_count: usize,
+    current_level: usize,
+    current_start: usize,
 ) -> Option<MenuNavAction> {
-    if px < 0.0 || py < 0.0 {
-        return None;
-    }
-    let x = px as i32;
-    let y = py as i32;
-    let actions = [
-        MenuNavAction::First,
-        MenuNavAction::PageUp,
-        MenuNavAction::Current,
-        MenuNavAction::PageDown,
-        MenuNavAction::Last,
-    ];
-    level_select_menu_nav_button_rects(width, height)
-        .into_iter()
-        .zip(actions)
-        .find_map(|((rx, ry, rw, rh), action)| {
-            (x >= rx && y >= ry && x < rx + rw as i32 && y < ry + rh as i32).then_some(action)
-        })
+    let return_start = level_select_menu_start_index(level_count, current_level);
+    let visible_count = MENU_SLOTS_PER_PAGE.min(level_count).max(1);
+    level_select_scrollbar::tap_target_at(
+        px,
+        py,
+        width,
+        height,
+        level_count,
+        visible_count,
+        current_start,
+        return_start,
+    )
+    .map(|target| match target {
+        ScrollbarTapTarget::First => MenuNavAction::First,
+        ScrollbarTapTarget::PageUp => MenuNavAction::PageUp,
+        ScrollbarTapTarget::Current => MenuNavAction::Current,
+        ScrollbarTapTarget::PageDown => MenuNavAction::PageDown,
+        ScrollbarTapTarget::Last => MenuNavAction::Last,
+    })
 }
 
 pub fn level_select_menu_target_at(
@@ -213,40 +186,6 @@ fn draw_filled_rect(
             frame[idx..idx + 4].copy_from_slice(&color);
         }
     }
-}
-
-fn nav_action_icon(action: MenuNavAction) -> UiIcon {
-    match action {
-        MenuNavAction::First => UiIcon::MenuFirst,
-        MenuNavAction::PageUp => UiIcon::MenuPageUp,
-        MenuNavAction::Current => UiIcon::MenuCurrent,
-        MenuNavAction::PageDown => UiIcon::MenuPageDown,
-        MenuNavAction::Last => UiIcon::MenuLast,
-    }
-}
-
-fn draw_menu_nav_icon(
-    frame: &mut [u8],
-    frame_width: u32,
-    frame_height: u32,
-    rect: (i32, i32, u32, u32),
-    action: MenuNavAction,
-) {
-    let (x, y, w, h) = rect;
-    let icon_rect = ScreenRect {
-        x: x.max(0) as u32,
-        y: y.max(0) as u32,
-        w,
-        h,
-    };
-    draw_ui_icon_in_rect(
-        frame,
-        frame_width,
-        frame_height,
-        icon_rect,
-        nav_action_icon(action),
-        [220, 220, 220, 255],
-    );
 }
 
 fn draw_selection_brackets(
@@ -385,18 +324,14 @@ impl Renderer {
             }
         }
 
-        let actions = [
-            MenuNavAction::First,
-            MenuNavAction::PageUp,
-            MenuNavAction::Current,
-            MenuNavAction::PageDown,
-            MenuNavAction::Last,
-        ];
-        for (rect, action) in level_select_menu_nav_button_rects(width, height)
-            .into_iter()
-            .zip(actions)
-        {
-            draw_menu_nav_icon(frame, width, height, rect, action);
-        }
+        level_select_scrollbar::draw(
+            frame,
+            width,
+            height,
+            preview_boards.len(),
+            MENU_SLOTS_PER_PAGE,
+            page_start,
+            level_select_menu_start_index(preview_boards.len(), current_level),
+        );
     }
 }

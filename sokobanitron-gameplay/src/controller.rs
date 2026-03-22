@@ -56,6 +56,10 @@ impl GameplayController {
         self.current_level
     }
 
+    pub fn level_count(&self) -> usize {
+        self.levels.len()
+    }
+
     pub fn can_restart(&self) -> bool {
         self.session.can_restart()
     }

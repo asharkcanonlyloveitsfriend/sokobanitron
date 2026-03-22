@@ -11,6 +11,18 @@ pub struct AppUpdate {
     pub presentation_plan: Option<PresentationPlan>,
 }
 
+const LEVEL_SELECT_PAGE_SIZE: usize = 4;
+
+fn level_select_start_index(level_count: usize, current_level: usize) -> usize {
+    if level_count <= LEVEL_SELECT_PAGE_SIZE || current_level == 0 {
+        0
+    } else if current_level >= level_count.saturating_sub(1) {
+        level_count.saturating_sub(LEVEL_SELECT_PAGE_SIZE)
+    } else {
+        current_level.saturating_sub(1)
+    }
+}
+
 pub fn apply_action(
     controller: &mut GameplayController,
     app_state: &mut AppState,
@@ -51,9 +63,9 @@ pub fn apply_action(
         }
         AppAction::OpenLevelSelect => {
             if matches!(app_state.ui.screen, AppScreen::Gameplay) {
-                app_state.ui.overlay = Some(AppOverlay::LevelSelect {
-                    page_start: controller.current_level(),
-                });
+                let page_start =
+                    level_select_start_index(controller.level_count(), controller.current_level());
+                app_state.ui.overlay = Some(AppOverlay::LevelSelect { page_start });
             }
         }
         AppAction::EnterEditorMode => {
@@ -202,6 +214,46 @@ mod tests {
         assert_eq!(
             app_state.ui.overlay,
             Some(AppOverlay::LevelSelect { page_start: 0 })
+        );
+    }
+
+    #[test]
+    fn open_level_select_positions_current_level_in_top_right_when_possible() {
+        let levels = vec!["    ###   \n $$     #@\n $ #...   \n   #######".to_string(); 30];
+        let mut controller = GameplayController::new(levels, Some(18));
+        let mut app_state = AppState::default();
+        let profile = PresentationProfile::default();
+
+        apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::OpenLevelSelect,
+            &profile,
+        );
+
+        assert_eq!(
+            app_state.ui.overlay,
+            Some(AppOverlay::LevelSelect { page_start: 17 })
+        );
+    }
+
+    #[test]
+    fn open_level_select_clamps_to_last_page_at_end() {
+        let levels = vec!["    ###   \n $$     #@\n $ #...   \n   #######".to_string(); 30];
+        let mut controller = GameplayController::new(levels, Some(29));
+        let mut app_state = AppState::default();
+        let profile = PresentationProfile::default();
+
+        apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::OpenLevelSelect,
+            &profile,
+        );
+
+        assert_eq!(
+            app_state.ui.overlay,
+            Some(AppOverlay::LevelSelect { page_start: 26 })
         );
     }
 }

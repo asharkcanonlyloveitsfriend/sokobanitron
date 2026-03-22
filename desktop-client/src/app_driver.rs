@@ -371,14 +371,17 @@ impl ApplicationHandler for App {
                         }
 
                         if is_level_select_open(&self.app_state) {
+                            let page_start_idx =
+                                level_select_page_start(&self.app_state).unwrap_or(0);
                             if let Some(nav_action) = level_select_menu_nav_action_at(
                                 cursor_x,
                                 cursor_y,
                                 self.surface_width,
                                 self.surface_height,
+                                self.levels.len(),
+                                self.controller.current_level(),
+                                page_start_idx,
                             ) {
-                                let page_start_idx =
-                                    level_select_page_start(&self.app_state).unwrap_or(0);
                                 let page_start = level_select_menu_start_for_nav(
                                     self.levels.len(),
                                     self.controller.current_level(),
@@ -390,8 +393,6 @@ impl ApplicationHandler for App {
                                 return;
                             }
 
-                            let page_start_idx =
-                                level_select_page_start(&self.app_state).unwrap_or(0);
                             if let Some(target) = level_select_menu_target_at(
                                 cursor_x,
                                 cursor_y,

@@ -2,6 +2,7 @@ mod background;
 mod controls;
 mod entities;
 mod icons;
+mod level_select_scrollbar;
 mod menu;
 mod overlay;
 mod overlay_chrome;
@@ -26,9 +27,8 @@ pub use controls::{
 pub use icons::{UiIcon, draw_ui_icon_in_rect};
 pub use menu::{
     MenuNavAction, level_select_menu_clamp_start, level_select_menu_indices,
-    level_select_menu_nav_action_at, level_select_menu_nav_button_rects,
-    level_select_menu_slot_rects, level_select_menu_start_for_nav, level_select_menu_start_index,
-    level_select_menu_step_start, level_select_menu_target_at,
+    level_select_menu_nav_action_at, level_select_menu_slot_rects, level_select_menu_start_for_nav,
+    level_select_menu_start_index, level_select_menu_step_start, level_select_menu_target_at,
 };
 pub use overlay_chrome::{
     draw_overlay_primary_action_button, overlay_primary_action_button_contains,

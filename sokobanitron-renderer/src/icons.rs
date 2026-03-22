@@ -9,11 +9,6 @@ pub enum UiIcon {
     Manipulate,
     Undo,
     Restart,
-    MenuFirst,
-    MenuPageUp,
-    MenuCurrent,
-    MenuPageDown,
-    MenuLast,
 }
 
 type IconBits = [u16; UI_ICON_SIZE];
@@ -66,66 +61,6 @@ const ICON_RESTART: IconBits = [
     0b000001000,
 ];
 
-const ICON_MENU_PAGE_UP: IconBits = [
-    0b000100000,
-    0b001000000,
-    0b010000000,
-    0b100000000,
-    0b010000000,
-    0b001000000,
-    0b000100000,
-    0b000000000,
-    0b000000000,
-];
-
-const ICON_MENU_PAGE_DOWN: IconBits = [
-    0b000100000,
-    0b000010000,
-    0b000001000,
-    0b000000100,
-    0b000001000,
-    0b000010000,
-    0b000100000,
-    0b000000000,
-    0b000000000,
-];
-
-const ICON_MENU_FIRST: IconBits = [
-    0b100100000,
-    0b101000000,
-    0b110000000,
-    0b100000000,
-    0b110000000,
-    0b101000000,
-    0b100100000,
-    0b100000000,
-    0b100000000,
-];
-
-const ICON_MENU_LAST: IconBits = [
-    0b000100001,
-    0b000010001,
-    0b000001001,
-    0b000000101,
-    0b000001001,
-    0b000010001,
-    0b000100001,
-    0b000000001,
-    0b000000001,
-];
-
-const ICON_MENU_CURRENT: IconBits = [
-    0b000100000,
-    0b000010000,
-    0b000001000,
-    0b000000100,
-    0b000001000,
-    0b000010000,
-    0b000100000,
-    0b000000000,
-    0b000000000,
-];
-
 pub fn draw_ui_icon_in_rect(
     frame: &mut [u8],
     width: u32,
@@ -139,11 +74,6 @@ pub fn draw_ui_icon_in_rect(
         UiIcon::Manipulate => ICON_MANIPULATE_CURSOR,
         UiIcon::Undo => ICON_UNDO,
         UiIcon::Restart => ICON_RESTART,
-        UiIcon::MenuFirst => ICON_MENU_FIRST,
-        UiIcon::MenuPageUp => ICON_MENU_PAGE_UP,
-        UiIcon::MenuCurrent => ICON_MENU_CURRENT,
-        UiIcon::MenuPageDown => ICON_MENU_PAGE_DOWN,
-        UiIcon::MenuLast => ICON_MENU_LAST,
     };
     draw_icon_bits_in_rect(
         frame,
