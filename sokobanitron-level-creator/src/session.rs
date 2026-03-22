@@ -187,6 +187,8 @@ impl LevelCreatorSession {
         let visible = self.build_visible_window();
         let can_zoom_out = self.can_zoom_out();
         let can_zoom_in = self.can_zoom_in();
+        let can_undo = self.can_undo();
+        let can_restart = self.can_restart();
 
         self.renderer
             .draw_background_only(frame, self.surface_width, self.surface_height);
@@ -208,6 +210,8 @@ impl LevelCreatorSession {
             can_zoom_out,
             can_zoom_in,
             matches!(self.mode, EditorMode::Draw),
+            can_undo,
+            can_restart,
         );
     }
 
@@ -331,6 +335,20 @@ impl LevelCreatorSession {
 
     fn can_zoom_out(&self) -> bool {
         self.zoom_steps < self.max_zoom_out_steps()
+    }
+
+    fn can_undo(&self) -> bool {
+        !self.undo_history.is_empty()
+    }
+
+    fn is_reset_state(&self) -> bool {
+        self.solution_history.is_empty()
+            && self.undo_history.is_empty()
+            && self.world.player().is_none()
+    }
+
+    fn can_restart(&self) -> bool {
+        !self.is_reset_state()
     }
 
     fn bounds_fit_with_center(
@@ -782,6 +800,8 @@ impl LevelCreatorSession {
                     screen_y,
                     self.surface_width,
                     self.surface_height,
+                    self.can_undo(),
+                    self.can_restart(),
                 ) {
                     match action {
                         ManipulateButtonAction::Restart => self.restart_to_goals(),

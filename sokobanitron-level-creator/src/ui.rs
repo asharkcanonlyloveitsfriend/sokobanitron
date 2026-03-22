@@ -59,6 +59,28 @@ const MODE_ICON_MANIPULATE_CURSOR: IconBits = [
     0b000000011,
     0b000000001,
 ];
+const MANIPULATE_ICON_UNDO: IconBits = [
+    0b000111100,
+    0b001000010,
+    0b010000001,
+    0b110000001,
+    0b111111111,
+    0b110000000,
+    0b010000000,
+    0b001000000,
+    0b000000000,
+];
+const MANIPULATE_ICON_RESTART: IconBits = [
+    0b001111100,
+    0b010000010,
+    0b100000001,
+    0b110000001,
+    0b111000001,
+    0b110000001,
+    0b100000001,
+    0b010000010,
+    0b001111100,
+];
 
 pub fn zoom_button_action_at(
     px: f64,
@@ -88,14 +110,20 @@ pub fn manipulate_button_action_at(
     py: f64,
     width: u32,
     height: u32,
+    can_undo: bool,
+    can_restart: bool,
 ) -> Option<ManipulateButtonAction> {
-    let restart = restart_button_rect(height);
-    if restart.contains(px, py) {
-        return Some(ManipulateButtonAction::Restart);
+    if can_undo {
+        let undo = undo_button_rect(height);
+        if undo.contains(px, py) {
+            return Some(ManipulateButtonAction::Undo);
+        }
     }
-    let undo = undo_button_rect(width, height);
-    if undo.contains(px, py) {
-        return Some(ManipulateButtonAction::Undo);
+    if can_restart {
+        let restart = restart_button_rect(width, height);
+        if restart.contains(px, py) {
+            return Some(ManipulateButtonAction::Restart);
+        }
     }
     None
 }
@@ -198,6 +226,8 @@ pub fn draw_controls(
     can_zoom_out: bool,
     can_zoom_in: bool,
     draw_mode_active: bool,
+    can_undo: bool,
+    can_restart: bool,
 ) {
     let mode_rect = mode_toggle_button_rect();
     let mode_icon = if draw_mode_active {
@@ -233,26 +263,28 @@ pub fn draw_controls(
             );
         }
     } else {
-        let restart = restart_button_rect(height);
-        draw_centered_label(
-            frame,
-            width,
-            height,
-            restart,
-            "R",
-            UI_TEXT_SCALE,
-            BUTTON_TEXT_COLOR,
-        );
-        let undo = undo_button_rect(width, height);
-        draw_centered_label(
-            frame,
-            width,
-            height,
-            undo,
-            "U",
-            UI_TEXT_SCALE,
-            BUTTON_TEXT_COLOR,
-        );
+        if can_undo {
+            let undo = undo_button_rect(height);
+            draw_icon_in_rect(
+                frame,
+                width,
+                height,
+                undo,
+                MANIPULATE_ICON_UNDO,
+                MODE_ICON_SCALE,
+            );
+        }
+        if can_restart {
+            let restart = restart_button_rect(width, height);
+            draw_icon_in_rect(
+                frame,
+                width,
+                height,
+                restart,
+                MANIPULATE_ICON_RESTART,
+                MODE_ICON_SCALE,
+            );
+        }
     }
 }
 
@@ -274,12 +306,12 @@ fn zoom_in_button_rect(width: u32, height: u32) -> ScreenRect {
     }
 }
 
-fn restart_button_rect(height: u32) -> ScreenRect {
-    zoom_out_button_rect(height)
+fn restart_button_rect(width: u32, height: u32) -> ScreenRect {
+    zoom_in_button_rect(width, height)
 }
 
-fn undo_button_rect(width: u32, height: u32) -> ScreenRect {
-    zoom_in_button_rect(width, height)
+fn undo_button_rect(height: u32) -> ScreenRect {
+    zoom_out_button_rect(height)
 }
 
 fn draw_mode_toggle_icon(
@@ -293,8 +325,17 @@ fn draw_mode_toggle_icon(
         ModeIcon::Draw => MODE_ICON_DRAW_PENCIL,
         ModeIcon::Manipulate => MODE_ICON_MANIPULATE_CURSOR,
     };
+    draw_icon_in_rect(frame, width, height, rect, icon, MODE_ICON_SCALE);
+}
 
-    let scale = MODE_ICON_SCALE;
+fn draw_icon_in_rect(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    rect: ScreenRect,
+    icon: IconBits,
+    scale: usize,
+) {
     let icon_w = MODE_ICON_SIZE * scale;
     let icon_h = MODE_ICON_SIZE * scale;
     let x = rect.x as usize + (rect.w as usize).saturating_sub(icon_w) / 2;
