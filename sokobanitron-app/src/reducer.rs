@@ -1,7 +1,6 @@
 use crate::action::AppAction;
 use crate::app_state::AppState;
 use crate::present::{PresentationPlan, build_presentation_plan};
-use crate::presentation_profile::PresentationProfile;
 use crate::ui_state::{AppOverlay, AppScreen};
 use sokobanitron_gameplay::{GameplayController, GameplayControllerChanges};
 
@@ -27,7 +26,6 @@ pub fn apply_action(
     controller: &mut GameplayController,
     app_state: &mut AppState,
     action: AppAction,
-    profile: &PresentationProfile,
 ) -> AppUpdate {
     let mut update = AppUpdate::default();
 
@@ -102,7 +100,8 @@ pub fn apply_action(
             {
                 let outcome = controller.click_cell_with_outcome(x, y);
                 update.changes = outcome.changes;
-                update.presentation_plan = Some(build_presentation_plan(&outcome, profile));
+                update.presentation_plan =
+                    Some(build_presentation_plan(&outcome, controller, app_state));
             }
         }
         AppAction::NoOp => {}
@@ -114,7 +113,7 @@ pub fn apply_action(
 #[cfg(test)]
 mod tests {
     use super::apply_action;
-    use crate::{AppAction, AppOverlay, AppScreen, AppState, PresentationProfile};
+    use crate::{AppAction, AppOverlay, AppScreen, AppState};
     use sokobanitron_gameplay::GameplayController;
 
     fn test_controller() -> GameplayController {
@@ -127,13 +126,10 @@ mod tests {
         let mut controller = test_controller();
         let mut app_state = AppState::default();
         app_state.ui.overlay = Some(AppOverlay::LevelSelect { page_start: 0 });
-        let profile = PresentationProfile::default();
-
         let update = apply_action(
             &mut controller,
             &mut app_state,
             AppAction::SetLevelSelectPageStart(12),
-            &profile,
         );
 
         assert_eq!(update.changes, Default::default());
@@ -149,13 +145,10 @@ mod tests {
         let mut app_state = AppState::default();
         app_state.ui.screen = AppScreen::Editor;
         app_state.ui.overlay = Some(AppOverlay::EditorMenu);
-        let profile = PresentationProfile::default();
-
         let update = apply_action(
             &mut controller,
             &mut app_state,
             AppAction::SetLevelSelectPageStart(12),
-            &profile,
         );
 
         assert_eq!(update.changes, Default::default());
@@ -166,14 +159,7 @@ mod tests {
     fn toggle_overlay_opens_gameplay_menu_overlay() {
         let mut controller = test_controller();
         let mut app_state = AppState::default();
-        let profile = PresentationProfile::default();
-
-        apply_action(
-            &mut controller,
-            &mut app_state,
-            AppAction::ToggleOverlay,
-            &profile,
-        );
+        apply_action(&mut controller, &mut app_state, AppAction::ToggleOverlay);
 
         assert_eq!(app_state.ui.overlay, Some(AppOverlay::GameplayMenu));
     }
@@ -182,14 +168,7 @@ mod tests {
     fn open_level_select_sets_level_select_overlay() {
         let mut controller = test_controller();
         let mut app_state = AppState::default();
-        let profile = PresentationProfile::default();
-
-        apply_action(
-            &mut controller,
-            &mut app_state,
-            AppAction::OpenLevelSelect,
-            &profile,
-        );
+        apply_action(&mut controller, &mut app_state, AppAction::OpenLevelSelect);
 
         assert_eq!(
             app_state.ui.overlay,
@@ -202,14 +181,7 @@ mod tests {
         let mut controller = test_controller();
         let mut app_state = AppState::default();
         app_state.ui.overlay = Some(AppOverlay::GameplayMenu);
-        let profile = PresentationProfile::default();
-
-        apply_action(
-            &mut controller,
-            &mut app_state,
-            AppAction::OpenLevelSelect,
-            &profile,
-        );
+        apply_action(&mut controller, &mut app_state, AppAction::OpenLevelSelect);
 
         assert_eq!(
             app_state.ui.overlay,
@@ -222,14 +194,7 @@ mod tests {
         let levels = vec!["    ###   \n $$     #@\n $ #...   \n   #######".to_string(); 30];
         let mut controller = GameplayController::new(levels, Some(18));
         let mut app_state = AppState::default();
-        let profile = PresentationProfile::default();
-
-        apply_action(
-            &mut controller,
-            &mut app_state,
-            AppAction::OpenLevelSelect,
-            &profile,
-        );
+        apply_action(&mut controller, &mut app_state, AppAction::OpenLevelSelect);
 
         assert_eq!(
             app_state.ui.overlay,
@@ -242,14 +207,7 @@ mod tests {
         let levels = vec!["    ###   \n $$     #@\n $ #...   \n   #######".to_string(); 30];
         let mut controller = GameplayController::new(levels, Some(29));
         let mut app_state = AppState::default();
-        let profile = PresentationProfile::default();
-
-        apply_action(
-            &mut controller,
-            &mut app_state,
-            AppAction::OpenLevelSelect,
-            &profile,
-        );
+        apply_action(&mut controller, &mut app_state, AppAction::OpenLevelSelect);
 
         assert_eq!(
             app_state.ui.overlay,

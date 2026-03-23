@@ -2188,6 +2188,7 @@ dependencies = [
  "font8x8",
  "image",
  "resvg",
+ "sokobanitron-app",
  "sokobanitron-gameplay",
 ]
 

@@ -6,10 +6,9 @@ use renderer::{
     overlay_primary_action_button_contains, top_left_level_button_rect,
 };
 use sokobanitron_app::{
-    AppAction, AppDriverContext, AppInput, AppState, BoxPathStyle, BoxRemovedStyle, PresentMode,
-    PresentationProfile, apply_action_and_present_in_context, interpret_input, is_editor_menu_open,
-    is_gameplay_menu_open, is_gameplay_screen, is_level_select_open, is_overlay_open,
-    level_select_page_start,
+    AppAction, AppDriverContext, AppInput, AppState, apply_action_and_present_in_context,
+    interpret_input, is_editor_menu_open, is_gameplay_menu_open, is_gameplay_screen,
+    is_level_select_open, is_overlay_open, level_select_page_start,
 };
 use sokobanitron_gameplay::{
     BoardView, GameplayController, GameplayControllerChanges, GameplayPreferences,
@@ -28,13 +27,6 @@ __##\n\
 _$__\n\
 _$$_\n\
 ____";
-const KINDLE_PRESENTATION_PROFILE: PresentationProfile = PresentationProfile {
-    box_removed_style: BoxRemovedStyle::VanishThenBlink,
-    box_path_style: BoxPathStyle::FlashThenHide,
-    delayed_solved_present_mode: PresentMode::FastPartial,
-    allow_delays: true,
-};
-
 fn default_fallback_level_ascii() -> String {
     DEFAULT_FALLBACK_LEVEL_ASCII
         .chars()
@@ -123,22 +115,8 @@ impl KindleApp {
         }
     }
 
-    fn build_effective_presentation_profile(&self) -> PresentationProfile {
-        PresentationProfile {
-            box_removed_style: KINDLE_PRESENTATION_PROFILE.box_removed_style,
-            box_path_style: if self.preferences.show_box_path {
-                KINDLE_PRESENTATION_PROFILE.box_path_style
-            } else {
-                BoxPathStyle::Hidden
-            },
-            delayed_solved_present_mode: KINDLE_PRESENTATION_PROFILE.delayed_solved_present_mode,
-            allow_delays: KINDLE_PRESENTATION_PROFILE.allow_delays,
-        }
-    }
-
     fn apply_app_action(&mut self, action: AppAction) -> Result<()> {
-        let profile = self.build_effective_presentation_profile();
-        let applied = apply_action_and_present_in_context(self, action, &profile)?;
+        let applied = apply_action_and_present_in_context(self, action)?;
         self.handle_gameplay_changes(applied.changes);
         Ok(())
     }
@@ -251,7 +229,7 @@ impl KindleApp {
             }
             return Ok(());
         }
-        if self.controller.board().is_won() {
+        if self.controller.board().is_solved() {
             if is_gameplay_screen(&self.app_state) {
                 self.apply_app_input(AppInput::SolvedAdvance)?;
                 self.render()?;

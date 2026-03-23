@@ -100,11 +100,11 @@ impl GameplayController {
 
     pub fn click_cell_with_outcome(&mut self, x: u32, y: u32) -> GameplayTapOutcome {
         let was_started = self.session.is_started();
-        let was_solved = self.session.board().is_won();
+        let was_solved = self.session.board().is_solved();
         let session_events = self.session.click_cell_with_events(x, y);
         let effect = classify_tap_effect(&session_events);
         let started_now = !was_started && self.session.is_started();
-        let is_solved = self.session.board().is_won();
+        let is_solved = self.session.board().is_solved();
         let became_solved = !was_solved && is_solved;
         let dirty_solution = became_solved && !self.session.is_clean_solution();
 

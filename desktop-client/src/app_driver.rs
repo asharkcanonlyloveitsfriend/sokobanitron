@@ -7,10 +7,9 @@ use renderer::{
     top_menu_toggle_button_contains,
 };
 use sokobanitron_app::{
-    AppAction, AppDriverContext, AppInput, AppState, BoxPathStyle, BoxRemovedStyle, PresentMode,
-    PresentationProfile, apply_action_and_present_in_context, interpret_input, is_editor_menu_open,
-    is_editor_screen, is_gameplay_menu_open, is_gameplay_screen, is_level_select_open,
-    is_overlay_open, level_select_page_start,
+    AppAction, AppDriverContext, AppInput, AppState, apply_action_and_present_in_context,
+    interpret_input, is_editor_menu_open, is_editor_screen, is_gameplay_menu_open,
+    is_gameplay_screen, is_level_select_open, is_overlay_open, level_select_page_start,
 };
 use sokobanitron_gameplay::{
     BoardView, GameplayController, GameplayControllerChanges, GameplayPreferences,
@@ -31,12 +30,6 @@ const INITIAL_WIDTH: u32 = 670;
 const INITIAL_HEIGHT: u32 = 891;
 const DEFAULT_LEVEL_LINES: [&str; 4] = ["    ###   ", " $$     #@", " $ #...   ", "   #######"];
 const PREFERENCES_PATH: &str = "desktop-client-preferences.json";
-const DESKTOP_PRESENTATION_PROFILE: PresentationProfile = PresentationProfile {
-    box_removed_style: BoxRemovedStyle::RenderThenBlink,
-    box_path_style: BoxPathStyle::AnimatePathDisappear,
-    delayed_solved_present_mode: PresentMode::Full,
-    allow_delays: true,
-};
 
 fn initial_levels() -> Vec<String> {
     let fallback = DEFAULT_LEVEL_LINES.join("\n");
@@ -128,22 +121,8 @@ impl App {
         }
     }
 
-    fn build_effective_presentation_profile(&self) -> PresentationProfile {
-        PresentationProfile {
-            box_removed_style: DESKTOP_PRESENTATION_PROFILE.box_removed_style,
-            box_path_style: if self.preferences.show_box_path {
-                DESKTOP_PRESENTATION_PROFILE.box_path_style
-            } else {
-                BoxPathStyle::Hidden
-            },
-            delayed_solved_present_mode: DESKTOP_PRESENTATION_PROFILE.delayed_solved_present_mode,
-            allow_delays: DESKTOP_PRESENTATION_PROFILE.allow_delays,
-        }
-    }
-
     fn apply_app_action(&mut self, action: AppAction) {
-        let profile = self.build_effective_presentation_profile();
-        if let Ok(applied) = apply_action_and_present_in_context(self, action, &profile) {
+        if let Ok(applied) = apply_action_and_present_in_context(self, action) {
             self.handle_gameplay_changes(applied.changes);
         }
     }
@@ -321,7 +300,7 @@ impl ApplicationHandler for App {
                             && top_left_level_button_rect().contains(cursor_x, cursor_y)
                         {
                             self.apply_app_input(AppInput::OpenLevelSelect);
-                            self.render_with_options(None, true, true);
+                            self.render_active_gameplay_screen();
                             return;
                         }
 
@@ -337,20 +316,20 @@ impl ApplicationHandler for App {
                                 ControlsButtonAction::Restart => {
                                     if !is_overlay_open(&self.app_state) {
                                         self.apply_app_input(AppInput::ControlRestart);
-                                        self.render_with_options(None, true, true);
+                                        self.render_active_gameplay_screen();
                                         return;
                                     }
                                 }
                                 ControlsButtonAction::Undo => {
                                     if !is_overlay_open(&self.app_state) {
                                         self.apply_app_input(AppInput::ControlUndo);
-                                        self.render_with_options(None, true, true);
+                                        self.render_active_gameplay_screen();
                                         return;
                                     }
                                 }
                                 ControlsButtonAction::ShowMenu => {
                                     self.apply_app_input(AppInput::OverlayToggle);
-                                    self.render_with_options(None, true, true);
+                                    self.render_active_gameplay_screen();
                                     return;
                                 }
                             }
@@ -389,7 +368,7 @@ impl ApplicationHandler for App {
                                     nav_action,
                                 );
                                 self.apply_app_input(AppInput::LevelSelectNavigate { page_start });
-                                self.render_with_options(None, true, true);
+                                self.render_active_gameplay_screen();
                                 return;
                             }
 
@@ -402,14 +381,14 @@ impl ApplicationHandler for App {
                                 page_start_idx,
                             ) {
                                 self.apply_app_input(AppInput::LevelSelectSelect(target));
-                                self.render_with_options(None, true, true);
+                                self.render_active_gameplay_screen();
                             }
                             return;
                         }
 
-                        if self.controller.board().is_won() {
+                        if self.controller.board().is_solved() {
                             self.apply_app_input(AppInput::SolvedAdvance);
-                            self.render_with_options(None, true, true);
+                            self.render_active_gameplay_screen();
                             return;
                         }
 

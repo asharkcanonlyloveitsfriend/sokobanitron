@@ -10,4 +10,5 @@ name = "renderer"
 font8x8 = "0.3"
 image = { version = "0.25", default-features = false, features = ["png"] }
 resvg = { version = "0.45", default-features = false }
+sokobanitron-app = { path = "../sokobanitron-app" }
 sokobanitron-gameplay = { path = "../sokobanitron-gameplay" }

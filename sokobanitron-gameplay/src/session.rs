@@ -78,10 +78,10 @@ impl GameplaySession {
 
     pub fn click_cell_with_events(&mut self, x: u32, y: u32) -> Vec<GameplayEvent> {
         let mut events = Vec::new();
-        if self.board.is_won() {
+        if self.board.is_solved() {
             return events;
         }
-        let was_solved = self.board.is_won();
+        let was_solved = self.board.is_solved();
 
         let clicked_has_box = self
             .engine
@@ -157,7 +157,7 @@ impl GameplaySession {
 
     pub fn on_key_with_events(&mut self, key: GameplayKey) -> Vec<GameplayEvent> {
         let mut events = Vec::new();
-        if self.board.is_won() {
+        if self.board.is_solved() {
             if key == GameplayKey::Escape {
                 self.restart();
                 events.push(GameplayEvent::Restarted);
@@ -189,7 +189,7 @@ impl GameplaySession {
     }
 
     fn push_solved_event_if_needed(&self, was_solved: bool, events: &mut Vec<GameplayEvent>) {
-        if !was_solved && self.board.is_won() {
+        if !was_solved && self.board.is_solved() {
             events.push(GameplayEvent::LevelSolved {
                 clean: self.engine.is_clean_solution(),
             });

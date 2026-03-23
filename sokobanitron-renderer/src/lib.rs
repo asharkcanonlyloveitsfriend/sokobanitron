@@ -10,10 +10,10 @@ mod pixel_ui;
 mod pixels;
 mod sprites;
 mod tiles;
-mod trail;
 mod viewport;
 
 use image::RgbaImage;
+use sokobanitron_app::GameplayScreenRequest;
 use sokobanitron_gameplay::{BoardView, TileKind};
 use std::collections::HashMap;
 
@@ -311,7 +311,6 @@ pub struct Renderer {
     box_bitmap_cache: HashMap<u32, Vec<u8>>,
     selected_box_bitmap_cache: HashMap<u32, Vec<u8>>,
     player_bitmap_cache: HashMap<u32, Vec<u8>>,
-    player_blink_bitmap_cache: HashMap<u32, Vec<u8>>,
 }
 
 impl Renderer {
@@ -337,7 +336,6 @@ impl Renderer {
             box_bitmap_cache: HashMap::new(),
             selected_box_bitmap_cache: HashMap::new(),
             player_bitmap_cache: HashMap::new(),
-            player_blink_bitmap_cache: HashMap::new(),
         }
     }
 
@@ -349,7 +347,38 @@ impl Renderer {
         board: &BoardView,
         viewport: &BoardViewport,
     ) {
-        self.draw_with_box_trail(frame, width, height, board, viewport, None);
+        self.draw_background_only(frame, width, height);
+        self.draw_board_on_frame(frame, width, height, board, viewport, true, true);
+    }
+
+    pub fn draw_gameplay_screen(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        board: &BoardView,
+        viewport: &BoardViewport,
+        request: &GameplayScreenRequest,
+    ) {
+        self.draw_background_only(frame, width, height);
+        self.draw_board_on_frame(
+            frame,
+            width,
+            height,
+            board,
+            viewport,
+            true,
+            request.show_solved_overlay,
+        );
+        draw_controls_ui(
+            frame,
+            width,
+            height,
+            ControlsUiMode::Gameplay,
+            request.can_undo,
+            request.can_restart,
+        );
+        draw_top_left_level_button(frame, width, height, request.level_number);
     }
 
     pub fn draw_background_only(&mut self, frame: &mut [u8], width: u32, height: u32) {
@@ -378,109 +407,7 @@ impl Renderer {
         if draw_player {
             self.draw_player(frame, width, height, board, viewport);
         }
-        if draw_win_overlay && board.is_won() {
-            self.draw_win_overlay(frame, width, height);
-        }
-    }
-
-    pub fn draw_with_box_trail(
-        &mut self,
-        frame: &mut [u8],
-        width: u32,
-        height: u32,
-        board: &BoardView,
-        viewport: &BoardViewport,
-        box_trail: Option<&[(u32, u32)]>,
-    ) {
-        self.draw_with_box_trail_options(
-            frame, width, height, board, viewport, box_trail, true, true,
-        );
-    }
-
-    pub fn draw_with_box_trail_options(
-        &mut self,
-        frame: &mut [u8],
-        width: u32,
-        height: u32,
-        board: &BoardView,
-        viewport: &BoardViewport,
-        box_trail: Option<&[(u32, u32)]>,
-        draw_player: bool,
-        draw_win_overlay: bool,
-    ) {
-        self.draw_with_box_trail_progress_options(
-            frame,
-            width,
-            height,
-            board,
-            viewport,
-            box_trail,
-            None,
-            draw_player,
-            draw_win_overlay,
-        );
-    }
-
-    pub fn draw_with_box_trail_progress_options(
-        &mut self,
-        frame: &mut [u8],
-        width: u32,
-        height: u32,
-        board: &BoardView,
-        viewport: &BoardViewport,
-        box_trail: Option<&[(u32, u32)]>,
-        box_trail_consumed_segments: Option<f32>,
-        draw_player: bool,
-        draw_win_overlay: bool,
-    ) {
-        self.draw_with_box_trail_progress_effects(
-            frame,
-            width,
-            height,
-            board,
-            viewport,
-            box_trail,
-            box_trail_consumed_segments,
-            draw_player,
-            false,
-            draw_win_overlay,
-        );
-    }
-
-    pub fn draw_with_box_trail_progress_effects(
-        &mut self,
-        frame: &mut [u8],
-        width: u32,
-        height: u32,
-        board: &BoardView,
-        viewport: &BoardViewport,
-        box_trail: Option<&[(u32, u32)]>,
-        box_trail_consumed_segments: Option<f32>,
-        draw_player: bool,
-        draw_player_blink: bool,
-        draw_win_overlay: bool,
-    ) {
-        if width == 0 || height == 0 {
-            return;
-        }
-        self.ensure_cached_background(width, height);
-        frame.copy_from_slice(&self.cached_background);
-        self.draw_floor_tiles(frame, width, height, board, viewport);
-        if let Some(path) = box_trail {
-            if let Some(consumed) = box_trail_consumed_segments {
-                self.draw_box_trail_with_progress(frame, width, height, viewport, path, consumed);
-            } else {
-                self.draw_box_trail(frame, width, height, viewport, path);
-            }
-        }
-        self.draw_boxes(frame, width, height, board, viewport);
-        if draw_player {
-            self.draw_player(frame, width, height, board, viewport);
-            if draw_player_blink {
-                self.draw_player_blink(frame, width, height, board, viewport);
-            }
-        }
-        if draw_win_overlay && board.is_won() {
+        if draw_win_overlay && board.is_solved() {
             self.draw_win_overlay(frame, width, height);
         }
     }

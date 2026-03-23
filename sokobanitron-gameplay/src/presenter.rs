@@ -16,7 +16,7 @@ pub struct BoardView {
     boxes: Vec<bool>,
     player: Option<(u32, u32)>,
     selected_box: Option<(u32, u32)>,
-    is_won: bool,
+    is_solved: bool,
 }
 
 impl BoardView {
@@ -27,7 +27,7 @@ impl BoardView {
         boxes: Vec<bool>,
         player: Option<(u32, u32)>,
         selected_box: Option<(u32, u32)>,
-        is_won: bool,
+        is_solved: bool,
     ) -> Self {
         assert_eq!(tiles.len(), (width as usize) * (height as usize));
         assert_eq!(boxes.len(), (width as usize) * (height as usize));
@@ -38,7 +38,7 @@ impl BoardView {
             boxes,
             player,
             selected_box,
-            is_won,
+            is_solved,
         }
     }
 
@@ -66,8 +66,8 @@ impl BoardView {
         self.selected_box
     }
 
-    pub fn is_won(&self) -> bool {
-        self.is_won
+    pub fn is_solved(&self) -> bool {
+        self.is_solved
     }
 }
 
@@ -85,7 +85,7 @@ impl GameBoardPresenter {
         player: Option<(u32, u32)>,
         box_positions: &HashSet<(u32, u32)>,
         selected_box: Option<(u32, u32)>,
-        is_won: bool,
+        is_solved: bool,
     ) -> BoardView {
         let mut tiles = Vec::with_capacity((self.level.width * self.level.height) as usize);
         let mut boxes = Vec::with_capacity((self.level.width * self.level.height) as usize);
@@ -108,7 +108,7 @@ impl GameBoardPresenter {
             boxes,
             player,
             selected_box,
-            is_won,
+            is_solved,
         )
     }
 }

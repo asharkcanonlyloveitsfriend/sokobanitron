@@ -13,12 +13,7 @@ pub const TOUCH_MAX_X: i32 = WIDTH as i32 - 1;
 pub const TOUCH_MIN_Y: i32 = 0;
 pub const TOUCH_MAX_Y: i32 = HEIGHT as i32 - 1;
 
-pub const BLINK_ON_MS: u64 = 120;
 pub const POWER_LONG_PRESS_MS: u64 = 1000;
-pub const BOX_VANISH_STEPS: usize = 3;
-pub const BOX_VANISH_STEP_MS: u64 = 35;
-pub const BOX_VANISH_START_SCALE_PERCENT: usize = 68;
-pub const BOX_VANISH_TAIL_SCALE_PERCENT: usize = 24;
 
 pub const KINDLE_SELECTED_BOX_PRIMARY: [u8; 4] = [28, 28, 28, 255];
 pub const KINDLE_SELECTED_BOX_HIGHLIGHT: [u8; 4] = [64, 64, 64, 255];
