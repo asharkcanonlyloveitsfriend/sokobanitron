@@ -17,6 +17,43 @@ const KINDLE_PLAYER_BODY: [u8; 4] = [117, 117, 117, 255];
 const KINDLE_PLAYER_LIMB: [u8; 4] = [80, 80, 80, 255];
 
 impl KindleApp {
+    fn draw_gameplay_screen(
+        &mut self,
+        frame: &mut [u8],
+        box_trail: Option<&[(u32, u32)]>,
+        box_trail_consumed_segments: Option<f32>,
+        draw_player: bool,
+        draw_player_blink: bool,
+        show_solved_overlay: bool,
+    ) {
+        self.renderer.draw_with_box_trail_progress_effects(
+            frame,
+            config::WIDTH as u32,
+            config::HEIGHT as u32,
+            self.controller.board(),
+            &self.viewport,
+            box_trail,
+            box_trail_consumed_segments,
+            draw_player,
+            draw_player_blink,
+            show_solved_overlay,
+        );
+        draw_controls_ui(
+            frame,
+            config::WIDTH as u32,
+            config::HEIGHT as u32,
+            ControlsUiMode::Gameplay,
+            self.controller.can_undo(),
+            self.controller.can_restart(),
+        );
+        draw_top_left_level_button(
+            frame,
+            config::WIDTH as u32,
+            config::HEIGHT as u32,
+            self.controller.current_level() + 1,
+        );
+    }
+
     pub(crate) fn build_renderer() -> Renderer {
         Renderer::with_overrides(RendererOverrides {
             box_primary: Some(KINDLE_BOX_PRIMARY),
@@ -122,29 +159,13 @@ impl KindleApp {
                 false,
             );
         } else {
-            self.renderer.draw_with_box_trail_options(
+            self.draw_gameplay_screen(
                 &mut rgba,
-                config::WIDTH as u32,
-                config::HEIGHT as u32,
-                self.controller.board(),
-                &self.viewport,
                 box_trail,
+                None,
                 draw_player,
+                false,
                 show_solved_overlay,
-            );
-            draw_controls_ui(
-                &mut rgba,
-                config::WIDTH as u32,
-                config::HEIGHT as u32,
-                ControlsUiMode::Gameplay,
-                self.controller.can_undo(),
-                self.controller.can_restart(),
-            );
-            draw_top_left_level_button(
-                &mut rgba,
-                config::WIDTH as u32,
-                config::HEIGHT as u32,
-                self.controller.current_level() + 1,
             );
         }
         if fast_partial {
@@ -156,26 +177,7 @@ impl KindleApp {
 
     fn run_player_blink_animation(&mut self) -> Result<()> {
         let mut blink_frame = vec![0u8; config::WIDTH * config::HEIGHT * 4];
-        self.renderer.draw_with_box_trail_progress_effects(
-            &mut blink_frame,
-            config::WIDTH as u32,
-            config::HEIGHT as u32,
-            self.controller.board(),
-            &self.viewport,
-            None,
-            None,
-            true,
-            true,
-            false,
-        );
-        draw_controls_ui(
-            &mut blink_frame,
-            config::WIDTH as u32,
-            config::HEIGHT as u32,
-            ControlsUiMode::Gameplay,
-            self.controller.can_undo(),
-            self.controller.can_restart(),
-        );
+        self.draw_gameplay_screen(&mut blink_frame, None, None, true, true, false);
         self.display.present_rgba_fast_partial(&blink_frame)?;
         thread::sleep(Duration::from_millis(config::BLINK_ON_MS));
 
@@ -260,24 +262,7 @@ impl KindleApp {
         let steps = config::BOX_VANISH_STEPS.max(1);
         for step in 0..steps {
             let mut frame = vec![0u8; config::WIDTH * config::HEIGHT * 4];
-            self.renderer.draw_with_box_trail_options(
-                &mut frame,
-                config::WIDTH as u32,
-                config::HEIGHT as u32,
-                self.controller.board(),
-                &self.viewport,
-                None,
-                true,
-                show_solved_overlay,
-            );
-            draw_controls_ui(
-                &mut frame,
-                config::WIDTH as u32,
-                config::HEIGHT as u32,
-                ControlsUiMode::Gameplay,
-                self.controller.can_undo(),
-                self.controller.can_restart(),
-            );
+            self.draw_gameplay_screen(&mut frame, None, None, true, false, show_solved_overlay);
 
             let remaining = steps - step;
             let size = if step + 1 == steps {

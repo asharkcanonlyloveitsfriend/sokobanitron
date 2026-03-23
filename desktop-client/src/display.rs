@@ -7,6 +7,7 @@ use sokobanitron_app::{
     AppScreen, FrameRequest, FrameSink, active_screen, is_editor_menu_open, is_gameplay_menu_open,
     is_gameplay_screen, is_level_select_open, level_select_page_start,
 };
+use sokobanitron_gameplay::BoardView;
 use std::thread;
 use std::time::Duration;
 
@@ -14,6 +15,45 @@ const ANIMATION_TICK_MS: u64 = 50;
 const BOX_PATH_SPEED_SCALE: f32 = 1.3;
 const BOX_PATH_SPEED_EXPONENT: f32 = 0.5;
 const BLINK_ON_MS: u64 = 120;
+
+fn draw_gameplay_screen(
+    renderer: &mut renderer::Renderer,
+    frame: &mut [u8],
+    surface_width: u32,
+    surface_height: u32,
+    board: &BoardView,
+    board_viewport: &renderer::BoardViewport,
+    can_undo: bool,
+    can_restart: bool,
+    level_number: usize,
+    box_trail: Option<&[(u32, u32)]>,
+    box_trail_consumed_segments: Option<f32>,
+    draw_player: bool,
+    draw_player_blink: bool,
+    show_solved_overlay: bool,
+) {
+    renderer.draw_with_box_trail_progress_effects(
+        frame,
+        surface_width,
+        surface_height,
+        board,
+        board_viewport,
+        box_trail,
+        box_trail_consumed_segments,
+        draw_player,
+        draw_player_blink,
+        show_solved_overlay,
+    );
+    draw_controls_ui(
+        frame,
+        surface_width,
+        surface_height,
+        ControlsUiMode::Gameplay,
+        can_undo,
+        can_restart,
+    );
+    draw_top_left_level_button(frame, surface_width, surface_height, level_number);
+}
 
 impl App {
     pub(crate) fn render_current(&mut self) {
@@ -63,29 +103,21 @@ impl App {
                     [220, 220, 220, 255],
                 );
             } else {
-                self.renderer.draw_with_box_trail_options(
+                draw_gameplay_screen(
+                    &mut self.renderer,
                     frame,
                     self.surface_width,
                     self.surface_height,
                     self.controller.board(),
                     &self.board_viewport,
-                    box_trail,
-                    draw_player,
-                    show_solved_overlay,
-                );
-                draw_controls_ui(
-                    frame,
-                    self.surface_width,
-                    self.surface_height,
-                    ControlsUiMode::Gameplay,
                     self.controller.can_undo(),
                     self.controller.can_restart(),
-                );
-                draw_top_left_level_button(
-                    frame,
-                    self.surface_width,
-                    self.surface_height,
                     self.controller.current_level() + 1,
+                    box_trail,
+                    None,
+                    draw_player,
+                    false,
+                    show_solved_overlay,
                 );
             }
             pixels.render().expect("render");
@@ -118,25 +150,21 @@ impl App {
     fn run_player_blink_animation(&mut self) {
         if let Some(pixels) = &mut self.pixels {
             let frame = pixels.frame_mut();
-            self.renderer.draw_with_box_trail_progress_effects(
+            draw_gameplay_screen(
+                &mut self.renderer,
                 frame,
                 self.surface_width,
                 self.surface_height,
                 self.controller.board(),
                 &self.board_viewport,
+                self.controller.can_undo(),
+                self.controller.can_restart(),
+                self.controller.current_level() + 1,
                 None,
                 None,
                 true,
                 true,
                 false,
-            );
-            draw_controls_ui(
-                frame,
-                self.surface_width,
-                self.surface_height,
-                ControlsUiMode::Gameplay,
-                self.controller.can_undo(),
-                self.controller.can_restart(),
             );
             pixels.render().expect("render");
         }
@@ -156,24 +184,21 @@ impl App {
         while consumed < total_segments {
             if let Some(pixels) = &mut self.pixels {
                 let frame = pixels.frame_mut();
-                self.renderer.draw_with_box_trail_progress_options(
+                draw_gameplay_screen(
+                    &mut self.renderer,
                     frame,
                     self.surface_width,
                     self.surface_height,
                     self.controller.board(),
                     &self.board_viewport,
+                    self.controller.can_undo(),
+                    self.controller.can_restart(),
+                    self.controller.current_level() + 1,
                     Some(path),
                     Some(consumed),
                     false,
+                    false,
                     show_solved_overlay,
-                );
-                draw_controls_ui(
-                    frame,
-                    self.surface_width,
-                    self.surface_height,
-                    ControlsUiMode::Gameplay,
-                    self.controller.can_undo(),
-                    self.controller.can_restart(),
                 );
                 pixels.render().expect("render");
             }
