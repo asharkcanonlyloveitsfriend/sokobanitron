@@ -104,7 +104,7 @@ impl GameEngine {
     }
 
     pub fn can_undo(&self) -> bool {
-        !self.has_undone_once && !self.box_move_history.is_empty()
+        !self.is_level_solved() && !self.has_undone_once && !self.box_move_history.is_empty()
     }
 
     fn is_inside(&self, row: usize, col: usize) -> bool {
@@ -267,5 +267,27 @@ mod tests {
         assert_eq!(engine.player(), Position::new(1, 2));
         assert!(engine.boxes().contains(&Position::new(2, 2)));
         assert!(!engine.boxes().contains(&Position::new(3, 2)));
+    }
+
+    #[test]
+    fn can_undo_is_false_after_level_is_solved() {
+        let ascii = "#####\n# @ #\n# $.#\n#####";
+        let mut engine = GameEngine::from_ascii(ascii).expect("expected valid level");
+
+        assert!(
+            engine
+                .move_box_to(Position::new(2, 2), Position::new(2, 3))
+                .is_some(),
+            "expected box move to solve level"
+        );
+        assert!(engine.is_level_solved(), "expected level to be solved");
+        assert!(
+            !engine.can_undo(),
+            "undo should be unavailable once level is solved"
+        );
+        assert!(
+            engine.can_restart(),
+            "restart should remain available after solving"
+        );
     }
 }
