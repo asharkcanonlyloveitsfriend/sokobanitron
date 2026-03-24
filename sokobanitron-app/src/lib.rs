@@ -4,6 +4,7 @@ pub mod driver;
 pub mod frame;
 pub mod gameplay_frames;
 pub mod input;
+pub mod level_bootstrap;
 pub mod overlay;
 pub mod present;
 pub mod presentation_profile;
@@ -19,6 +20,7 @@ pub use gameplay_frames::{
     build_current_gameplay_frame_request, build_gameplay_frame_request,
 };
 pub use input::{AppInput, interpret_input};
+pub use level_bootstrap::{InitialLevels, load_initial_levels_for_app};
 pub use overlay::{
     active_screen, is_editor_menu_open, is_editor_screen, is_gameplay_menu_open,
     is_gameplay_screen, is_level_select_open, is_overlay_open, level_select_page_start,

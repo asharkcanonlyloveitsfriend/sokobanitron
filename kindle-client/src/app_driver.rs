@@ -8,31 +8,12 @@ use renderer::{
 use sokobanitron_app::{
     AppAction, AppDriverContext, AppInput, AppState, apply_action_and_present_in_context,
     interpret_input, is_editor_menu_open, is_gameplay_menu_open, is_gameplay_screen,
-    is_level_select_open, is_overlay_open, level_select_page_start,
+    is_level_select_open, is_overlay_open, level_select_page_start, load_initial_levels_for_app,
 };
 use sokobanitron_gameplay::{
     BoardView, GameplayController, GameplayControllerChanges, GameplayPreferences,
-    OrientationPolicy, load_levels_from_default_locations,
 };
 use std::io::Result;
-
-const DEFAULT_FALLBACK_LEVEL_ASCII: &str = "\
-_@_#\n\
-_#_#\n\
-___#\n\
-#_.#\n\
-#_.#\n\
-#_.#\n\
-__##\n\
-_$__\n\
-_$$_\n\
-____";
-fn default_fallback_level_ascii() -> String {
-    DEFAULT_FALLBACK_LEVEL_ASCII
-        .chars()
-        .map(|ch| if ch == '_' { ' ' } else { ch })
-        .collect()
-}
 
 pub struct KindleApp {
     pub(crate) renderer: renderer::Renderer,
@@ -48,15 +29,9 @@ pub struct KindleApp {
 
 impl KindleApp {
     pub fn new() -> Result<Self> {
-        let fallback_level = default_fallback_level_ascii();
-        let levels = load_levels_from_default_locations(
-            OrientationPolicy::RotateWideToPortrait,
-            &fallback_level,
-        );
-        let preview_boards = levels
-            .iter()
-            .map(|level| Self::build_preview_board(level))
-            .collect::<Vec<_>>();
+        let initial_levels = load_initial_levels_for_app();
+        let levels = initial_levels.levels;
+        let preview_boards = initial_levels.preview_boards;
         let preferences = GameplayPreferences::load(config::PREFERENCES_PATH);
         let last_attempted_level = preferences.level_index(levels.len());
         let controller = GameplayController::new(levels.clone(), last_attempted_level);
@@ -93,12 +68,6 @@ impl KindleApp {
                 }
             }
         }
-    }
-
-    fn build_preview_board(level_ascii: &str) -> BoardView {
-        GameplayController::new(vec![level_ascii.to_string()], None)
-            .board()
-            .clone()
     }
 
     fn update_viewport(&mut self) {

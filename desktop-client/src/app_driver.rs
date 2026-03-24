@@ -10,10 +10,10 @@ use sokobanitron_app::{
     AppAction, AppDriverContext, AppInput, AppState, apply_action_and_present_in_context,
     interpret_input, is_editor_menu_open, is_editor_screen, is_gameplay_menu_open,
     is_gameplay_screen, is_level_select_open, is_overlay_open, level_select_page_start,
+    load_initial_levels_for_app,
 };
 use sokobanitron_gameplay::{
     BoardView, GameplayController, GameplayControllerChanges, GameplayPreferences,
-    OrientationPolicy, load_levels_from_default_locations,
 };
 use sokobanitron_level_editor::{LevelEditorSession, TouchInputPhase};
 use std::sync::Arc;
@@ -28,19 +28,7 @@ use winit::{
 
 const INITIAL_WIDTH: u32 = 670;
 const INITIAL_HEIGHT: u32 = 891;
-const DEFAULT_LEVEL_LINES: [&str; 4] = ["    ###   ", " $$     #@", " $ #...   ", "   #######"];
 const PREFERENCES_PATH: &str = "desktop-client-preferences.json";
-
-fn initial_levels() -> Vec<String> {
-    let fallback = DEFAULT_LEVEL_LINES.join("\n");
-    let levels =
-        load_levels_from_default_locations(OrientationPolicy::RotateWideToPortrait, &fallback);
-    if levels.is_empty() {
-        vec![fallback]
-    } else {
-        levels
-    }
-}
 
 pub struct App {
     window: Option<Arc<Window>>,
@@ -61,11 +49,9 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         let preferences = GameplayPreferences::load(PREFERENCES_PATH);
-        let levels = initial_levels();
-        let preview_boards = levels
-            .iter()
-            .map(|level| Self::build_preview_board(level))
-            .collect::<Vec<_>>();
+        let initial_levels = load_initial_levels_for_app();
+        let levels = initial_levels.levels;
+        let preview_boards = initial_levels.preview_boards;
         let controller =
             GameplayController::new(levels.clone(), preferences.level_index(levels.len()));
         let board_viewport =
@@ -85,12 +71,6 @@ impl App {
             surface_height: INITIAL_HEIGHT,
             editor_session: LevelEditorSession::new(),
         }
-    }
-
-    fn build_preview_board(level_ascii: &str) -> BoardView {
-        GameplayController::new(vec![level_ascii.to_string()], None)
-            .board()
-            .clone()
     }
 
     fn compute_viewport(
