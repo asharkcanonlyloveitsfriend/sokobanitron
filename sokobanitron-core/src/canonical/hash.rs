@@ -9,6 +9,10 @@ use crate::error::CoreError;
 use crate::normalize::pipeline::normalize_to_walkable_region_lines;
 use crate::util::stage_profile;
 
+pub fn canonical_hash(grid: &str) -> Result<String, CoreError> {
+    canonical_hash_impl(grid)
+}
+
 fn split_grid_lines(grid: &str) -> Vec<String> {
     grid.trim_matches('\n')
         .lines()
@@ -75,10 +79,6 @@ fn canonical_hash_impl(grid: &str) -> Result<String, CoreError> {
     let out = String::from_utf8(out_bytes.to_vec()).unwrap();
     stage_profile::record("canonical.sha256_hex", t6.elapsed());
     Ok(out)
-}
-
-pub fn canonical_hash(grid: &str) -> Result<String, CoreError> {
-    canonical_hash_impl(grid)
 }
 
 #[cfg(test)]

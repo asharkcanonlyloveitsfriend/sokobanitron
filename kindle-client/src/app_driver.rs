@@ -46,12 +46,6 @@ pub struct KindleApp {
 }
 
 impl KindleApp {
-    fn build_preview_board(level_ascii: &str) -> BoardView {
-        GameplayController::new(vec![level_ascii.to_string()], None)
-            .board()
-            .clone()
-    }
-
     pub fn new() -> Result<Self> {
         let fallback_level = default_fallback_level_ascii();
         let levels = load_levels_from_default_locations(
@@ -97,6 +91,12 @@ impl KindleApp {
                 }
             }
         }
+    }
+
+    fn build_preview_board(level_ascii: &str) -> BoardView {
+        GameplayController::new(vec![level_ascii.to_string()], None)
+            .board()
+            .clone()
     }
 
     fn update_viewport(&mut self) {
@@ -229,12 +229,10 @@ impl KindleApp {
             }
             return Ok(());
         }
-        if self.controller.board().is_solved() {
-            if is_gameplay_screen(&self.app_state) {
-                self.apply_app_input(AppInput::SolvedAdvance)?;
-                self.render()?;
-                return Ok(());
-            }
+        if self.controller.board().is_solved() && is_gameplay_screen(&self.app_state) {
+            self.apply_app_input(AppInput::SolvedAdvance)?;
+            self.render()?;
+            return Ok(());
         }
 
         if is_gameplay_screen(&self.app_state)

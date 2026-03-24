@@ -79,6 +79,40 @@ impl PullPathfinder {
         }
     }
 
+    pub fn find_pull_path(&mut self, origin: Position) -> Option<PullPathResult> {
+        if self.box_start == origin {
+            return None;
+        }
+        if !self.is_inside(origin) || !self.is_walkable(origin) {
+            return None;
+        }
+        let mut found = None;
+        self.traverse_pull_states(|pathfinder, state| {
+            if state.box_pos == origin {
+                found = Some(pathfinder.build_result(state));
+                return false;
+            }
+            true
+        });
+        found
+    }
+
+    pub fn find_all_pull_paths(&mut self) -> Vec<(Position, PullPathResult)> {
+        let mut found_origin = vec![false; self.cell_count];
+        let mut results = Vec::new();
+
+        self.traverse_pull_states(|pathfinder, state| {
+            let box_idx = pathfinder.idx(state.box_pos);
+            if state.box_pos != pathfinder.box_start && !found_origin[box_idx] {
+                found_origin[box_idx] = true;
+                results.push((state.box_pos, pathfinder.build_result(state)));
+            }
+            true
+        });
+
+        results
+    }
+
     #[inline]
     fn idx(&self, pos: Position) -> usize {
         pos.row * self.width + pos.col
@@ -177,8 +211,6 @@ impl PullPathfinder {
             }
 
             for (dr, dc) in Self::DIRECTIONS {
-                // Reverse transition:
-                // current box at B, previous box at B-dr/dc, previous player at B-2*dir.
                 let Some(prev_box) = Self::offset_pos(state.box_pos, -dr, -dc) else {
                     continue;
                 };
@@ -193,7 +225,6 @@ impl PullPathfinder {
                     continue;
                 }
 
-                // Current player must be able to reach the box's previous cell while box stays fixed.
                 if !self.player_pathfinder.can_find_path(
                     state.player_pos,
                     prev_box,
@@ -215,40 +246,6 @@ impl PullPathfinder {
                 queue.push_back(next_state);
             }
         }
-    }
-
-    pub fn find_pull_path(&mut self, origin: Position) -> Option<PullPathResult> {
-        if self.box_start == origin {
-            return None;
-        }
-        if !self.is_inside(origin) || !self.is_walkable(origin) {
-            return None;
-        }
-        let mut found = None;
-        self.traverse_pull_states(|pathfinder, state| {
-            if state.box_pos == origin {
-                found = Some(pathfinder.build_result(state));
-                return false;
-            }
-            true
-        });
-        found
-    }
-
-    pub fn find_all_pull_paths(&mut self) -> Vec<(Position, PullPathResult)> {
-        let mut found_origin = vec![false; self.cell_count];
-        let mut results = Vec::new();
-
-        self.traverse_pull_states(|pathfinder, state| {
-            let box_idx = pathfinder.idx(state.box_pos);
-            if state.box_pos != pathfinder.box_start && !found_origin[box_idx] {
-                found_origin[box_idx] = true;
-                results.push((state.box_pos, pathfinder.build_result(state)));
-            }
-            true
-        });
-
-        results
     }
 }
 

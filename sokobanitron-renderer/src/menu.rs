@@ -16,10 +16,6 @@ pub enum MenuNavAction {
 const MENU_SLOTS_PER_PAGE: usize = 4;
 const MENU_PAGE_STEP: usize = MENU_SLOTS_PER_PAGE;
 
-fn level_select_menu_max_start(level_count: usize) -> usize {
-    level_count.saturating_sub(MENU_SLOTS_PER_PAGE)
-}
-
 pub fn level_select_menu_start_index(level_count: usize, current_level: usize) -> usize {
     if level_count <= MENU_SLOTS_PER_PAGE || current_level == 0 {
         0
@@ -71,10 +67,6 @@ pub fn level_select_menu_indices(level_count: usize, start: usize) -> [Option<us
         }
     }
     out
-}
-
-fn menu_content_width(width: u32) -> u32 {
-    width.saturating_sub(level_select_scrollbar::right_rail_width(width))
 }
 
 pub fn level_select_menu_slot_rects(width: u32, height: u32) -> [(i32, i32, u32, u32); 4] {
@@ -158,6 +150,69 @@ pub fn level_select_menu_target_at(
     level_select_menu_indices(level_count, start)[slot]
 }
 
+impl Renderer {
+    pub fn draw_level_select_menu_contents(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        preview_boards: &[BoardView],
+        current_level: usize,
+        page_start: usize,
+    ) {
+        if preview_boards.is_empty() {
+            return;
+        }
+        let current_level = current_level.min(preview_boards.len().saturating_sub(1));
+        let slots = level_select_menu_slot_rects(width, height);
+        let page_start = level_select_menu_clamp_start(preview_boards.len(), page_start);
+        let indices = level_select_menu_indices(preview_boards.len(), page_start);
+        for (slot_idx, level_idx) in indices.into_iter().enumerate() {
+            let Some(level_idx) = level_idx else {
+                continue;
+            };
+            let Some(board) = preview_boards.get(level_idx) else {
+                continue;
+            };
+            let (sx, sy, sw, sh) = slots[slot_idx];
+            let pad = UI_BUTTON_MARGIN.max(8);
+            let inner_w = sw.saturating_sub(pad * 2).max(1);
+            let inner_h = sh.saturating_sub(pad * 2).max(1);
+            let mut viewport = BoardViewport::fit_to_window_with_options(
+                inner_w,
+                inner_h,
+                board,
+                BoardViewportOptions::fill_available_space(),
+            );
+            viewport.origin_x += sx + pad as i32;
+            viewport.origin_y += sy + pad as i32;
+            self.draw_board_on_frame(frame, width, height, board, &viewport, true, false);
+            if level_idx == current_level {
+                draw_selection_brackets(frame, width, height, sx, sy, sw, sh);
+            }
+        }
+
+        level_select_scrollbar::draw(
+            frame,
+            width,
+            height,
+            preview_boards.len(),
+            MENU_SLOTS_PER_PAGE,
+            page_start,
+            level_select_menu_start_index(preview_boards.len(), current_level),
+        );
+    }
+}
+
+fn level_select_menu_max_start(level_count: usize) -> usize {
+    level_count.saturating_sub(MENU_SLOTS_PER_PAGE)
+}
+
+fn menu_content_width(width: u32) -> u32 {
+    width.saturating_sub(level_select_scrollbar::right_rail_width(width))
+}
+
+#[allow(clippy::too_many_arguments)]
 fn draw_filled_rect(
     frame: &mut [u8],
     frame_width: u32,
@@ -280,58 +335,4 @@ fn draw_selection_brackets(
         len as u32,
         color,
     );
-}
-
-impl Renderer {
-    pub fn draw_level_select_menu_contents(
-        &mut self,
-        frame: &mut [u8],
-        width: u32,
-        height: u32,
-        preview_boards: &[BoardView],
-        current_level: usize,
-        page_start: usize,
-    ) {
-        if preview_boards.is_empty() {
-            return;
-        }
-        let current_level = current_level.min(preview_boards.len().saturating_sub(1));
-        let slots = level_select_menu_slot_rects(width, height);
-        let page_start = level_select_menu_clamp_start(preview_boards.len(), page_start);
-        let indices = level_select_menu_indices(preview_boards.len(), page_start);
-        for (slot_idx, level_idx) in indices.into_iter().enumerate() {
-            let Some(level_idx) = level_idx else {
-                continue;
-            };
-            let Some(board) = preview_boards.get(level_idx) else {
-                continue;
-            };
-            let (sx, sy, sw, sh) = slots[slot_idx];
-            let pad = UI_BUTTON_MARGIN.max(8);
-            let inner_w = sw.saturating_sub(pad * 2).max(1);
-            let inner_h = sh.saturating_sub(pad * 2).max(1);
-            let mut viewport = BoardViewport::fit_to_window_with_options(
-                inner_w,
-                inner_h,
-                board,
-                BoardViewportOptions::fill_available_space(),
-            );
-            viewport.origin_x += sx + pad as i32;
-            viewport.origin_y += sy + pad as i32;
-            self.draw_board_on_frame(frame, width, height, board, &viewport, true, false);
-            if level_idx == current_level {
-                draw_selection_brackets(frame, width, height, sx, sy, sw, sh);
-            }
-        }
-
-        level_select_scrollbar::draw(
-            frame,
-            width,
-            height,
-            preview_boards.len(),
-            MENU_SLOTS_PER_PAGE,
-            page_start,
-            level_select_menu_start_index(preview_boards.len(), current_level),
-        );
-    }
 }

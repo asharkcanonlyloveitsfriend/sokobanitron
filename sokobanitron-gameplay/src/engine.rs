@@ -29,33 +29,33 @@ impl GameEngine {
         let mut goals = HashSet::new();
         let mut base_walkable = vec![vec![false; width]; height];
 
-        for (row, line) in lines.iter().enumerate() {
-            for col in 0..width {
+        for (row, (line, walkable_row)) in lines.iter().zip(base_walkable.iter_mut()).enumerate() {
+            for (col, cell) in walkable_row.iter_mut().enumerate().take(width) {
                 let ch = line.as_bytes().get(col).copied().unwrap_or(b' ') as char;
                 match ch {
                     '#' => {
-                        base_walkable[row][col] = false;
+                        *cell = false;
                     }
                     '@' | '+' => {
                         player = Some(Position::new(row, col));
                         if ch == '+' {
                             goals.insert(Position::new(row, col));
                         }
-                        base_walkable[row][col] = true;
+                        *cell = true;
                     }
                     '$' | '*' => {
                         boxes.insert(Position::new(row, col));
                         if ch == '*' {
                             goals.insert(Position::new(row, col));
                         }
-                        base_walkable[row][col] = true;
+                        *cell = true;
                     }
                     '.' => {
                         goals.insert(Position::new(row, col));
-                        base_walkable[row][col] = true;
+                        *cell = true;
                     }
                     _ => {
-                        base_walkable[row][col] = true;
+                        *cell = true;
                     }
                 }
             }
@@ -105,20 +105,6 @@ impl GameEngine {
 
     pub fn can_undo(&self) -> bool {
         !self.is_level_solved() && !self.has_undone_once && !self.box_move_history.is_empty()
-    }
-
-    fn is_inside(&self, row: usize, col: usize) -> bool {
-        row < self.height && col < self.width
-    }
-
-    fn walkable_with_boxes(&self) -> Vec<Vec<bool>> {
-        let mut walkable = self.base_walkable.clone();
-        for box_pos in &self.boxes {
-            if self.is_inside(box_pos.row, box_pos.col) {
-                walkable[box_pos.row][box_pos.col] = false;
-            }
-        }
-        walkable
     }
 
     pub fn move_player_to(&mut self, to: Position) -> bool {
@@ -224,6 +210,20 @@ impl GameEngine {
         self.player = new_player;
         self.has_undone_once = true;
         Some(path)
+    }
+
+    fn is_inside(&self, row: usize, col: usize) -> bool {
+        row < self.height && col < self.width
+    }
+
+    fn walkable_with_boxes(&self) -> Vec<Vec<bool>> {
+        let mut walkable = self.base_walkable.clone();
+        for box_pos in &self.boxes {
+            if self.is_inside(box_pos.row, box_pos.col) {
+                walkable[box_pos.row][box_pos.col] = false;
+            }
+        }
+        walkable
     }
 }
 

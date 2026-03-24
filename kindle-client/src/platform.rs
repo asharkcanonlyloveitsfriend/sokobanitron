@@ -488,11 +488,12 @@ impl TouchReader {
                     self.power_long_emitted = false;
                 }
                 2 => {
-                    if let Some(started) = self.power_down_at {
-                        if !self.power_long_emitted && started.elapsed() >= long_press {
-                            self.power_long_emitted = true;
-                            return Ok(Some(AppInputEvent::PowerLongPress));
-                        }
+                    if let Some(started) = self.power_down_at
+                        && !self.power_long_emitted
+                        && started.elapsed() >= long_press
+                    {
+                        self.power_long_emitted = true;
+                        return Ok(Some(AppInputEvent::PowerLongPress));
                     }
                 }
                 _ => {}
@@ -710,8 +711,8 @@ fn align_region_for_epdc(region: Region) -> AlignedRegion {
     let right = (region.left + region.width).min(config::WIDTH);
     let bottom = (region.top + region.height).min(config::HEIGHT);
 
-    let right_aligned = ((right + (X_ALIGN - 1)) / X_ALIGN * X_ALIGN).min(config::WIDTH);
-    let bottom_aligned = ((bottom + (Y_ALIGN - 1)) / Y_ALIGN * Y_ALIGN).min(config::HEIGHT);
+    let right_aligned = (right.div_ceil(X_ALIGN) * X_ALIGN).min(config::WIDTH);
+    let bottom_aligned = (bottom.div_ceil(Y_ALIGN) * Y_ALIGN).min(config::HEIGHT);
 
     AlignedRegion {
         left,

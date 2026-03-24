@@ -43,6 +43,139 @@ pub(crate) fn right_rail_width(width: u32) -> u32 {
         .max(UI_BUTTON_SIZE / 2)
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn tap_target_at(
+    px: f64,
+    py: f64,
+    width: u32,
+    height: u32,
+    level_count: usize,
+    visible_count: usize,
+    page_start: usize,
+    return_start: usize,
+) -> Option<ScrollbarTapTarget> {
+    if px < 0.0 || py < 0.0 {
+        return None;
+    }
+
+    let layout = layout(
+        width,
+        height,
+        level_count,
+        visible_count,
+        page_start,
+        return_start,
+    )?;
+
+    let x = px as i32;
+    let y = py as i32;
+    if x < layout.base.rail_x
+        || x >= layout.base.rail_x + layout.base.rail_w as i32
+        || y < layout.base.content_top
+        || y >= layout.base.content_bottom
+    {
+        return None;
+    }
+    if y < layout.base.track_top {
+        return Some(ScrollbarTapTarget::First);
+    }
+    if y >= layout.base.track_bottom {
+        return Some(ScrollbarTapTarget::Last);
+    }
+    if y >= layout.current_band_top && y < layout.current_band_bottom {
+        return Some(ScrollbarTapTarget::Current);
+    }
+    if y < layout.thumb_top {
+        return Some(ScrollbarTapTarget::PageUp);
+    }
+    if y >= layout.thumb_bottom {
+        return Some(ScrollbarTapTarget::PageDown);
+    }
+    None
+}
+
+pub(crate) fn draw(
+    frame: &mut [u8],
+    frame_width: u32,
+    frame_height: u32,
+    level_count: usize,
+    visible_count: usize,
+    page_start: usize,
+    return_start: usize,
+) {
+    let Some(layout) = layout(
+        frame_width,
+        frame_height,
+        level_count,
+        visible_count,
+        page_start,
+        return_start,
+    ) else {
+        return;
+    };
+
+    let base = layout.base;
+    let line_color = [188, 188, 188, 255];
+    let jump_color = [214, 214, 214, 255];
+    let thumb_color = [228, 228, 228, 255];
+    let current_color = [246, 246, 246, 255];
+
+    draw_filled_rect(
+        frame,
+        frame_width,
+        frame_height,
+        base.line_x,
+        base.track_top,
+        base.line_w,
+        base.track_bottom.saturating_sub(base.track_top).max(1) as u32,
+        line_color,
+    );
+
+    draw_jump_indicator(
+        frame,
+        frame_width,
+        frame_height,
+        base.indicator_x,
+        base.top_indicator_y,
+        base.indicator_w,
+        base.line_w,
+        true,
+        jump_color,
+    );
+    draw_jump_indicator(
+        frame,
+        frame_width,
+        frame_height,
+        base.indicator_x,
+        base.bottom_indicator_y,
+        base.indicator_w,
+        base.line_w,
+        false,
+        jump_color,
+    );
+
+    draw_filled_rect(
+        frame,
+        frame_width,
+        frame_height,
+        base.thumb_x,
+        layout.thumb_top,
+        base.thumb_w,
+        layout.thumb_bottom.saturating_sub(layout.thumb_top).max(1) as u32,
+        thumb_color,
+    );
+    draw_filled_rect(
+        frame,
+        frame_width,
+        frame_height,
+        base.indicator_x,
+        layout.current_y - base.line_w as i32 / 2,
+        base.indicator_w,
+        base.line_w,
+        current_color,
+    );
+}
+
 fn max_start(level_count: usize, visible_count: usize) -> usize {
     level_count.saturating_sub(visible_count.max(1))
 }
@@ -159,56 +292,6 @@ fn layout(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn tap_target_at(
-    px: f64,
-    py: f64,
-    width: u32,
-    height: u32,
-    level_count: usize,
-    visible_count: usize,
-    page_start: usize,
-    return_start: usize,
-) -> Option<ScrollbarTapTarget> {
-    if px < 0.0 || py < 0.0 {
-        return None;
-    }
-
-    let layout = layout(
-        width,
-        height,
-        level_count,
-        visible_count,
-        page_start,
-        return_start,
-    )?;
-
-    let x = px as i32;
-    let y = py as i32;
-    if x < layout.base.rail_x
-        || x >= layout.base.rail_x + layout.base.rail_w as i32
-        || y < layout.base.content_top
-        || y >= layout.base.content_bottom
-    {
-        return None;
-    }
-    if y < layout.base.track_top {
-        return Some(ScrollbarTapTarget::First);
-    }
-    if y >= layout.base.track_bottom {
-        return Some(ScrollbarTapTarget::Last);
-    }
-    if y >= layout.current_band_top && y < layout.current_band_bottom {
-        return Some(ScrollbarTapTarget::Current);
-    }
-    if y < layout.thumb_top {
-        return Some(ScrollbarTapTarget::PageUp);
-    }
-    if y >= layout.thumb_bottom {
-        return Some(ScrollbarTapTarget::PageDown);
-    }
-    None
-}
-
 fn draw_filled_rect(
     frame: &mut [u8],
     frame_width: u32,
@@ -239,6 +322,7 @@ fn draw_filled_rect(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_jump_indicator(
     frame: &mut [u8],
     frame_width: u32,
@@ -282,88 +366,6 @@ fn draw_jump_indicator(
         inset_w,
         thickness,
         color,
-    );
-}
-
-pub(crate) fn draw(
-    frame: &mut [u8],
-    frame_width: u32,
-    frame_height: u32,
-    level_count: usize,
-    visible_count: usize,
-    page_start: usize,
-    return_start: usize,
-) {
-    let Some(layout) = layout(
-        frame_width,
-        frame_height,
-        level_count,
-        visible_count,
-        page_start,
-        return_start,
-    ) else {
-        return;
-    };
-
-    let base = layout.base;
-    let line_color = [188, 188, 188, 255];
-    let jump_color = [214, 214, 214, 255];
-    let thumb_color = [228, 228, 228, 255];
-    let current_color = [246, 246, 246, 255];
-
-    draw_filled_rect(
-        frame,
-        frame_width,
-        frame_height,
-        base.line_x,
-        base.track_top,
-        base.line_w,
-        base.track_bottom.saturating_sub(base.track_top).max(1) as u32,
-        line_color,
-    );
-
-    draw_jump_indicator(
-        frame,
-        frame_width,
-        frame_height,
-        base.indicator_x,
-        base.top_indicator_y,
-        base.indicator_w,
-        base.line_w,
-        true,
-        jump_color,
-    );
-    draw_jump_indicator(
-        frame,
-        frame_width,
-        frame_height,
-        base.indicator_x,
-        base.bottom_indicator_y,
-        base.indicator_w,
-        base.line_w,
-        false,
-        jump_color,
-    );
-
-    draw_filled_rect(
-        frame,
-        frame_width,
-        frame_height,
-        base.thumb_x,
-        layout.thumb_top,
-        base.thumb_w,
-        layout.thumb_bottom.saturating_sub(layout.thumb_top).max(1) as u32,
-        thumb_color,
-    );
-    draw_filled_rect(
-        frame,
-        frame_width,
-        frame_height,
-        base.indicator_x,
-        layout.current_y - base.line_w as i32 / 2,
-        base.indicator_w,
-        base.line_w,
-        current_color,
     );
 }
 

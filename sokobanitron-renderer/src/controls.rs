@@ -66,29 +66,8 @@ pub const BOARD_VERTICAL_MARGIN: u32 = UI_BUTTON_MARGIN + UI_MENU_BUTTON_HEIGHT;
 const UI_MENU_TEXT_SCALE: usize = 4;
 const UI_TEXT_SCALE: usize = UI_MENU_TEXT_SCALE;
 
-fn ui_button_size() -> usize {
-    UI_BUTTON_SIZE as usize
-}
-
-fn ui_button_margin() -> usize {
-    UI_BUTTON_MARGIN as usize
-}
-
-fn ui_menu_button_height() -> usize {
-    UI_MENU_BUTTON_HEIGHT as usize
-}
-
 pub fn board_viewport_margins() -> (u32, u32) {
     (BOARD_HORIZONTAL_MARGIN, BOARD_VERTICAL_MARGIN)
-}
-
-fn to_screen_rect(rect: Rect) -> ScreenRect {
-    ScreenRect {
-        x: rect.x as u32,
-        y: rect.y as u32,
-        w: rect.w as u32,
-        h: rect.h as u32,
-    }
 }
 
 pub fn controls_button_rects(width: u32, height: u32) -> ControlsButtonRects {
@@ -111,66 +90,6 @@ pub fn top_menu_toggle_button_hit_rect(width: u32) -> ScreenRect {
 
 pub fn top_menu_toggle_button_contains(px: f64, py: f64, width: u32) -> bool {
     top_menu_toggle_button_hit_rect(width).contains(px, py)
-}
-
-fn top_row_y() -> usize {
-    ui_button_margin()
-}
-
-fn top_row_center_x(width: usize) -> usize {
-    width.saturating_sub(ui_button_size()) / 2
-}
-
-fn top_menu_button_rect(width: usize) -> Rect {
-    Rect {
-        x: top_row_center_x(width),
-        y: top_row_y(),
-        w: ui_button_size(),
-        h: ui_menu_button_height(),
-    }
-}
-
-fn top_left_level_button_rect_inner() -> Rect {
-    Rect {
-        x: ui_button_margin(),
-        y: ui_button_margin(),
-        w: ui_button_size(),
-        h: ui_button_size(),
-    }
-}
-
-fn top_menu_button_hit_rect(width: usize) -> Rect {
-    let base = top_menu_button_rect(width);
-    let extra_w = base.w / 2;
-    let extra_h = base.h;
-    let hit_x = base.x.saturating_sub(extra_w / 2);
-    let hit_y = base.y.saturating_sub(extra_h / 2);
-    let hit_w = base.w + extra_w;
-    let hit_h = base.h + extra_h;
-    Rect {
-        x: hit_x,
-        y: hit_y,
-        w: hit_w,
-        h: hit_h,
-    }
-}
-
-fn bottom_left_button_rect(height: usize) -> Rect {
-    Rect {
-        x: ui_button_margin(),
-        y: height.saturating_sub(ui_button_margin() + ui_button_size()),
-        w: ui_button_size(),
-        h: ui_button_size(),
-    }
-}
-
-fn bottom_right_button_rect(width: usize, height: usize) -> Rect {
-    Rect {
-        x: width.saturating_sub(ui_button_margin() + ui_button_size()),
-        y: height.saturating_sub(ui_button_margin() + ui_button_size()),
-        w: ui_button_size(),
-        h: ui_button_size(),
-    }
 }
 
 pub fn controls_button_action_at(
@@ -270,6 +189,87 @@ pub fn draw_top_menu_toggle(frame: &mut [u8], width: u32, height: u32, open: boo
         glyph,
         UI_MENU_TEXT_SCALE,
     );
+}
+
+fn ui_button_size() -> usize {
+    UI_BUTTON_SIZE as usize
+}
+
+fn ui_button_margin() -> usize {
+    UI_BUTTON_MARGIN as usize
+}
+
+fn ui_menu_button_height() -> usize {
+    UI_MENU_BUTTON_HEIGHT as usize
+}
+
+fn to_screen_rect(rect: Rect) -> ScreenRect {
+    ScreenRect {
+        x: rect.x as u32,
+        y: rect.y as u32,
+        w: rect.w as u32,
+        h: rect.h as u32,
+    }
+}
+
+fn top_row_y() -> usize {
+    ui_button_margin()
+}
+
+fn top_row_center_x(width: usize) -> usize {
+    width.saturating_sub(ui_button_size()) / 2
+}
+
+fn top_menu_button_rect(width: usize) -> Rect {
+    Rect {
+        x: top_row_center_x(width),
+        y: top_row_y(),
+        w: ui_button_size(),
+        h: ui_menu_button_height(),
+    }
+}
+
+fn top_left_level_button_rect_inner() -> Rect {
+    Rect {
+        x: ui_button_margin(),
+        y: ui_button_margin(),
+        w: ui_button_size(),
+        h: ui_button_size(),
+    }
+}
+
+fn top_menu_button_hit_rect(width: usize) -> Rect {
+    let base = top_menu_button_rect(width);
+    let extra_w = base.w / 2;
+    let extra_h = base.h;
+    let hit_x = base.x.saturating_sub(extra_w / 2);
+    let hit_y = base.y.saturating_sub(extra_h / 2);
+    let hit_w = base.w + extra_w;
+    let hit_h = base.h + extra_h;
+    Rect {
+        x: hit_x,
+        y: hit_y,
+        w: hit_w,
+        h: hit_h,
+    }
+}
+
+fn bottom_left_button_rect(height: usize) -> Rect {
+    Rect {
+        x: ui_button_margin(),
+        y: height.saturating_sub(ui_button_margin() + ui_button_size()),
+        w: ui_button_size(),
+        h: ui_button_size(),
+    }
+}
+
+fn bottom_right_button_rect(width: usize, height: usize) -> Rect {
+    Rect {
+        x: width.saturating_sub(ui_button_margin() + ui_button_size()),
+        y: height.saturating_sub(ui_button_margin() + ui_button_size()),
+        w: ui_button_size(),
+        h: ui_button_size(),
+    }
 }
 
 fn draw_button(frame: &mut [u8], width: usize, height: usize, rect: Rect, label: &str) {

@@ -235,11 +235,16 @@ fn build_rewrite_plan(
 ) -> Option<RewritePlan> {
     let window_end = window_start + window_size;
     let mut replacements = Vec::with_capacity(window_size.saturating_sub(1));
-    for move_index in window_start..window_end {
+    for (move_index, destination) in endpoint_assignment
+        .iter()
+        .enumerate()
+        .take(window_end)
+        .skip(window_start)
+    {
         if move_index == removed_index {
             continue;
         }
-        replacements.push((move_index, endpoint_assignment[move_index]?));
+        replacements.push((move_index, (*destination)?));
     }
 
     Some(RewritePlan {

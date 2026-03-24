@@ -104,14 +104,16 @@ impl Renderer {
     }
 
     fn selected_box_bitmap(&mut self, size: u32) -> &[u8] {
-        self.selected_box_bitmap_cache.entry(size).or_insert_with(|| {
-            Self::rasterize_box_bitmap(
-                size,
-                self.theme.selected_box_primary,
-                self.theme.selected_box_highlight,
-                self.theme.selected_box_shadow,
-            )
-        })
+        self.selected_box_bitmap_cache
+            .entry(size)
+            .or_insert_with(|| {
+                Self::rasterize_box_bitmap(
+                    size,
+                    self.theme.selected_box_primary,
+                    self.theme.selected_box_highlight,
+                    self.theme.selected_box_shadow,
+                )
+            })
     }
 
     fn rasterize_box_bitmap(

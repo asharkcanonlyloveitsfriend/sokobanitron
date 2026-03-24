@@ -84,7 +84,7 @@ impl PlayerPathfinder {
             queue: Vec::with_capacity(cells),
             walkable,
             current_stamp: 1,
-            stats: PathfinderStats::default(),
+            stats: PathfinderStats,
         }
     }
 
@@ -100,12 +100,7 @@ impl PlayerPathfinder {
 
     #[inline]
     pub fn reset_stats(&mut self) {
-        self.stats = PathfinderStats::default();
-    }
-
-    #[inline]
-    fn idx(&self, row: usize, col: usize) -> usize {
-        row * self.width + col
+        self.stats = PathfinderStats;
     }
 
     pub fn can_find_path(
@@ -174,5 +169,10 @@ impl PlayerPathfinder {
         }
 
         false
+    }
+
+    #[inline]
+    fn idx(&self, row: usize, col: usize) -> usize {
+        row * self.width + col
     }
 }

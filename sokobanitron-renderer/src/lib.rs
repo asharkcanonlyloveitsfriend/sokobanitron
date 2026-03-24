@@ -60,48 +60,6 @@ impl PixelRect {
     }
 }
 
-fn to_pixel_rect(rect: ScreenRect) -> PixelRect {
-    PixelRect {
-        left: rect.x as i32,
-        top: rect.y as i32,
-        right: rect.x.saturating_add(rect.w) as i32,
-        bottom: rect.y.saturating_add(rect.h) as i32,
-    }
-}
-
-fn non_void_cells(board: &BoardView) -> Vec<(u32, u32)> {
-    let mut cells = Vec::new();
-    for y in 0..board.height() {
-        for x in 0..board.width() {
-            if board.tile(x, y) != TileKind::Void {
-                cells.push((x, y));
-            }
-        }
-    }
-    cells
-}
-
-fn overlaps_forbidden_buttons(
-    origin_x: i32,
-    origin_y: i32,
-    cell_size: u32,
-    non_void_cells: &[(u32, u32)],
-    forbidden: &[PixelRect],
-) -> bool {
-    let cell_size = cell_size as i32;
-    non_void_cells.iter().any(|(x, y)| {
-        let left = origin_x + (*x as i32 * cell_size);
-        let top = origin_y + (*y as i32 * cell_size);
-        let tile_rect = PixelRect {
-            left,
-            top,
-            right: left + cell_size,
-            bottom: top + cell_size,
-        };
-        forbidden.iter().any(|rect| tile_rect.intersects(*rect))
-    })
-}
-
 pub fn fit_board_viewport_for_controls(
     width: u32,
     height: u32,
@@ -183,6 +141,48 @@ pub fn fit_board_viewport_for_controls(
     );
     viewport.origin_y += top_safe_margin as i32;
     viewport
+}
+
+fn to_pixel_rect(rect: ScreenRect) -> PixelRect {
+    PixelRect {
+        left: rect.x as i32,
+        top: rect.y as i32,
+        right: rect.x.saturating_add(rect.w) as i32,
+        bottom: rect.y.saturating_add(rect.h) as i32,
+    }
+}
+
+fn non_void_cells(board: &BoardView) -> Vec<(u32, u32)> {
+    let mut cells = Vec::new();
+    for y in 0..board.height() {
+        for x in 0..board.width() {
+            if board.tile(x, y) != TileKind::Void {
+                cells.push((x, y));
+            }
+        }
+    }
+    cells
+}
+
+fn overlaps_forbidden_buttons(
+    origin_x: i32,
+    origin_y: i32,
+    cell_size: u32,
+    non_void_cells: &[(u32, u32)],
+    forbidden: &[PixelRect],
+) -> bool {
+    let cell_size = cell_size as i32;
+    non_void_cells.iter().any(|(x, y)| {
+        let left = origin_x + (*x as i32 * cell_size);
+        let top = origin_y + (*y as i32 * cell_size);
+        let tile_rect = PixelRect {
+            left,
+            top,
+            right: left + cell_size,
+            bottom: top + cell_size,
+        };
+        forbidden.iter().any(|rect| tile_rect.intersects(*rect))
+    })
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -389,6 +389,7 @@ impl Renderer {
         frame.copy_from_slice(&self.cached_background);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_board_on_frame(
         &mut self,
         frame: &mut [u8],

@@ -20,18 +20,6 @@ pub trait FrameSink {
     fn render_frame(&mut self, request: &FrameRequest) -> Result<(), Self::Error>;
 }
 
-fn gameplay_render_step(
-    controller: &GameplayController,
-    app_state: &AppState,
-    present_mode: PresentMode,
-) -> PresentationStep {
-    PresentationStep::Render(build_gameplay_frame_request(
-        controller,
-        app_state,
-        present_mode,
-    ))
-}
-
 pub fn build_presentation_plan(
     outcome: &GameplayTapOutcome,
     controller: &GameplayController,
@@ -63,6 +51,18 @@ pub fn execute_presentation_plan<S: FrameSink>(
     }
 
     Ok(())
+}
+
+fn gameplay_render_step(
+    controller: &GameplayController,
+    app_state: &AppState,
+    present_mode: PresentMode,
+) -> PresentationStep {
+    PresentationStep::Render(build_gameplay_frame_request(
+        controller,
+        app_state,
+        present_mode,
+    ))
 }
 
 #[cfg(test)]

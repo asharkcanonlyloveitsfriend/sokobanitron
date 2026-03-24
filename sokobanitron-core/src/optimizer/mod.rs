@@ -34,6 +34,27 @@ pub struct ReverseOptimizationStats {
     pub total_time: Duration,
 }
 
+pub fn optimize_box_move_paths_in_place(paths: &mut Vec<BoxMovePath>) {
+    optimize_adjacent_merge_in_place(paths);
+}
+
+pub fn optimize_reverse_solution_in_place(
+    input: &ReverseOptimizationInput,
+    paths: &mut Vec<BoxMovePath>,
+) -> bool {
+    optimize_reverse_solution_in_place_internal(input, paths, None)
+}
+
+/// Same optimizer as `optimize_reverse_solution_in_place`, plus profiling stats.
+pub fn optimize_reverse_solution_in_place_with_stats(
+    input: &ReverseOptimizationInput,
+    paths: &mut Vec<BoxMovePath>,
+) -> (bool, ReverseOptimizationStats) {
+    let mut stats = ReverseOptimizationStats::default();
+    let changed = optimize_reverse_solution_in_place_internal(input, paths, Some(&mut stats));
+    (changed, stats)
+}
+
 fn score(paths: &[BoxMovePath]) -> SolutionScore {
     SolutionScore {
         discrete_moves: paths.len(),
@@ -44,8 +65,6 @@ fn score(paths: &[BoxMovePath]) -> SolutionScore {
     }
 }
 
-// Cheap invariant helper used to compare terminal occupied box sets.
-// Candidate legality and realized paths still come from replay tracing.
 fn final_box_positions(start_boxes: &[Coord], paths: &[BoxMovePath]) -> Option<HashSet<Coord>> {
     let mut boxes = start_boxes.iter().copied().collect::<HashSet<_>>();
     for path in paths {
@@ -65,29 +84,33 @@ fn final_box_positions(start_boxes: &[Coord], paths: &[BoxMovePath]) -> Option<H
     Some(boxes)
 }
 
-pub fn optimize_box_move_paths_in_place(paths: &mut Vec<BoxMovePath>) {
-    optimize_adjacent_merge_in_place(paths);
+struct CandidateEval<'a> {
+    walkable: &'a HashSet<Coord>,
+    prefix_paths: &'a [BoxMovePath],
+    state_boxes: &'a [Coord],
+    state_player: Option<Coord>,
+    suffix_paths: &'a [BoxMovePath],
+    current_score: SolutionScore,
+    target_final_boxes: &'a HashSet<Coord>,
 }
 
 fn evaluate_candidate_paths(
-    walkable: &HashSet<Coord>,
-    prefix_paths: &[BoxMovePath],
-    state_boxes: &[Coord],
-    state_player: Option<Coord>,
-    suffix_paths: &[BoxMovePath],
-    current_score: SolutionScore,
-    target_final_boxes: &HashSet<Coord>,
+    candidate: CandidateEval<'_>,
     stats: &mut ReverseOptimizationStats,
 ) -> Option<(Vec<BoxMovePath>, SolutionScore)> {
     stats.replay_count += 1;
     let replay_started = Instant::now();
-    let replay_trace =
-        replay_reverse_solution_trace_from_state(walkable, state_boxes, state_player, suffix_paths);
+    let replay_trace = replay_reverse_solution_trace_from_state(
+        candidate.walkable,
+        candidate.state_boxes,
+        candidate.state_player,
+        candidate.suffix_paths,
+    );
     stats.replay_time += replay_started.elapsed();
     let replay_trace = replay_trace?;
 
-    let mut realized = Vec::with_capacity(prefix_paths.len() + replay_trace.steps.len());
-    realized.extend(prefix_paths.iter().cloned());
+    let mut realized = Vec::with_capacity(candidate.prefix_paths.len() + replay_trace.steps.len());
+    realized.extend(candidate.prefix_paths.iter().cloned());
     realized.extend(
         replay_trace
             .steps
@@ -102,12 +125,12 @@ fn evaluate_candidate_paths(
         .boxes
         .into_iter()
         .collect::<HashSet<_>>();
-    if &candidate_final_boxes != target_final_boxes {
+    if &candidate_final_boxes != candidate.target_final_boxes {
         return None;
     }
 
     let candidate_score = score(&realized);
-    (candidate_score < current_score).then_some((realized, candidate_score))
+    (candidate_score < candidate.current_score).then_some((realized, candidate_score))
 }
 
 fn optimize_reverse_solution_in_place_internal(
@@ -161,13 +184,15 @@ fn optimize_reverse_solution_in_place_internal(
                     (after.boxes.as_slice(), after.player)
                 };
                 let Some((realized, candidate_score)) = evaluate_candidate_paths(
-                    &walkable,
-                    &paths[..plan.window_start],
-                    prefix_boxes,
-                    prefix_player,
-                    &rewritten[plan.window_start..],
-                    current_score,
-                    &target_final_boxes,
+                    CandidateEval {
+                        walkable: &walkable,
+                        prefix_paths: &paths[..plan.window_start],
+                        state_boxes: prefix_boxes,
+                        state_player: prefix_player,
+                        suffix_paths: &rewritten[plan.window_start..],
+                        current_score,
+                        target_final_boxes: &target_final_boxes,
+                    },
                     &mut local_stats,
                 ) else {
                     return true;
@@ -197,23 +222,6 @@ fn optimize_reverse_solution_in_place_internal(
         *stats = local_stats;
     }
     *paths != before
-}
-
-pub fn optimize_reverse_solution_in_place(
-    input: &ReverseOptimizationInput,
-    paths: &mut Vec<BoxMovePath>,
-) -> bool {
-    optimize_reverse_solution_in_place_internal(input, paths, None)
-}
-
-/// Same optimizer as `optimize_reverse_solution_in_place`, plus profiling stats.
-pub fn optimize_reverse_solution_in_place_with_stats(
-    input: &ReverseOptimizationInput,
-    paths: &mut Vec<BoxMovePath>,
-) -> (bool, ReverseOptimizationStats) {
-    let mut stats = ReverseOptimizationStats::default();
-    let changed = optimize_reverse_solution_in_place_internal(input, paths, Some(&mut stats));
-    (changed, stats)
 }
 
 #[cfg(test)]

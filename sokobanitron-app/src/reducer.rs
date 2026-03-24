@@ -12,16 +12,6 @@ pub struct AppUpdate {
 
 const LEVEL_SELECT_PAGE_SIZE: usize = 4;
 
-fn level_select_start_index(level_count: usize, current_level: usize) -> usize {
-    if level_count <= LEVEL_SELECT_PAGE_SIZE || current_level == 0 {
-        0
-    } else if current_level >= level_count.saturating_sub(1) {
-        level_count.saturating_sub(LEVEL_SELECT_PAGE_SIZE)
-    } else {
-        current_level.saturating_sub(1)
-    }
-}
-
 pub fn apply_action(
     controller: &mut GameplayController,
     app_state: &mut AppState,
@@ -108,6 +98,16 @@ pub fn apply_action(
     }
 
     update
+}
+
+fn level_select_start_index(level_count: usize, current_level: usize) -> usize {
+    if level_count <= LEVEL_SELECT_PAGE_SIZE || current_level == 0 {
+        0
+    } else if current_level >= level_count.saturating_sub(1) {
+        level_count.saturating_sub(LEVEL_SELECT_PAGE_SIZE)
+    } else {
+        current_level.saturating_sub(1)
+    }
 }
 
 #[cfg(test)]

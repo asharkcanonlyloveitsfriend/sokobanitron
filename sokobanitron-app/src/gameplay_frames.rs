@@ -17,18 +17,6 @@ pub struct LevelSelectScreenRequest {
     pub page_start: usize,
 }
 
-pub(crate) fn build_gameplay_screen_request(
-    controller: &GameplayController,
-    _app_state: &AppState,
-) -> GameplayScreenRequest {
-    GameplayScreenRequest {
-        can_undo: controller.can_undo(),
-        can_restart: controller.can_restart(),
-        level_number: controller.current_level() + 1,
-        show_solved_overlay: controller.board().is_solved(),
-    }
-}
-
 pub fn build_gameplay_frame_request(
     controller: &GameplayController,
     app_state: &AppState,
@@ -67,6 +55,18 @@ pub fn build_current_frame_request(
         FrameRequest::GameplayMenu
     } else {
         build_current_gameplay_frame_request(controller, app_state)
+    }
+}
+
+pub(crate) fn build_gameplay_screen_request(
+    controller: &GameplayController,
+    _app_state: &AppState,
+) -> GameplayScreenRequest {
+    GameplayScreenRequest {
+        can_undo: controller.can_undo(),
+        can_restart: controller.can_restart(),
+        level_number: controller.current_level() + 1,
+        show_solved_overlay: controller.board().is_solved(),
     }
 }
 

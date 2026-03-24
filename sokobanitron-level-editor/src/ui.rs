@@ -104,6 +104,7 @@ pub fn draw_move_hint_pending(frame: &mut [u8], width: u32, height: u32, rect: S
     draw_centered_label(frame, width, height, rect, "?", scale, HINT_TEXT_COLOR);
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn draw_controls(
     frame: &mut [u8],
     width: u32,

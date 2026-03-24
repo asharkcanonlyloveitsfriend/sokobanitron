@@ -15,6 +15,66 @@ const KINDLE_PLAYER_BODY: [u8; 4] = [117, 117, 117, 255];
 const KINDLE_PLAYER_LIMB: [u8; 4] = [80, 80, 80, 255];
 
 impl KindleApp {
+    pub(crate) fn build_renderer() -> Renderer {
+        Renderer::with_overrides(RendererOverrides {
+            box_primary: Some(KINDLE_BOX_PRIMARY),
+            box_shadow: Some(KINDLE_BOX_SHADOW),
+            player_body: Some(KINDLE_PLAYER_BODY),
+            player_limb: Some(KINDLE_PLAYER_LIMB),
+            selected_box_primary: Some(config::KINDLE_SELECTED_BOX_PRIMARY),
+            selected_box_highlight: Some(config::KINDLE_SELECTED_BOX_HIGHLIGHT),
+            selected_box_shadow: Some(config::KINDLE_SELECTED_BOX_SHADOW),
+            ..RendererOverrides::default()
+        })
+    }
+
+    pub(crate) fn render(&mut self) -> Result<()> {
+        // Editor-side screens are rendered directly here.
+        if is_editor_menu_open(&self.app_state) {
+            let mut rgba = vec![0u8; config::WIDTH * config::HEIGHT * 4];
+            self.renderer.draw_background_only(
+                &mut rgba,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+            );
+            draw_controls_ui(
+                &mut rgba,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+                ControlsUiMode::MenuOpen,
+                false,
+                false,
+            );
+            draw_overlay_primary_action_button(
+                &mut rgba,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+                UiIcon::Manipulate,
+                [220, 220, 220, 255],
+            );
+            self.display.present_rgba(&rgba)
+        } else if matches!(active_screen(&self.app_state), AppScreen::Editor) {
+            let mut rgba = vec![0u8; config::WIDTH * config::HEIGHT * 4];
+            self.renderer.draw_background_only(
+                &mut rgba,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+            );
+            draw_controls_ui(
+                &mut rgba,
+                config::WIDTH as u32,
+                config::HEIGHT as u32,
+                ControlsUiMode::Gameplay,
+                false,
+                false,
+            );
+            self.display.present_rgba(&rgba)
+        } else {
+            let request = build_current_frame_request(&self.controller, &self.app_state);
+            self.render_request(&request)
+        }
+    }
+
     fn render_request(&mut self, request: &FrameRequest) -> Result<()> {
         match request {
             FrameRequest::Gameplay {
@@ -85,66 +145,6 @@ impl KindleApp {
                     self.display.present_rgba(&rgba)
                 }
             }
-        }
-    }
-
-    pub(crate) fn build_renderer() -> Renderer {
-        Renderer::with_overrides(RendererOverrides {
-            box_primary: Some(KINDLE_BOX_PRIMARY),
-            box_shadow: Some(KINDLE_BOX_SHADOW),
-            player_body: Some(KINDLE_PLAYER_BODY),
-            player_limb: Some(KINDLE_PLAYER_LIMB),
-            selected_box_primary: Some(config::KINDLE_SELECTED_BOX_PRIMARY),
-            selected_box_highlight: Some(config::KINDLE_SELECTED_BOX_HIGHLIGHT),
-            selected_box_shadow: Some(config::KINDLE_SELECTED_BOX_SHADOW),
-            ..RendererOverrides::default()
-        })
-    }
-
-    pub(crate) fn render(&mut self) -> Result<()> {
-        // Editor-side screens are rendered directly here.
-        if is_editor_menu_open(&self.app_state) {
-            let mut rgba = vec![0u8; config::WIDTH * config::HEIGHT * 4];
-            self.renderer.draw_background_only(
-                &mut rgba,
-                config::WIDTH as u32,
-                config::HEIGHT as u32,
-            );
-            draw_controls_ui(
-                &mut rgba,
-                config::WIDTH as u32,
-                config::HEIGHT as u32,
-                ControlsUiMode::MenuOpen,
-                false,
-                false,
-            );
-            draw_overlay_primary_action_button(
-                &mut rgba,
-                config::WIDTH as u32,
-                config::HEIGHT as u32,
-                UiIcon::Manipulate,
-                [220, 220, 220, 255],
-            );
-            self.display.present_rgba(&rgba)
-        } else if matches!(active_screen(&self.app_state), AppScreen::Editor) {
-            let mut rgba = vec![0u8; config::WIDTH * config::HEIGHT * 4];
-            self.renderer.draw_background_only(
-                &mut rgba,
-                config::WIDTH as u32,
-                config::HEIGHT as u32,
-            );
-            draw_controls_ui(
-                &mut rgba,
-                config::WIDTH as u32,
-                config::HEIGHT as u32,
-                ControlsUiMode::Gameplay,
-                false,
-                false,
-            );
-            self.display.present_rgba(&rgba)
-        } else {
-            let request = build_current_frame_request(&self.controller, &self.app_state);
-            self.render_request(&request)
         }
     }
 }

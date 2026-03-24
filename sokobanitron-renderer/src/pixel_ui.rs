@@ -85,6 +85,7 @@ fn draw_text(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_glyph(
     frame: &mut [u8],
     width: u32,

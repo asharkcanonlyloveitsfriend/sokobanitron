@@ -9,6 +9,41 @@ use sokobanitron_app::{
 };
 
 impl App {
+    pub(crate) fn render_current(&mut self) {
+        match active_screen(&self.app_state) {
+            AppScreen::Gameplay => self.render_active_gameplay_screen(),
+            AppScreen::Editor => self.render_editor_mode(),
+        }
+    }
+
+    pub(crate) fn render_active_gameplay_screen(&mut self) {
+        let request = build_current_frame_request(&self.controller, &self.app_state);
+        let _ = self.render_request(&request);
+    }
+
+    pub(crate) fn render_editor_mode(&mut self) {
+        if let Some(pixels) = &mut self.pixels {
+            let frame = pixels.frame_mut();
+            if is_editor_menu_open(&self.app_state) {
+                self.renderer
+                    .draw_background_only(frame, self.surface_width, self.surface_height);
+                draw_top_menu_toggle(frame, self.surface_width, self.surface_height, true);
+                draw_overlay_primary_action_button(
+                    frame,
+                    self.surface_width,
+                    self.surface_height,
+                    UiIcon::Manipulate,
+                    [220, 220, 220, 255],
+                );
+            } else {
+                self.editor_session
+                    .render(frame, self.surface_width, self.surface_height);
+                draw_top_menu_toggle(frame, self.surface_width, self.surface_height, false);
+            }
+            pixels.render().expect("render");
+        }
+    }
+
     fn render_request(&mut self, request: &FrameRequest) -> Result<(), ()> {
         match request {
             FrameRequest::Gameplay { screen, .. } => {
@@ -73,41 +108,6 @@ impl App {
             }
         }
         Ok(())
-    }
-
-    pub(crate) fn render_current(&mut self) {
-        match active_screen(&self.app_state) {
-            AppScreen::Gameplay => self.render_active_gameplay_screen(),
-            AppScreen::Editor => self.render_editor_mode(),
-        }
-    }
-
-    pub(crate) fn render_active_gameplay_screen(&mut self) {
-        let request = build_current_frame_request(&self.controller, &self.app_state);
-        let _ = self.render_request(&request);
-    }
-
-    pub(crate) fn render_editor_mode(&mut self) {
-        if let Some(pixels) = &mut self.pixels {
-            let frame = pixels.frame_mut();
-            if is_editor_menu_open(&self.app_state) {
-                self.renderer
-                    .draw_background_only(frame, self.surface_width, self.surface_height);
-                draw_top_menu_toggle(frame, self.surface_width, self.surface_height, true);
-                draw_overlay_primary_action_button(
-                    frame,
-                    self.surface_width,
-                    self.surface_height,
-                    UiIcon::Manipulate,
-                    [220, 220, 220, 255],
-                );
-            } else {
-                self.editor_session
-                    .render(frame, self.surface_width, self.surface_height);
-                draw_top_menu_toggle(frame, self.surface_width, self.surface_height, false);
-            }
-            pixels.render().expect("render");
-        }
     }
 }
 

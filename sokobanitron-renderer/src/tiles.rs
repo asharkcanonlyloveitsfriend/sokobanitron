@@ -50,6 +50,7 @@ impl Renderer {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_tile_edges_once(
     frame: &mut [u8],
     frame_width: u32,

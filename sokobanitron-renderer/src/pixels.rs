@@ -1,3 +1,4 @@
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn fill_rect(
     frame: &mut [u8],
     frame_width: u32,
@@ -26,6 +27,7 @@ pub(crate) fn fill_rect(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn blit_rgba(
     frame: &mut [u8],
     frame_width: u32,

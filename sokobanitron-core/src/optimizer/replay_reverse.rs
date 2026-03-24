@@ -144,7 +144,7 @@ pub(crate) fn replay_reverse_solution_trace_from_state(
             return None;
         }
 
-        let (grid, min_x, min_y) = build_grid(&walkable, &boxes, from, to, player)?;
+        let (grid, min_x, min_y) = build_grid(walkable, &boxes, from, to, player)?;
         let box_start = to_grid_position(from, min_x, min_y)?;
         let origin = to_grid_position(to, min_x, min_y)?;
         let player_start = player.and_then(|coord| to_grid_position(coord, min_x, min_y));

@@ -69,7 +69,7 @@ impl BoxPathfinder {
                 player_pos: player_start,
             },
             player_pathfinder: PlayerPathfinder::from_rows(planning_rows),
-            stats: PathfinderStats::default(),
+            stats: PathfinderStats,
             visited: vec![0u32; state_count],
             generation: 1,
             parents: vec![None; state_count],
@@ -88,95 +88,7 @@ impl BoxPathfinder {
 
     #[inline]
     pub fn reset_stats(&mut self) {
-        self.stats = PathfinderStats::default();
-    }
-
-    #[inline]
-    fn idx(&self, pos: Position) -> usize {
-        pos.row * self.width + pos.col
-    }
-
-    #[inline]
-    fn state_index(&self, state: State) -> usize {
-        let box_idx = self.idx(state.box_pos);
-        let player_idx = self.idx(state.player_pos);
-        box_idx * self.cell_count + player_idx
-    }
-
-    #[inline]
-    fn is_inside(&self, pos: Position) -> bool {
-        pos.row < self.height && pos.col < self.width
-    }
-
-    #[inline]
-    fn is_walkable(&self, pos: Position) -> bool {
-        self.walkable_grid[self.idx(pos)] != 0
-    }
-
-    fn offset_pos(pos: Position, dr: isize, dc: isize) -> Option<Position> {
-        let row = pos.row.checked_add_signed(dr)?;
-        let col = pos.col.checked_add_signed(dc)?;
-        Some(Position::new(row, col))
-    }
-
-    fn compute_dead_squares(&self, goal: Position) -> Vec<u8> {
-        let mut alive = vec![0u8; self.width * self.height];
-        let mut queue = VecDeque::new();
-
-        let enqueue = |p: Position, alive: &mut [u8], queue: &mut VecDeque<Position>| {
-            let idx = self.idx(p);
-            if alive[idx] == 0 {
-                alive[idx] = 1;
-                queue.push_back(p);
-            }
-        };
-
-        if !self.is_inside(goal) || !self.is_walkable(goal) {
-            let mut dead = vec![0u8; self.width * self.height];
-            for row in 0..self.height {
-                for col in 0..self.width {
-                    let pos = Position::new(row, col);
-                    if self.is_walkable(pos) {
-                        dead[self.idx(pos)] = 1;
-                    }
-                }
-            }
-            return dead;
-        }
-
-        enqueue(goal, &mut alive, &mut queue);
-
-        while let Some(cur) = queue.pop_front() {
-            for (dr, dc) in Self::DIRECTIONS {
-                let Some(prev) = Self::offset_pos(cur, -dr, -dc) else {
-                    continue;
-                };
-                let Some(push_pos) = Self::offset_pos(prev, -dr, -dc) else {
-                    continue;
-                };
-
-                if !self.is_inside(prev) || !self.is_inside(push_pos) {
-                    continue;
-                }
-                if !self.is_walkable(prev) || !self.is_walkable(push_pos) {
-                    continue;
-                }
-
-                enqueue(prev, &mut alive, &mut queue);
-            }
-        }
-
-        let mut dead = vec![0u8; self.width * self.height];
-        for row in 0..self.height {
-            for col in 0..self.width {
-                let pos = Position::new(row, col);
-                let idx = self.idx(pos);
-                if pos != goal && self.is_walkable(pos) && alive[idx] == 0 {
-                    dead[idx] = 1;
-                }
-            }
-        }
-        dead
+        self.stats = PathfinderStats;
     }
 
     pub fn find_box_path(&mut self, to: Position) -> Option<Vec<Position>> {
@@ -285,5 +197,93 @@ impl BoxPathfinder {
 
         reversed.reverse();
         reversed
+    }
+
+    #[inline]
+    fn idx(&self, pos: Position) -> usize {
+        pos.row * self.width + pos.col
+    }
+
+    #[inline]
+    fn state_index(&self, state: State) -> usize {
+        let box_idx = self.idx(state.box_pos);
+        let player_idx = self.idx(state.player_pos);
+        box_idx * self.cell_count + player_idx
+    }
+
+    #[inline]
+    fn is_inside(&self, pos: Position) -> bool {
+        pos.row < self.height && pos.col < self.width
+    }
+
+    #[inline]
+    fn is_walkable(&self, pos: Position) -> bool {
+        self.walkable_grid[self.idx(pos)] != 0
+    }
+
+    fn offset_pos(pos: Position, dr: isize, dc: isize) -> Option<Position> {
+        let row = pos.row.checked_add_signed(dr)?;
+        let col = pos.col.checked_add_signed(dc)?;
+        Some(Position::new(row, col))
+    }
+
+    fn compute_dead_squares(&self, goal: Position) -> Vec<u8> {
+        let mut alive = vec![0u8; self.width * self.height];
+        let mut queue = VecDeque::new();
+
+        let enqueue = |p: Position, alive: &mut [u8], queue: &mut VecDeque<Position>| {
+            let idx = self.idx(p);
+            if alive[idx] == 0 {
+                alive[idx] = 1;
+                queue.push_back(p);
+            }
+        };
+
+        if !self.is_inside(goal) || !self.is_walkable(goal) {
+            let mut dead = vec![0u8; self.width * self.height];
+            for row in 0..self.height {
+                for col in 0..self.width {
+                    let pos = Position::new(row, col);
+                    if self.is_walkable(pos) {
+                        dead[self.idx(pos)] = 1;
+                    }
+                }
+            }
+            return dead;
+        }
+
+        enqueue(goal, &mut alive, &mut queue);
+
+        while let Some(cur) = queue.pop_front() {
+            for (dr, dc) in Self::DIRECTIONS {
+                let Some(prev) = Self::offset_pos(cur, -dr, -dc) else {
+                    continue;
+                };
+                let Some(push_pos) = Self::offset_pos(prev, -dr, -dc) else {
+                    continue;
+                };
+
+                if !self.is_inside(prev) || !self.is_inside(push_pos) {
+                    continue;
+                }
+                if !self.is_walkable(prev) || !self.is_walkable(push_pos) {
+                    continue;
+                }
+
+                enqueue(prev, &mut alive, &mut queue);
+            }
+        }
+
+        let mut dead = vec![0u8; self.width * self.height];
+        for row in 0..self.height {
+            for col in 0..self.width {
+                let pos = Position::new(row, col);
+                let idx = self.idx(pos);
+                if pos != goal && self.is_walkable(pos) && alive[idx] == 0 {
+                    dead[idx] = 1;
+                }
+            }
+        }
+        dead
     }
 }

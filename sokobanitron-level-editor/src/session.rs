@@ -26,6 +26,7 @@ enum EditorMode {
 }
 
 #[derive(Clone, Copy)]
+#[allow(clippy::enum_variant_names)]
 enum PaintMode {
     SetFloor,
     SetBoxOnGoal,
@@ -368,7 +369,7 @@ impl LevelEditorSession {
         let mut board_rows = total_rows
             .saturating_sub(GRID_MARGIN_TILES.saturating_mul(2))
             .max(1);
-        if board_rows % 2 == 0 {
+        if board_rows.is_multiple_of(2) {
             board_rows = board_rows.saturating_sub(1).max(1);
         }
         board_rows

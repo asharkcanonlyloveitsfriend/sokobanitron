@@ -59,12 +59,6 @@ pub struct App {
 }
 
 impl App {
-    fn build_preview_board(level_ascii: &str) -> BoardView {
-        GameplayController::new(vec![level_ascii.to_string()], None)
-            .board()
-            .clone()
-    }
-
     pub fn new() -> Self {
         let preferences = GameplayPreferences::load(PREFERENCES_PATH);
         let levels = initial_levels();
@@ -91,6 +85,12 @@ impl App {
             surface_height: INITIAL_HEIGHT,
             editor_session: LevelEditorSession::new(),
         }
+    }
+
+    fn build_preview_board(level_ascii: &str) -> BoardView {
+        GameplayController::new(vec![level_ascii.to_string()], None)
+            .board()
+            .clone()
     }
 
     fn compute_viewport(
