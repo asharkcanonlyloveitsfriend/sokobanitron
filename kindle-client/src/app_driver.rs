@@ -36,6 +36,7 @@ fn default_fallback_level_ascii() -> String {
 
 pub struct KindleApp {
     pub(crate) renderer: renderer::Renderer,
+    pub(crate) rgba_frame: Vec<u8>,
     levels: Vec<String>,
     pub(crate) preview_boards: Vec<BoardView>,
     pub(crate) controller: GameplayController,
@@ -62,6 +63,7 @@ impl KindleApp {
         let viewport = Self::compute_viewport(controller.board());
         Ok(Self {
             renderer: Self::build_renderer(),
+            rgba_frame: vec![0; config::WIDTH * config::HEIGHT * 4],
             levels,
             preview_boards,
             controller,

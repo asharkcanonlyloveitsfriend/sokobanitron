@@ -31,14 +31,15 @@ impl KindleApp {
     pub(crate) fn render(&mut self) -> Result<()> {
         // Editor-side screens are rendered directly here.
         if is_editor_menu_open(&self.app_state) {
-            let mut rgba = vec![0u8; config::WIDTH * config::HEIGHT * 4];
-            self.renderer.draw_background_only(
-                &mut rgba,
+            let (renderer, rgba, display) =
+                (&mut self.renderer, &mut self.rgba_frame, &mut self.display);
+            renderer.draw_background_only(
+                rgba,
                 config::WIDTH as u32,
                 config::HEIGHT as u32,
             );
             draw_controls_ui(
-                &mut rgba,
+                rgba,
                 config::WIDTH as u32,
                 config::HEIGHT as u32,
                 ControlsUiMode::MenuOpen,
@@ -46,29 +47,30 @@ impl KindleApp {
                 false,
             );
             draw_overlay_primary_action_button(
-                &mut rgba,
+                rgba,
                 config::WIDTH as u32,
                 config::HEIGHT as u32,
                 UiIcon::Manipulate,
                 [220, 220, 220, 255],
             );
-            self.display.present_rgba(&rgba)
+            display.present_rgba(rgba)
         } else if matches!(active_screen(&self.app_state), AppScreen::Editor) {
-            let mut rgba = vec![0u8; config::WIDTH * config::HEIGHT * 4];
-            self.renderer.draw_background_only(
-                &mut rgba,
+            let (renderer, rgba, display) =
+                (&mut self.renderer, &mut self.rgba_frame, &mut self.display);
+            renderer.draw_background_only(
+                rgba,
                 config::WIDTH as u32,
                 config::HEIGHT as u32,
             );
             draw_controls_ui(
-                &mut rgba,
+                rgba,
                 config::WIDTH as u32,
                 config::HEIGHT as u32,
                 ControlsUiMode::Gameplay,
                 false,
                 false,
             );
-            self.display.present_rgba(&rgba)
+            display.present_rgba(rgba)
         } else {
             let request = build_current_frame_request(&self.controller, &self.app_state);
             self.render_request(&request)
@@ -81,58 +83,71 @@ impl KindleApp {
                 screen,
                 present_mode,
             } => {
-                let mut rgba = vec![0u8; config::WIDTH * config::HEIGHT * 4];
-                self.renderer.draw_gameplay_screen(
-                    &mut rgba,
+                let (renderer, rgba, display, controller, viewport) = (
+                    &mut self.renderer,
+                    &mut self.rgba_frame,
+                    &mut self.display,
+                    &self.controller,
+                    &self.viewport,
+                );
+                renderer.draw_gameplay_screen(
+                    rgba,
                     config::WIDTH as u32,
                     config::HEIGHT as u32,
-                    self.controller.board(),
-                    &self.viewport,
+                    controller.board(),
+                    viewport,
                     screen,
                 );
                 if matches!(present_mode, PresentMode::FastPartial) {
-                    self.display.present_rgba_fast_partial(&rgba)
+                    display.present_rgba_fast_partial(rgba)
                 } else {
-                    self.display.present_rgba(&rgba)
+                    display.present_rgba(rgba)
                 }
             }
             FrameRequest::GameplayMenu => {
-                let mut rgba = vec![0u8; config::WIDTH * config::HEIGHT * 4];
-                self.renderer.draw_background_only(
-                    &mut rgba,
+                let (renderer, rgba, display) =
+                    (&mut self.renderer, &mut self.rgba_frame, &mut self.display);
+                renderer.draw_background_only(
+                    rgba,
                     config::WIDTH as u32,
                     config::HEIGHT as u32,
                 );
-                draw_top_menu_toggle(&mut rgba, config::WIDTH as u32, config::HEIGHT as u32, true);
+                draw_top_menu_toggle(rgba, config::WIDTH as u32, config::HEIGHT as u32, true);
                 draw_overlay_primary_action_button(
-                    &mut rgba,
+                    rgba,
                     config::WIDTH as u32,
                     config::HEIGHT as u32,
                     UiIcon::Draw,
                     [220, 220, 220, 255],
                 );
-                self.display.present_rgba(&rgba)
+                display.present_rgba(rgba)
             }
             FrameRequest::LevelSelect {
                 screen,
                 present_mode,
             } => {
-                let mut rgba = vec![0u8; config::WIDTH * config::HEIGHT * 4];
-                self.renderer.draw_background_only(
-                    &mut rgba,
+                let (renderer, rgba, display, preview_boards, controller) = (
+                    &mut self.renderer,
+                    &mut self.rgba_frame,
+                    &mut self.display,
+                    &self.preview_boards,
+                    &self.controller,
+                );
+                renderer.draw_background_only(
+                    rgba,
                     config::WIDTH as u32,
                     config::HEIGHT as u32,
                 );
-                self.renderer.draw_level_select_menu_contents(
-                    &mut rgba,
+                renderer.draw_level_select_menu_contents(
+                    rgba,
                     config::WIDTH as u32,
                     config::HEIGHT as u32,
-                    &self.preview_boards,
-                    self.controller.current_level(),
+                    preview_boards,
+                    controller.current_level(),
                     screen.page_start,
                 );
                 draw_controls_ui(
-                    &mut rgba,
+                    rgba,
                     config::WIDTH as u32,
                     config::HEIGHT as u32,
                     ControlsUiMode::MenuOpen,
@@ -140,9 +155,9 @@ impl KindleApp {
                     false,
                 );
                 if matches!(present_mode, PresentMode::FastPartial) {
-                    self.display.present_rgba_fast_partial(&rgba)
+                    display.present_rgba_fast_partial(rgba)
                 } else {
-                    self.display.present_rgba(&rgba)
+                    display.present_rgba(rgba)
                 }
             }
         }
