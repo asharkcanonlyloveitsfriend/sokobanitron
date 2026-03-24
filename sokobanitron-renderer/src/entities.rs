@@ -6,25 +6,6 @@ fn rgb_hex(color: [u8; 4]) -> String {
 }
 
 impl Renderer {
-    fn player_sprite_rect(
-        &self,
-        board: &BoardView,
-        viewport: &BoardViewport,
-    ) -> Option<(i32, i32, u32)> {
-        let (x, y) = board.player()?;
-        let (cell_x, cell_y, cell_w, cell_h) = viewport.cell_to_screen_rect(x, y);
-        let inset = (cell_w / 10).max(1);
-        let player_x = cell_x + inset as i32;
-        let player_y = cell_y + inset as i32;
-        let player_w = cell_w.saturating_sub(inset * 2);
-        let player_h = cell_h.saturating_sub(inset * 2);
-        if player_w == 0 || player_h == 0 {
-            return None;
-        }
-        let icon_size = player_w.min(player_h);
-        Some((player_x, player_y, icon_size))
-    }
-
     pub(crate) fn draw_boxes(
         &mut self,
         frame: &mut [u8],
@@ -92,46 +73,69 @@ impl Renderer {
         );
     }
 
+    fn player_sprite_rect(
+        &self,
+        board: &BoardView,
+        viewport: &BoardViewport,
+    ) -> Option<(i32, i32, u32)> {
+        let (x, y) = board.player()?;
+        let (cell_x, cell_y, cell_w, cell_h) = viewport.cell_to_screen_rect(x, y);
+        let inset = (cell_w / 10).max(1);
+        let player_x = cell_x + inset as i32;
+        let player_y = cell_y + inset as i32;
+        let player_w = cell_w.saturating_sub(inset * 2);
+        let player_h = cell_h.saturating_sub(inset * 2);
+        if player_w == 0 || player_h == 0 {
+            return None;
+        }
+        let icon_size = player_w.min(player_h);
+        Some((player_x, player_y, icon_size))
+    }
+
     fn box_bitmap(&mut self, size: u32) -> &[u8] {
         self.box_bitmap_cache.entry(size).or_insert_with(|| {
-            let c1 = rgb_hex(self.theme.box_primary);
-            let c2 = rgb_hex(self.theme.box_highlight);
-            let c3 = rgb_hex(self.theme.box_shadow);
-            let svg = format!(
-                "<svg xmlns='http://www.w3.org/2000/svg' width='{s}' height='{s}' viewBox='0 0 100 100'>\
-                 <path d='M28,14L72,14A14,14 0,0 1,86 28L86,72A14,14 0,0 1,72 86L28,86A14,14 0,0 1,14 72L14,28A14,14 0,0 1,28 14z' fill='{c1}'/>\
-                 <path d='M27,20L37,20A7,7 0,0 1,44 27L44,27A7,7 0,0 1,37 34L27,34A7,7 0,0 1,20 27L20,27A7,7 0,0 1,27 20z' fill='{c2}'/>\
-                 <path d='M67,60L71,60A7,7 0,0 1,78 67L78,71A7,7 0,0 1,71 78L67,78A7,7 0,0 1,60 71L60,67A7,7 0,0 1,67 60z' fill='{c3}'/>\
-                 </svg>",
-                s = size,
-                c1 = c1,
-                c2 = c2,
-                c3 = c3,
-            );
-
-            rasterize_svg(&svg, size)
+            Self::rasterize_box_bitmap(
+                size,
+                self.theme.box_primary,
+                self.theme.box_highlight,
+                self.theme.box_shadow,
+            )
         })
     }
 
     fn selected_box_bitmap(&mut self, size: u32) -> &[u8] {
         self.selected_box_bitmap_cache.entry(size).or_insert_with(|| {
-            let c1 = rgb_hex(self.theme.selected_box_primary);
-            let c2 = rgb_hex(self.theme.selected_box_highlight);
-            let c3 = rgb_hex(self.theme.selected_box_shadow);
-            let svg = format!(
-                "<svg xmlns='http://www.w3.org/2000/svg' width='{s}' height='{s}' viewBox='0 0 100 100'>\
-                 <path d='M28,14L72,14A14,14 0,0 1,86 28L86,72A14,14 0,0 1,72 86L28,86A14,14 0,0 1,14 72L14,28A14,14 0,0 1,28 14z' fill='{c1}'/>\
-                 <path d='M27,20L37,20A7,7 0,0 1,44 27L44,27A7,7 0,0 1,37 34L27,34A7,7 0,0 1,20 27L20,27A7,7 0,0 1,27 20z' fill='{c2}'/>\
-                 <path d='M67,60L71,60A7,7 0,0 1,78 67L78,71A7,7 0,0 1,71 78L67,78A7,7 0,0 1,60 71L60,67A7,7 0,0 1,67 60z' fill='{c3}'/>\
-                 </svg>",
-                s = size,
-                c1 = c1,
-                c2 = c2,
-                c3 = c3,
-            );
-
-            rasterize_svg(&svg, size)
+            Self::rasterize_box_bitmap(
+                size,
+                self.theme.selected_box_primary,
+                self.theme.selected_box_highlight,
+                self.theme.selected_box_shadow,
+            )
         })
+    }
+
+    fn rasterize_box_bitmap(
+        size: u32,
+        primary: [u8; 4],
+        highlight: [u8; 4],
+        shadow: [u8; 4],
+    ) -> Vec<u8> {
+        let c1 = rgb_hex(primary);
+        let c2 = rgb_hex(highlight);
+        let c3 = rgb_hex(shadow);
+        let svg = format!(
+            "<svg xmlns='http://www.w3.org/2000/svg' width='{s}' height='{s}' viewBox='0 0 100 100'>\
+             <path d='M28,14L72,14A14,14 0,0 1,86 28L86,72A14,14 0,0 1,72 86L28,86A14,14 0,0 1,14 72L14,28A14,14 0,0 1,28 14z' fill='{c1}'/>\
+             <path d='M27,20L37,20A7,7 0,0 1,44 27L44,27A7,7 0,0 1,37 34L27,34A7,7 0,0 1,20 27L20,27A7,7 0,0 1,27 20z' fill='{c2}'/>\
+             <path d='M67,60L71,60A7,7 0,0 1,78 67L78,71A7,7 0,0 1,71 78L67,78A7,7 0,0 1,60 71L60,67A7,7 0,0 1,67 60z' fill='{c3}'/>\
+             </svg>",
+            s = size,
+            c1 = c1,
+            c2 = c2,
+            c3 = c3,
+        );
+
+        rasterize_svg(&svg, size)
     }
 
     fn player_bitmap(&mut self, size: u32) -> &[u8] {
