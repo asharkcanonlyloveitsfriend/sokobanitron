@@ -1,4 +1,5 @@
-use crate::{ScreenRect, draw_icon_bits_in_rect};
+use crate::layout::ScreenRect;
+use crate::renderer::draw_icon_bits_in_rect;
 
 pub const UI_ICON_SIZE: usize = 9;
 pub const UI_ICON_SCALE: usize = 3;

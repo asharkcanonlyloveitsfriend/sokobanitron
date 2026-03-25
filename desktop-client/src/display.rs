@@ -1,6 +1,7 @@
 use crate::app_driver::App;
-use renderer::{
-    ControlsUiMode, draw_controls_ui, draw_overlay_primary_action_button, draw_top_menu_toggle,
+use presentation::layout::ControlsUiMode;
+use presentation::renderer::{
+    draw_controls_ui, draw_overlay_primary_action_button, draw_top_menu_toggle,
 };
 use sokobanitron_app::{
     FrameRequest, FrameSink, active_screen, build_current_editor_frame_request,

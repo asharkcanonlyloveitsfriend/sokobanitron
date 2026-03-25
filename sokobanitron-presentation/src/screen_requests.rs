@@ -1,4 +1,5 @@
-use crate::{BoardViewport, ScreenRect, UiIcon};
+use crate::assets::UiIcon;
+use crate::layout::{BoardViewport, ScreenRect};
 use sokobanitron_gameplay::BoardView;
 use sokobanitron_level_editor::PullHintStatus;
 

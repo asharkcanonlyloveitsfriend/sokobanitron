@@ -1,4 +1,4 @@
-use crate::{Renderer, pixels::fill_rect};
+use super::{Renderer, pixels::fill_rect};
 
 const TOP_TEXT: &str = "YOU";
 const BOTTOM_TEXT: &str = "WIN";

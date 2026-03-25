@@ -1,5 +1,8 @@
-use crate::{BoardViewport, Renderer, pixels::blit_rgba, sprites::rasterize_svg};
+use crate::assets::rasterize_svg;
+use crate::layout::BoardViewport;
 use sokobanitron_gameplay::BoardView;
+
+use super::{Renderer, pixels::blit_rgba};
 
 fn rgb_hex(color: [u8; 4]) -> String {
     format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2])

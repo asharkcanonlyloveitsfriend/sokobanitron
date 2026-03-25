@@ -1,4 +1,4 @@
-use crate::controls::ScreenRect;
+use crate::layout::ScreenRect;
 
 pub const PIXEL_FONT_HEIGHT: usize = 7;
 

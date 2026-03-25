@@ -1,5 +1,6 @@
 use crate::{config, platform};
-use renderer::{BoardViewport, fit_board_viewport_for_controls};
+use presentation::layout::{BoardViewport, fit_board_viewport_for_controls};
+use presentation::renderer::Renderer;
 use sokobanitron_app::{
     AppAction, AppDriverContext, AppInput, AppState, GameplayInputContext,
     apply_action_and_present_in_context, gameplay_pointer_tap, interpret_input,
@@ -12,7 +13,7 @@ use sokobanitron_gameplay::{
 use std::io::Result;
 
 pub struct KindleApp {
-    pub(crate) renderer: renderer::Renderer,
+    pub(crate) renderer: Renderer,
     pub(crate) rgba_frame: Vec<u8>,
     levels: Vec<String>,
     pub(crate) preview_boards: Vec<BoardView>,

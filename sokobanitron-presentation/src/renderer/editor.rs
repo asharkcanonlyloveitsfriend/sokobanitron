@@ -1,11 +1,14 @@
-use crate::{
-    BoardViewport, EditorMenuScreenRequest, EditorScreenRequest, PIXEL_FONT_HEIGHT, Renderer,
-    ScreenRect, UI_BUTTON_MARGIN, UI_BUTTON_SIZE, UiIcon, bottom_left_corner_button_rect,
-    bottom_right_corner_button_rect, draw_centered_text_in_rect,
-    draw_overlay_primary_action_button, draw_top_menu_toggle, draw_ui_icon_in_rect,
-    measure_text_width, top_left_level_button_rect,
+use crate::assets::{UiIcon, draw_ui_icon_in_rect};
+use crate::layout::{
+    ScreenRect, editor_bottom_left_button_rect, editor_bottom_right_button_rect,
+    top_left_level_button_rect,
 };
+use crate::screen_requests::{EditorMenuScreenRequest, EditorScreenRequest};
 use sokobanitron_level_editor::PullHintStatus;
+
+use super::Renderer;
+use super::chrome::{draw_overlay_primary_action_button, draw_top_menu_toggle};
+use super::pixel_ui::{PIXEL_FONT_HEIGHT, draw_centered_text_in_rect, measure_text_width};
 
 const BUTTON_TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
 const HINT_TEXT_COLOR: [u8; 4] = [172, 172, 172, 255];
@@ -165,19 +168,4 @@ fn draw_count_label(
     let max_fit_scale = scale_x.min(scale_y).max(1);
     let scale = ((max_fit_scale * 5) / 25).max(1);
     draw_centered_text_in_rect(frame, width, height, rect, text, scale, 0, color);
-}
-
-pub fn editor_bottom_left_button_rect(height: u32) -> ScreenRect {
-    bottom_left_corner_button_rect(height)
-}
-
-pub fn editor_bottom_right_button_rect(width: u32, height: u32) -> ScreenRect {
-    bottom_right_corner_button_rect(width, height)
-}
-
-pub fn editor_viewport_size(width: u32, height: u32, viewport: &BoardViewport) -> (u32, u32) {
-    (
-        width.max(viewport.board_pixel_width + UI_BUTTON_MARGIN * 2),
-        height.max(viewport.board_pixel_height + UI_BUTTON_SIZE),
-    )
 }

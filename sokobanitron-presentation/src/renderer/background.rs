@@ -1,4 +1,4 @@
-use crate::Renderer;
+use super::Renderer;
 use image::{ImageBuffer, Rgba, RgbaImage, imageops};
 
 impl Renderer {

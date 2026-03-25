@@ -1,7 +1,8 @@
 use crate::{app_driver::KindleApp, config};
-use renderer::{
-    ControlsUiMode, Renderer, RendererOverrides, draw_controls_ui,
-    draw_overlay_primary_action_button, draw_top_menu_toggle,
+use presentation::layout::ControlsUiMode;
+use presentation::renderer::{
+    Renderer, RendererOverrides, draw_controls_ui, draw_overlay_primary_action_button,
+    draw_top_menu_toggle,
 };
 use sokobanitron_app::{
     FrameRequest, FrameSink, PresentMode, build_current_frame_request, is_gameplay_screen,

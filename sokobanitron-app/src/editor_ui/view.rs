@@ -4,7 +4,7 @@
 //! it shapes editor domain state into a visible window and viewport, but it does not
 //! own editor commands, undo/history, or any drawing logic.
 
-use renderer::{
+use presentation::layout::{
     BoardViewport, ScreenRect, editor_bottom_left_button_rect, editor_bottom_right_button_rect,
 };
 use sokobanitron_gameplay::{BoardView, TileKind};

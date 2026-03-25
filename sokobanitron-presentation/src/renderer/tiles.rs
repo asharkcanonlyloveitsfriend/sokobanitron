@@ -1,5 +1,7 @@
-use crate::{BoardViewport, Renderer, pixels::fill_rect};
+use crate::layout::BoardViewport;
 use sokobanitron_gameplay::{BoardView, TileKind};
+
+use super::{Renderer, pixels::fill_rect};
 
 impl Renderer {
     pub(crate) fn draw_floor_tiles(

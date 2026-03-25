@@ -37,7 +37,7 @@ pub use present::{
     FrameSink, PresentationPlan, PresentationStep, build_presentation_plan,
     execute_presentation_plan,
 };
+pub use presentation::screen_requests::{GameplayScreenRequest, LevelSelectScreenRequest};
 pub use presentation_profile::PresentMode;
 pub use reducer::{AppUpdate, apply_action};
-pub use renderer::{GameplayScreenRequest, LevelSelectScreenRequest};
 pub use ui_state::{AppOverlay, AppScreen, UiState};

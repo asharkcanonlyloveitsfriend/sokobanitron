@@ -6,9 +6,10 @@
 use crate::AppState;
 use crate::frame::FrameRequest;
 use crate::overlay::is_editor_menu_open;
-use renderer::{
+use presentation::assets::UiIcon;
+use presentation::layout::ScreenRect;
+use presentation::screen_requests::{
     EditorCountOverlay, EditorHintOverlay, EditorMenuScreenRequest, EditorScreenRequest,
-    ScreenRect, UiIcon,
 };
 use sokobanitron_level_editor::{EditorMode, EditorSnapshot, LevelEditor};
 

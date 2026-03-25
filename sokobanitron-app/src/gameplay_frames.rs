@@ -2,8 +2,9 @@ use crate::app_state::AppState;
 use crate::frame::FrameRequest;
 use crate::overlay::{is_gameplay_menu_open, level_select_page_start};
 use crate::presentation_profile::PresentMode;
-use renderer::{
-    GameplayMenuScreenRequest, GameplayScreenRequest, LevelSelectScreenRequest, UiIcon,
+use presentation::assets::UiIcon;
+use presentation::screen_requests::{
+    GameplayMenuScreenRequest, GameplayScreenRequest, LevelSelectScreenRequest,
 };
 use sokobanitron_gameplay::GameplayController;
 
@@ -68,7 +69,7 @@ pub(crate) fn build_gameplay_screen_request(
 mod tests {
     use super::{build_current_frame_request, build_level_select_frame_request};
     use crate::{AppOverlay, AppState, FrameRequest, PresentMode};
-    use renderer::GameplayMenuScreenRequest;
+    use presentation::screen_requests::GameplayMenuScreenRequest;
     use sokobanitron_gameplay::GameplayController;
 
     fn controller() -> GameplayController {

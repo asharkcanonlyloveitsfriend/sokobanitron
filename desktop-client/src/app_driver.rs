@@ -1,5 +1,6 @@
 use pixels::{Pixels, SurfaceTexture};
-use renderer::{BoardViewport, Renderer, fit_board_viewport_for_controls};
+use presentation::layout::{BoardViewport, fit_board_viewport_for_controls};
+use presentation::renderer::Renderer;
 use sokobanitron_app::{
     AppAction, AppDriverContext, AppInput, AppState, GameplayInputContext, PointerPhase,
     apply_action_and_present_in_context, editor_cursor_moved, editor_mouse_pressed,

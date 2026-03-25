@@ -7,7 +7,7 @@ members = [
     "desktop-client",
     "sokobanitron-level-editor",
     "kindle-client",
-    "sokobanitron-renderer",
+    "sokobanitron-presentation",
 ]
 
 resolver = "2"

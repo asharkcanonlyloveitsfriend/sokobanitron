@@ -2,11 +2,12 @@ use crate::AppInput;
 use crate::pointer::{
     MOUSE_POINTER_ID, PointerEvent, PointerGesture, PointerGestureState, PointerPhase,
 };
-use renderer::{
-    BoardViewport, ControlsButtonAction, MenuNavAction, controls_button_action_at,
+use presentation::hit_test::{
+    ControlsButtonAction, MenuNavAction, controls_button_action_at,
     level_select_menu_nav_action_at, level_select_menu_start_for_nav, level_select_menu_target_at,
-    overlay_primary_action_button_contains, top_left_level_button_rect,
+    overlay_primary_action_button_contains,
 };
+use presentation::layout::{BoardViewport, top_left_level_button_rect};
 use sokobanitron_gameplay::BoardView;
 use std::time::Instant;
 

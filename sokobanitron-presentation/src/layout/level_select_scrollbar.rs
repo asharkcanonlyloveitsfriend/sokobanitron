@@ -1,4 +1,6 @@
-use crate::{BOARD_VERTICAL_MARGIN, UI_BUTTON_MARGIN, UI_BUTTON_SIZE, icons::UI_ICON_SCALE};
+use crate::assets::UI_ICON_SCALE;
+
+use super::{BOARD_VERTICAL_MARGIN, UI_BUTTON_MARGIN, UI_BUTTON_SIZE};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ScrollbarTapTarget {
@@ -10,31 +12,31 @@ pub(crate) enum ScrollbarTapTarget {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct ScrollbarBase {
-    rail_x: i32,
-    rail_w: u32,
-    content_top: i32,
-    content_bottom: i32,
-    track_top: i32,
-    track_bottom: i32,
-    line_x: i32,
-    line_w: u32,
-    indicator_x: i32,
-    indicator_w: u32,
-    thumb_x: i32,
-    thumb_w: u32,
-    top_indicator_y: i32,
-    bottom_indicator_y: i32,
+pub(crate) struct ScrollbarBase {
+    pub(crate) rail_x: i32,
+    pub(crate) rail_w: u32,
+    pub(crate) content_top: i32,
+    pub(crate) content_bottom: i32,
+    pub(crate) track_top: i32,
+    pub(crate) track_bottom: i32,
+    pub(crate) line_x: i32,
+    pub(crate) line_w: u32,
+    pub(crate) indicator_x: i32,
+    pub(crate) indicator_w: u32,
+    pub(crate) thumb_x: i32,
+    pub(crate) thumb_w: u32,
+    pub(crate) top_indicator_y: i32,
+    pub(crate) bottom_indicator_y: i32,
 }
 
 #[derive(Clone, Copy, Debug)]
-struct ScrollbarLayout {
-    base: ScrollbarBase,
-    thumb_top: i32,
-    thumb_bottom: i32,
-    current_y: i32,
-    current_band_top: i32,
-    current_band_bottom: i32,
+pub(crate) struct ScrollbarLayout {
+    pub(crate) base: ScrollbarBase,
+    pub(crate) thumb_top: i32,
+    pub(crate) thumb_bottom: i32,
+    pub(crate) current_y: i32,
+    pub(crate) current_band_top: i32,
+    pub(crate) current_band_bottom: i32,
 }
 
 pub(crate) fn right_rail_width(width: u32) -> u32 {
@@ -92,88 +94,6 @@ pub(crate) fn tap_target_at(
         return Some(ScrollbarTapTarget::PageDown);
     }
     None
-}
-
-pub(crate) fn draw(
-    frame: &mut [u8],
-    frame_width: u32,
-    frame_height: u32,
-    level_count: usize,
-    visible_count: usize,
-    page_start: usize,
-    return_start: usize,
-) {
-    let Some(layout) = layout(
-        frame_width,
-        frame_height,
-        level_count,
-        visible_count,
-        page_start,
-        return_start,
-    ) else {
-        return;
-    };
-
-    let base = layout.base;
-    let line_color = [188, 188, 188, 255];
-    let jump_color = [214, 214, 214, 255];
-    let thumb_color = [228, 228, 228, 255];
-    let current_color = [246, 246, 246, 255];
-
-    draw_filled_rect(
-        frame,
-        frame_width,
-        frame_height,
-        base.line_x,
-        base.track_top,
-        base.line_w,
-        base.track_bottom.saturating_sub(base.track_top).max(1) as u32,
-        line_color,
-    );
-
-    draw_jump_indicator(
-        frame,
-        frame_width,
-        frame_height,
-        base.indicator_x,
-        base.top_indicator_y,
-        base.indicator_w,
-        base.line_w,
-        true,
-        jump_color,
-    );
-    draw_jump_indicator(
-        frame,
-        frame_width,
-        frame_height,
-        base.indicator_x,
-        base.bottom_indicator_y,
-        base.indicator_w,
-        base.line_w,
-        false,
-        jump_color,
-    );
-
-    draw_filled_rect(
-        frame,
-        frame_width,
-        frame_height,
-        base.thumb_x,
-        layout.thumb_top,
-        base.thumb_w,
-        layout.thumb_bottom.saturating_sub(layout.thumb_top).max(1) as u32,
-        thumb_color,
-    );
-    draw_filled_rect(
-        frame,
-        frame_width,
-        frame_height,
-        base.indicator_x,
-        layout.current_y - base.line_w as i32 / 2,
-        base.indicator_w,
-        base.line_w,
-        current_color,
-    );
 }
 
 fn max_start(level_count: usize, visible_count: usize) -> usize {
@@ -246,7 +166,7 @@ fn map_start_to_track_y(start: usize, max_start: usize, track_top: i32, track_bo
     track_top + ((start as i64 * track_span) / max_start as i64) as i32
 }
 
-fn layout(
+pub(crate) fn layout(
     width: u32,
     height: u32,
     level_count: usize,
@@ -289,84 +209,6 @@ fn layout(
         current_band_top: current_y - current_band_half,
         current_band_bottom: current_y + current_band_half + 1,
     })
-}
-
-#[allow(clippy::too_many_arguments)]
-fn draw_filled_rect(
-    frame: &mut [u8],
-    frame_width: u32,
-    frame_height: u32,
-    x: i32,
-    y: i32,
-    w: u32,
-    h: u32,
-    color: [u8; 4],
-) {
-    if w == 0 || h == 0 {
-        return;
-    }
-    let fw = frame_width as i32;
-    let fh = frame_height as i32;
-    let x0 = x.clamp(0, fw);
-    let y0 = y.clamp(0, fh);
-    let x1 = (x + w as i32).clamp(0, fw);
-    let y1 = (y + h as i32).clamp(0, fh);
-    if x0 >= x1 || y0 >= y1 {
-        return;
-    }
-    for yy in y0..y1 {
-        for xx in x0..x1 {
-            let idx = ((yy as u32 * frame_width + xx as u32) * 4) as usize;
-            frame[idx..idx + 4].copy_from_slice(&color);
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn draw_jump_indicator(
-    frame: &mut [u8],
-    frame_width: u32,
-    frame_height: u32,
-    x: i32,
-    center_y: i32,
-    width: u32,
-    thickness: u32,
-    secondary_below: bool,
-    color: [u8; 4],
-) {
-    let thickness = thickness.max(1);
-    let y = center_y - thickness as i32 / 2;
-    let inset_w = width
-        .saturating_sub(thickness.saturating_mul(2))
-        .max(thickness);
-    let inset_x = x + ((width.saturating_sub(inset_w)) / 2) as i32;
-    let offset = thickness as i32 * 2;
-    let inset_y = if secondary_below {
-        y + offset
-    } else {
-        y - offset
-    };
-
-    draw_filled_rect(
-        frame,
-        frame_width,
-        frame_height,
-        x,
-        y,
-        width,
-        thickness,
-        color,
-    );
-    draw_filled_rect(
-        frame,
-        frame_width,
-        frame_height,
-        inset_x,
-        inset_y,
-        inset_w,
-        thickness,
-        color,
-    );
 }
 
 #[cfg(test)]

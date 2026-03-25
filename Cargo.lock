@@ -574,7 +574,7 @@ dependencies = [
  "sokobanitron-app",
  "sokobanitron-gameplay",
  "sokobanitron-level-editor",
- "sokobanitron-renderer",
+ "sokobanitron-presentation",
  "winit",
 ]
 
@@ -1044,7 +1044,7 @@ dependencies = [
  "sokobanitron-app",
  "sokobanitron-core",
  "sokobanitron-gameplay",
- "sokobanitron-renderer",
+ "sokobanitron-presentation",
 ]
 
 [[package]]
@@ -2143,7 +2143,7 @@ version = "0.1.0"
 dependencies = [
  "sokobanitron-gameplay",
  "sokobanitron-level-editor",
- "sokobanitron-renderer",
+ "sokobanitron-presentation",
 ]
 
 [[package]]
@@ -2181,7 +2181,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sokobanitron-renderer"
+name = "sokobanitron-presentation"
 version = "0.1.0"
 dependencies = [
  "font8x8",

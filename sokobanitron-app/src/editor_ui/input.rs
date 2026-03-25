@@ -10,10 +10,10 @@ use crate::pointer::{
     MOUSE_POINTER_ID, PointerContact, PointerEvent, PointerGesture, PointerId, PointerPhase,
 };
 use crate::ui_state::{AppOverlay, AppScreen};
-use renderer::{
-    ControlsButtonAction, overlay_primary_action_button_contains, top_left_level_button_rect,
-    top_menu_toggle_button_contains,
+use presentation::hit_test::{
+    ControlsButtonAction, overlay_primary_action_button_contains, top_menu_toggle_button_contains,
 };
+use presentation::layout::top_left_level_button_rect;
 use sokobanitron_level_editor::{EditableTile, EditorCommand, EditorMode, LevelEditor};
 use std::time::{Duration, Instant};
 
