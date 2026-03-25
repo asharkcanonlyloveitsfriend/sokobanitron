@@ -1,11 +1,10 @@
 use crate::{app_driver::KindleApp, config};
 use renderer::{
-    ControlsUiMode, Renderer, RendererOverrides, UiIcon, draw_controls_ui,
+    ControlsUiMode, Renderer, RendererOverrides, draw_controls_ui,
     draw_overlay_primary_action_button, draw_top_menu_toggle,
 };
 use sokobanitron_app::{
-    AppScreen, FrameRequest, FrameSink, PresentMode, active_screen, build_current_frame_request,
-    is_editor_menu_open, is_gameplay_screen,
+    FrameRequest, FrameSink, PresentMode, build_current_frame_request, is_gameplay_screen,
 };
 use std::io::Result;
 
@@ -29,52 +28,8 @@ impl KindleApp {
     }
 
     pub(crate) fn render(&mut self) -> Result<()> {
-        // Editor-side screens are rendered directly here.
-        if is_editor_menu_open(&self.app_state) {
-            let (renderer, rgba, display) =
-                (&mut self.renderer, &mut self.rgba_frame, &mut self.display);
-            renderer.draw_background_only(
-                rgba,
-                config::WIDTH as u32,
-                config::HEIGHT as u32,
-            );
-            draw_controls_ui(
-                rgba,
-                config::WIDTH as u32,
-                config::HEIGHT as u32,
-                ControlsUiMode::MenuOpen,
-                false,
-                false,
-            );
-            draw_overlay_primary_action_button(
-                rgba,
-                config::WIDTH as u32,
-                config::HEIGHT as u32,
-                UiIcon::Manipulate,
-                [220, 220, 220, 255],
-            );
-            display.present_rgba(rgba)
-        } else if matches!(active_screen(&self.app_state), AppScreen::Editor) {
-            let (renderer, rgba, display) =
-                (&mut self.renderer, &mut self.rgba_frame, &mut self.display);
-            renderer.draw_background_only(
-                rgba,
-                config::WIDTH as u32,
-                config::HEIGHT as u32,
-            );
-            draw_controls_ui(
-                rgba,
-                config::WIDTH as u32,
-                config::HEIGHT as u32,
-                ControlsUiMode::Gameplay,
-                false,
-                false,
-            );
-            display.present_rgba(rgba)
-        } else {
-            let request = build_current_frame_request(&self.controller, &self.app_state);
-            self.render_request(&request)
-        }
+        let request = build_current_frame_request(&self.controller, &self.app_state);
+        self.render_request(&request)
     }
 
     fn render_request(&mut self, request: &FrameRequest) -> Result<()> {
@@ -104,22 +59,20 @@ impl KindleApp {
                     display.present_rgba(rgba)
                 }
             }
-            FrameRequest::GameplayMenu => {
+            FrameRequest::GameplayMenu { screen } => {
                 let (renderer, rgba, display) =
                     (&mut self.renderer, &mut self.rgba_frame, &mut self.display);
-                renderer.draw_background_only(
-                    rgba,
-                    config::WIDTH as u32,
-                    config::HEIGHT as u32,
-                );
+                renderer.draw_background_only(rgba, config::WIDTH as u32, config::HEIGHT as u32);
                 draw_top_menu_toggle(rgba, config::WIDTH as u32, config::HEIGHT as u32, true);
-                draw_overlay_primary_action_button(
-                    rgba,
-                    config::WIDTH as u32,
-                    config::HEIGHT as u32,
-                    UiIcon::Draw,
-                    [220, 220, 220, 255],
-                );
+                if let Some(icon) = screen.primary_action_icon {
+                    draw_overlay_primary_action_button(
+                        rgba,
+                        config::WIDTH as u32,
+                        config::HEIGHT as u32,
+                        icon,
+                        [220, 220, 220, 255],
+                    );
+                }
                 display.present_rgba(rgba)
             }
             FrameRequest::LevelSelect {
@@ -133,11 +86,7 @@ impl KindleApp {
                     &self.preview_boards,
                     &self.controller,
                 );
-                renderer.draw_background_only(
-                    rgba,
-                    config::WIDTH as u32,
-                    config::HEIGHT as u32,
-                );
+                renderer.draw_background_only(rgba, config::WIDTH as u32, config::HEIGHT as u32);
                 renderer.draw_level_select_menu_contents(
                     rgba,
                     config::WIDTH as u32,
@@ -159,6 +108,14 @@ impl KindleApp {
                 } else {
                     display.present_rgba(rgba)
                 }
+            }
+            FrameRequest::Editor { .. } | FrameRequest::EditorMenu { .. } => {
+                let (renderer, rgba, display) =
+                    (&mut self.renderer, &mut self.rgba_frame, &mut self.display);
+                // Kindle still opts out of editor support; keep the fallback explicit until
+                // that client is migrated onto a real editor presentation path.
+                renderer.draw_background_only(rgba, config::WIDTH as u32, config::HEIGHT as u32);
+                display.present_rgba(rgba)
             }
         }
     }

@@ -1,5 +1,8 @@
-use crate::gameplay_frames::{GameplayScreenRequest, LevelSelectScreenRequest};
 use crate::presentation_profile::PresentMode;
+use renderer::{
+    EditorMenuScreenRequest, EditorScreenRequest, GameplayMenuScreenRequest, GameplayScreenRequest,
+    LevelSelectScreenRequest,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrameRequest {
@@ -7,9 +10,17 @@ pub enum FrameRequest {
         screen: GameplayScreenRequest,
         present_mode: PresentMode,
     },
-    GameplayMenu,
+    GameplayMenu {
+        screen: GameplayMenuScreenRequest,
+    },
     LevelSelect {
         screen: LevelSelectScreenRequest,
         present_mode: PresentMode,
+    },
+    Editor {
+        screen: EditorScreenRequest,
+    },
+    EditorMenu {
+        screen: EditorMenuScreenRequest,
     },
 }

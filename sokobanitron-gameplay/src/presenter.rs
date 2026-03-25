@@ -8,7 +8,7 @@ pub enum TileKind {
     Goal,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoardView {
     width: u32,
     height: u32,

@@ -1,47 +1,30 @@
 use crate::app_driver::App;
 use renderer::{
-    ControlsUiMode, UiIcon, draw_controls_ui, draw_overlay_primary_action_button,
-    draw_top_menu_toggle,
+    ControlsUiMode, draw_controls_ui, draw_overlay_primary_action_button, draw_top_menu_toggle,
 };
 use sokobanitron_app::{
-    AppScreen, FrameRequest, FrameSink, active_screen, build_current_frame_request,
-    is_editor_menu_open, is_gameplay_screen,
+    FrameRequest, FrameSink, active_screen, build_current_editor_frame_request,
+    build_current_frame_request, is_gameplay_screen,
 };
+
+const BUTTON_TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
 
 impl App {
     pub(crate) fn render_current(&mut self) {
-        match active_screen(&self.app_state) {
-            AppScreen::Gameplay => self.render_active_gameplay_screen(),
-            AppScreen::Editor => self.render_editor_mode(),
-        }
+        let request = match active_screen(&self.app_state) {
+            sokobanitron_app::AppScreen::Gameplay => {
+                build_current_frame_request(&self.controller, &self.app_state)
+            }
+            sokobanitron_app::AppScreen::Editor => {
+                build_current_editor_frame_request(&self.app_state, &self.editor)
+            }
+        };
+        let _ = self.render_request(&request);
     }
 
     pub(crate) fn render_active_gameplay_screen(&mut self) {
         let request = build_current_frame_request(&self.controller, &self.app_state);
         let _ = self.render_request(&request);
-    }
-
-    pub(crate) fn render_editor_mode(&mut self) {
-        if let Some(pixels) = &mut self.pixels {
-            let frame = pixels.frame_mut();
-            if is_editor_menu_open(&self.app_state) {
-                self.renderer
-                    .draw_background_only(frame, self.surface_width, self.surface_height);
-                draw_top_menu_toggle(frame, self.surface_width, self.surface_height, true);
-                draw_overlay_primary_action_button(
-                    frame,
-                    self.surface_width,
-                    self.surface_height,
-                    UiIcon::Manipulate,
-                    [220, 220, 220, 255],
-                );
-            } else {
-                self.editor_session
-                    .render(frame, self.surface_width, self.surface_height);
-                draw_top_menu_toggle(frame, self.surface_width, self.surface_height, false);
-            }
-            pixels.render().expect("render");
-        }
     }
 
     fn render_request(&mut self, request: &FrameRequest) -> Result<(), ()> {
@@ -60,7 +43,7 @@ impl App {
                     pixels.render().expect("render");
                 }
             }
-            FrameRequest::GameplayMenu => {
+            FrameRequest::GameplayMenu { screen } => {
                 if let Some(pixels) = &mut self.pixels {
                     let frame = pixels.frame_mut();
                     self.renderer.draw_background_only(
@@ -69,13 +52,15 @@ impl App {
                         self.surface_height,
                     );
                     draw_top_menu_toggle(frame, self.surface_width, self.surface_height, true);
-                    draw_overlay_primary_action_button(
-                        frame,
-                        self.surface_width,
-                        self.surface_height,
-                        UiIcon::Draw,
-                        [220, 220, 220, 255],
-                    );
+                    if let Some(icon) = screen.primary_action_icon {
+                        draw_overlay_primary_action_button(
+                            frame,
+                            self.surface_width,
+                            self.surface_height,
+                            icon,
+                            BUTTON_TEXT_COLOR,
+                        );
+                    }
                     pixels.render().expect("render");
                 }
             }
@@ -102,6 +87,30 @@ impl App {
                         ControlsUiMode::MenuOpen,
                         false,
                         false,
+                    );
+                    pixels.render().expect("render");
+                }
+            }
+            FrameRequest::Editor { screen } => {
+                if let Some(pixels) = &mut self.pixels {
+                    let frame = pixels.frame_mut();
+                    self.renderer.draw_editor_screen(
+                        frame,
+                        self.surface_width,
+                        self.surface_height,
+                        screen,
+                    );
+                    pixels.render().expect("render");
+                }
+            }
+            FrameRequest::EditorMenu { screen } => {
+                if let Some(pixels) = &mut self.pixels {
+                    let frame = pixels.frame_mut();
+                    self.renderer.draw_editor_menu(
+                        frame,
+                        self.surface_width,
+                        self.surface_height,
+                        screen,
                     );
                     pixels.render().expect("render");
                 }

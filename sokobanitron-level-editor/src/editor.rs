@@ -1,61 +1,17 @@
-use crate::constants::{
-    BASE_VISIBLE_COLS, DOUBLE_TAP_WINDOW, GRID_MARGIN_TILES, INITIAL_HEIGHT, INITIAL_WIDTH,
-    MAX_VISIBLE_COLS, MIN_VISIBLE_COLS,
+use crate::command::{DrawTool, EditorCommand, EditorEffects, EditorMode};
+use crate::snapshot::{
+    BoxMoveCountSnapshot, EditorBoardSnapshot, EditorCellSnapshot, EditorSnapshot,
+    PullHintSnapshot, PullHintStatus,
 };
-use crate::ui::{
-    ManipulateButtonAction, ScreenRect, ZoomButtonAction, draw_box_move_count, draw_controls,
-    draw_move_hint_count, draw_move_hint_pending, manipulate_button_action_at,
-    zoom_button_action_at,
-};
-use crate::world::{EditableTile, EditableWorld, NonVoidBounds};
-use renderer::{BoardViewport, Renderer, top_left_level_button_rect};
+use crate::world::{EditableTile, EditableWorld};
 use sokobanitron_core::optimizer::{
     ReverseOptimizationInput, optimize_reverse_solution_in_place,
     optimize_reverse_solution_in_place_with_stats,
 };
 use sokobanitron_core::pathfinder::{Position, PullPathfinder};
-use sokobanitron_gameplay::{BoardView, TileKind};
 use std::collections::{HashMap, VecDeque};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum EditorMode {
-    Draw,
-    Manipulate,
-}
-
-#[derive(Clone, Copy)]
-#[allow(clippy::enum_variant_names)]
-enum PaintMode {
-    SetFloor,
-    SetBoxOnGoal,
-    SetVoid,
-}
-
-impl PaintMode {
-    fn from_start_tile(tile: EditableTile) -> Self {
-        if matches!(tile, EditableTile::Void) {
-            Self::SetFloor
-        } else {
-            Self::SetVoid
-        }
-    }
-}
-
-struct VisibleBoardWindow {
-    board: BoardView,
-    viewport: BoardViewport,
-    world_origin_x: i32,
-    world_origin_y: i32,
-}
-
-#[derive(Clone, Copy)]
-struct LastTap {
-    world_x: i32,
-    world_y: i32,
-    at: Instant,
-}
 
 struct PullMovePlan {
     player_start: (i32, i32),
@@ -82,7 +38,7 @@ struct HintComputationProfile {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PullHintState {
+pub(crate) enum PullHintState {
     Pending,
     Ready(u32),
 }
@@ -117,27 +73,9 @@ struct UndoSnapshot {
     solution_history: Vec<Vec<(i32, i32)>>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TouchInputPhase {
-    Started,
-    Moved,
-    Ended,
-    Cancelled,
-}
-
-pub struct LevelEditorSession {
-    renderer: Renderer,
-    surface_width: u32,
-    surface_height: u32,
-    cursor_position: Option<(f64, f64)>,
-    mouse_paint_mode: Option<PaintMode>,
-    active_touch_paint: Option<(u64, PaintMode)>,
+pub struct LevelEditor {
     mode: EditorMode,
-    view_center_x: i32,
-    view_center_y: i32,
-    zoom_steps: i32,
     selected_box: Option<(i32, i32)>,
-    last_tap: Option<LastTap>,
     world: EditableWorld,
     solution_start_boxes: Vec<(i32, i32)>,
     solution_start_player: Option<(i32, i32)>,
@@ -149,24 +87,14 @@ pub struct LevelEditorSession {
     active_pull_hint_job: Option<ActivePullHintJob>,
 }
 
-impl LevelEditorSession {
+impl LevelEditor {
     pub fn new() -> Self {
         let world = EditableWorld::new();
         let solution_start_boxes = world.box_positions();
         let solution_start_player = world.player();
         Self {
-            renderer: Renderer::new(),
-            surface_width: INITIAL_WIDTH,
-            surface_height: INITIAL_HEIGHT,
-            cursor_position: None,
-            mouse_paint_mode: None,
-            active_touch_paint: None,
             mode: EditorMode::Draw,
-            view_center_x: 0,
-            view_center_y: 0,
-            zoom_steps: 0,
             selected_box: None,
-            last_tap: None,
             world,
             solution_start_boxes,
             solution_start_player,
@@ -179,348 +107,205 @@ impl LevelEditorSession {
         }
     }
 
-    pub fn resize_surface(&mut self, width: u32, height: u32) {
-        self.surface_width = width.max(1);
-        self.surface_height = height.max(1);
-        self.zoom_steps = self.clamp_zoom_steps(self.zoom_steps);
+    pub fn world(&self) -> &EditableWorld {
+        &self.world
     }
 
-    pub fn cursor_moved(&mut self, x: f64, y: f64) {
-        self.cursor_position = Some((x, y));
-        if let Some(mode) = self.mouse_paint_mode {
-            self.continue_paint_stroke(x, y, mode);
-        }
+    pub fn mode(&self) -> EditorMode {
+        self.mode
     }
 
-    pub fn mouse_pressed_left(&mut self) {
-        if let Some((x, y)) = self.cursor_position {
-            self.mouse_paint_mode = self.begin_paint_stroke(x, y);
-        }
-    }
-
-    pub fn mouse_released_left(&mut self) {
-        self.mouse_paint_mode = None;
-    }
-
-    pub fn touch(&mut self, id: u64, phase: TouchInputPhase, x: f64, y: f64) {
-        match phase {
-            TouchInputPhase::Started => {
-                if self.active_touch_paint.is_none() {
-                    self.active_touch_paint = self.begin_paint_stroke(x, y).map(|mode| (id, mode));
-                }
-            }
-            TouchInputPhase::Moved => {
-                if let Some((active_id, mode)) = self.active_touch_paint
-                    && active_id == id
-                {
-                    self.continue_paint_stroke(x, y, mode);
-                }
-            }
-            TouchInputPhase::Ended | TouchInputPhase::Cancelled => {
-                if self
-                    .active_touch_paint
-                    .is_some_and(|(active_id, _)| active_id == id)
-                {
-                    self.active_touch_paint = None;
-                }
-            }
-        }
-    }
-
-    pub fn reset_interaction_state(&mut self) {
-        self.mouse_paint_mode = None;
-        self.active_touch_paint = None;
-    }
-
-    pub fn render(&mut self, frame: &mut [u8], width: u32, height: u32) {
-        self.resize_surface(width, height);
-        self.refresh_pull_destination_hints_if_needed();
-
-        let visible = self.build_visible_window();
-        let can_zoom_out = self.can_zoom_out();
-        let can_zoom_in = self.can_zoom_in();
-        let can_undo = self.can_undo();
-        let can_restart = self.can_restart();
-
-        self.renderer
-            .draw_background_only(frame, self.surface_width, self.surface_height);
-        self.renderer.draw_board_on_frame(
-            frame,
-            self.surface_width,
-            self.surface_height,
-            &visible.board,
-            &visible.viewport,
-            true,
-            false,
-        );
-        self.draw_box_move_counts_on_visible_window(frame, &visible);
-        self.draw_pull_destination_hints_on_visible_window(frame, &visible);
-        draw_controls(
-            frame,
-            self.surface_width,
-            self.surface_height,
-            can_zoom_out,
-            can_zoom_in,
-            matches!(self.mode, EditorMode::Draw),
-            can_undo,
-            can_restart,
-        );
-        // Intentionally budget one hint evaluation step per render cycle.
-        self.advance_pull_destination_hints_job(1);
-    }
-
-    fn build_visible_window(&self) -> VisibleBoardWindow {
-        let (board_cols, board_rows) = self.board_dimensions_for_steps(self.zoom_steps);
-        let cell_size = self.compute_cell_size(board_cols);
-        let world_origin_x = self.view_center_x - (board_cols as i32 / 2);
-        let world_origin_y = self.view_center_y - (board_rows as i32 / 2);
-        let hide_player = self.selected_box.is_some();
-
-        let mut tiles = Vec::with_capacity((board_cols * board_rows) as usize);
-        let mut boxes = Vec::with_capacity((board_cols * board_rows) as usize);
-        let mut selected_box_local = None;
-        let mut player_local = None;
-        for y in 0..board_rows {
-            for x in 0..board_cols {
-                let world_x = world_origin_x + x as i32;
-                let world_y = world_origin_y + y as i32;
-                if !hide_player && self.world.player() == Some((world_x, world_y)) {
-                    player_local = Some((x, y));
-                }
-                match self.world.tile(world_x, world_y) {
-                    EditableTile::Void => {
-                        tiles.push(TileKind::Void);
-                        boxes.push(false);
-                    }
-                    EditableTile::Floor => {
-                        tiles.push(TileKind::Floor);
-                        boxes.push(false);
-                    }
-                    EditableTile::Goal => {
-                        tiles.push(TileKind::Goal);
-                        boxes.push(false);
-                    }
-                    EditableTile::Box => {
-                        tiles.push(TileKind::Floor);
-                        boxes.push(true);
-                        if self.selected_box == Some((world_x, world_y))
-                            && matches!(self.mode, EditorMode::Manipulate)
-                        {
-                            selected_box_local = Some((x, y));
-                        }
-                    }
-                    EditableTile::BoxOnGoal => {
-                        tiles.push(TileKind::Goal);
-                        boxes.push(true);
-                        if self.selected_box == Some((world_x, world_y))
-                            && matches!(self.mode, EditorMode::Manipulate)
-                        {
-                            selected_box_local = Some((x, y));
-                        }
-                    }
-                }
-            }
-        }
-        let board = BoardView::new(
-            board_cols,
-            board_rows,
-            tiles,
-            boxes,
-            player_local,
-            selected_box_local,
-            false,
-        );
-
-        let board_pixel_width = (board_cols + GRID_MARGIN_TILES.saturating_mul(2)) * cell_size;
-        let board_pixel_height = (board_rows + GRID_MARGIN_TILES.saturating_mul(2)) * cell_size;
-        let viewport = BoardViewport {
-            origin_x: ((self.surface_width as i32) - (board_pixel_width as i32)) / 2,
-            origin_y: ((self.surface_height as i32) - (board_pixel_height as i32)) / 2,
-            cell_size,
-            board_pixel_width,
-            board_pixel_height,
-            outer_margin_tiles: GRID_MARGIN_TILES,
-        };
-
-        VisibleBoardWindow {
-            board,
-            viewport,
-            world_origin_x,
-            world_origin_y,
-        }
-    }
-
-    fn board_dimensions_for_steps(&self, zoom_steps: i32) -> (u32, u32) {
-        let steps = self.clamp_zoom_steps(zoom_steps);
-        let cols_i32 = (BASE_VISIBLE_COLS as i32 + steps * 2).max(1);
-        let cols = cols_i32 as u32;
-        let cell_size = self.compute_cell_size(cols);
-        let rows = self.compute_visible_rows(cell_size);
-        (cols, rows)
-    }
-
-    fn compute_cell_size(&self, board_cols: u32) -> u32 {
-        let cols_with_margins = board_cols + GRID_MARGIN_TILES.saturating_mul(2);
-        (self.surface_width / cols_with_margins).max(1)
-    }
-
-    fn compute_visible_rows(&self, cell_size: u32) -> u32 {
-        let total_rows = (self.surface_height / cell_size).max(1);
-        let mut board_rows = total_rows
-            .saturating_sub(GRID_MARGIN_TILES.saturating_mul(2))
-            .max(1);
-        if board_rows.is_multiple_of(2) {
-            board_rows = board_rows.saturating_sub(1).max(1);
-        }
-        board_rows
-    }
-
-    fn min_zoom_in_steps(&self) -> i32 {
-        -((BASE_VISIBLE_COLS.saturating_sub(MIN_VISIBLE_COLS) / 2) as i32)
-    }
-
-    fn max_zoom_out_steps(&self) -> i32 {
-        (MAX_VISIBLE_COLS.saturating_sub(BASE_VISIBLE_COLS) / 2) as i32
-    }
-
-    fn clamp_zoom_steps(&self, steps: i32) -> i32 {
-        steps.clamp(self.min_zoom_in_steps(), self.max_zoom_out_steps())
-    }
-
-    fn can_zoom_out(&self) -> bool {
-        self.zoom_steps < self.max_zoom_out_steps()
-    }
-
-    fn can_undo(&self) -> bool {
+    pub fn can_undo(&self) -> bool {
         !self.undo_history.is_empty()
+    }
+
+    pub fn can_restart(&self) -> bool {
+        !self.is_reset_state()
+    }
+
+    pub fn selected_box(&self) -> Option<(i32, i32)> {
+        self.selected_box
+    }
+
+    pub fn snapshot(&self) -> EditorSnapshot {
+        let bounds = self.world.non_void_bounds();
+        let mut cells = Vec::new();
+        if let Some(bounds) = bounds {
+            for y in bounds.min_y..=bounds.max_y {
+                for x in bounds.min_x..=bounds.max_x {
+                    let tile = self.world.tile(x, y);
+                    if !matches!(tile, EditableTile::Void) {
+                        cells.push(EditorCellSnapshot {
+                            world_x: x,
+                            world_y: y,
+                            tile,
+                        });
+                    }
+                }
+            }
+        }
+
+        let move_counts = self
+            .box_move_counts_by_position()
+            .into_iter()
+            .map(|((world_x, world_y), count)| BoxMoveCountSnapshot {
+                world_x,
+                world_y,
+                count,
+            })
+            .collect::<Vec<_>>();
+
+        let mut pull_destination_hints = self
+            .pull_destination_hints
+            .iter()
+            .map(|(&(world_x, world_y), state)| PullHintSnapshot {
+                world_x,
+                world_y,
+                state: match state {
+                    PullHintState::Pending => PullHintStatus::Pending,
+                    PullHintState::Ready(count) => PullHintStatus::Ready(*count),
+                },
+            })
+            .collect::<Vec<_>>();
+        pull_destination_hints.sort_unstable_by_key(|hint| (hint.world_y, hint.world_x));
+
+        EditorSnapshot {
+            board: EditorBoardSnapshot {
+                bounds,
+                cells,
+                player: self.world.player(),
+            },
+            mode: self.mode,
+            selected_box: self.selected_box,
+            pull_destination_hints,
+            move_counts,
+            can_undo: self.can_undo(),
+            can_restart: self.can_restart(),
+        }
+    }
+
+    pub fn apply_command(&mut self, command: EditorCommand) -> EditorEffects {
+        let mut effects = EditorEffects::default();
+        match command {
+            EditorCommand::SetMode(mode) => {
+                if self.mode != mode {
+                    self.set_mode(mode);
+                    effects.mode_changed = true;
+                    effects.selection_changed = true;
+                    effects.hints_changed = true;
+                }
+            }
+            EditorCommand::ToggleMode => {
+                self.toggle_mode();
+                effects.mode_changed = true;
+                effects.selection_changed = true;
+                effects.hints_changed = true;
+            }
+            EditorCommand::Undo => {
+                if self.can_undo() {
+                    self.undo_last_move();
+                    effects.world_changed = true;
+                    effects.selection_changed = true;
+                    effects.history_changed = true;
+                    effects.hints_changed = true;
+                }
+            }
+            EditorCommand::RestartToGoals => {
+                if self.can_restart() {
+                    self.restart_to_goals();
+                    effects.world_changed = true;
+                    effects.selection_changed = true;
+                    effects.history_changed = true;
+                    effects.hints_changed = true;
+                    effects.needs_revalidation = true;
+                }
+            }
+            EditorCommand::ClearSelection => {
+                if self.selected_box.take().is_some() {
+                    self.clear_pull_destination_hints();
+                    effects.selection_changed = true;
+                    effects.hints_changed = true;
+                }
+            }
+            EditorCommand::RecomputeHints => {
+                self.mark_pull_destination_hints_dirty();
+                self.refresh_pull_destination_hints_if_needed();
+                effects.hints_changed = true;
+            }
+            EditorCommand::AdvanceHintJob { steps } => {
+                let before = self.snapshot_hint_states();
+                self.advance_pull_destination_hints_job(steps);
+                effects.hints_changed = before != self.snapshot_hint_states();
+            }
+            EditorCommand::PaintCell {
+                cell_x,
+                cell_y,
+                tool,
+            } => {
+                if self.paint_world_cell(cell_x, cell_y, tool) {
+                    effects.world_changed = true;
+                    effects.selection_changed = true;
+                    effects.history_changed = true;
+                    effects.hints_changed = true;
+                    effects.needs_revalidation = true;
+                }
+            }
+            EditorCommand::SelectBox { cell_x, cell_y } => {
+                if self.select_box(cell_x, cell_y) {
+                    effects.selection_changed = true;
+                    effects.hints_changed = true;
+                }
+            }
+            EditorCommand::MoveSelectedBoxTo { cell_x, cell_y } => {
+                if self.move_selected_box_to(cell_x, cell_y) {
+                    effects.world_changed = true;
+                    effects.selection_changed = true;
+                    effects.history_changed = true;
+                    effects.hints_changed = true;
+                    effects.needs_revalidation = true;
+                }
+            }
+        }
+
+        effects
+    }
+
+    pub(crate) fn refresh_pull_destination_hints_if_needed(&mut self) {
+        if !self.pull_hints_dirty {
+            return;
+        }
+        let Some(selected) = self.selected_box else {
+            self.clear_pull_destination_hints();
+            return;
+        };
+        if !matches!(self.mode, EditorMode::Manipulate) {
+            self.clear_pull_destination_hints();
+            return;
+        }
+        self.start_pull_destination_hints_job(selected);
+        self.pull_hints_dirty = false;
+    }
+
+    fn snapshot_hint_states(&self) -> Vec<((i32, i32), PullHintState)> {
+        let mut hints = self
+            .pull_destination_hints
+            .iter()
+            .map(|(&position, &state)| (position, state))
+            .collect::<Vec<_>>();
+        hints.sort_unstable_by_key(|(position, _)| (position.1, position.0));
+        hints
+    }
+
+    fn set_mode(&mut self, mode: EditorMode) {
+        self.mode = mode;
+        self.selected_box = None;
+        self.clear_pull_destination_hints();
     }
 
     fn is_reset_state(&self) -> bool {
         self.solution_history.is_empty()
             && self.undo_history.is_empty()
             && self.world.player().is_none()
-    }
-
-    fn can_restart(&self) -> bool {
-        !self.is_reset_state()
-    }
-
-    fn bounds_fit_with_center(
-        &self,
-        bounds: NonVoidBounds,
-        center_x: i32,
-        center_y: i32,
-        cols: u32,
-        rows: u32,
-    ) -> bool {
-        let origin_x = center_x - cols as i32 / 2;
-        let origin_y = center_y - rows as i32 / 2;
-        let max_x = origin_x + cols as i32 - 1;
-        let max_y = origin_y + rows as i32 - 1;
-        bounds.min_x >= origin_x
-            && bounds.max_x <= max_x
-            && bounds.min_y >= origin_y
-            && bounds.max_y <= max_y
-    }
-
-    fn centered_view_for_bounds(
-        &self,
-        bounds: NonVoidBounds,
-        cols: u32,
-        rows: u32,
-    ) -> Option<(i32, i32)> {
-        let half_cols = cols as i32 / 2;
-        let half_rows = rows as i32 / 2;
-
-        let min_center_x = bounds.max_x - half_cols;
-        let max_center_x = bounds.min_x + half_cols;
-        if min_center_x > max_center_x {
-            return None;
-        }
-
-        let min_center_y = bounds.max_y - half_rows;
-        let max_center_y = bounds.min_y + half_rows;
-        if min_center_y > max_center_y {
-            return None;
-        }
-
-        let center_x = self.view_center_x.clamp(min_center_x, max_center_x);
-        let center_y = self.view_center_y.clamp(min_center_y, max_center_y);
-        Some((center_x, center_y))
-    }
-
-    fn can_zoom_in(&self) -> bool {
-        if self.zoom_steps <= self.min_zoom_in_steps() {
-            return false;
-        }
-
-        let target_steps = self.zoom_steps - 1;
-        let (target_cols, target_rows) = self.board_dimensions_for_steps(target_steps);
-        let Some(bounds) = self.world.non_void_bounds() else {
-            return true;
-        };
-
-        if self.bounds_fit_with_center(
-            bounds,
-            self.view_center_x,
-            self.view_center_y,
-            target_cols,
-            target_rows,
-        ) {
-            return true;
-        }
-
-        self.centered_view_for_bounds(bounds, target_cols, target_rows)
-            .is_some()
-    }
-
-    fn apply_zoom(&mut self, action: ZoomButtonAction) {
-        match action {
-            ZoomButtonAction::ZoomIn => {
-                if self.zoom_steps <= self.min_zoom_in_steps() {
-                    return;
-                }
-                let target_steps = self.zoom_steps - 1;
-                let (target_cols, target_rows) = self.board_dimensions_for_steps(target_steps);
-                if let Some(bounds) = self.world.non_void_bounds() {
-                    if self.bounds_fit_with_center(
-                        bounds,
-                        self.view_center_x,
-                        self.view_center_y,
-                        target_cols,
-                        target_rows,
-                    ) {
-                        self.zoom_steps = target_steps;
-                    } else if let Some((center_x, center_y)) =
-                        self.centered_view_for_bounds(bounds, target_cols, target_rows)
-                    {
-                        self.view_center_x = center_x;
-                        self.view_center_y = center_y;
-                        self.zoom_steps = target_steps;
-                    }
-                } else {
-                    self.zoom_steps = target_steps;
-                }
-            }
-            ZoomButtonAction::ZoomOut => {
-                if self.can_zoom_out() {
-                    self.zoom_steps += 1;
-                }
-            }
-        }
-    }
-
-    fn world_cell_at_screen_position(&self, screen_x: f64, screen_y: f64) -> Option<(i32, i32)> {
-        let visible = self.build_visible_window();
-        visible
-            .viewport
-            .screen_to_cell(screen_x, screen_y, &visible.board)
-            .map(|(x, y)| {
-                (
-                    visible.world_origin_x + x as i32,
-                    visible.world_origin_y + y as i32,
-                )
-            })
     }
 
     fn reset_solution_tracking(&mut self) {
@@ -559,7 +344,6 @@ impl LevelEditorSession {
         self.solution_start_player = snapshot.solution_start_player;
         self.solution_history = snapshot.solution_history;
         self.selected_box = None;
-        self.last_tap = None;
         self.clear_pull_destination_hints();
     }
 
@@ -577,9 +361,6 @@ impl LevelEditorSession {
     fn restart_to_goals(&mut self) {
         self.reset_solution_tracking();
         self.selected_box = None;
-        self.last_tap = None;
-        self.mouse_paint_mode = None;
-        self.active_touch_paint = None;
     }
 
     fn walkable_cells_for_optimizer(&self) -> Vec<(i32, i32)> {
@@ -612,9 +393,6 @@ impl LevelEditorSession {
         self.pull_hints_dirty = true;
     }
 
-    // Correctness-first replay of box identity (by start index).
-    // This recomputes from history each call; a faster index map can be added
-    // later if profiling shows this path is hot.
     fn tracked_boxes_for_history(&self, history: &[Vec<(i32, i32)>]) -> Vec<TrackedBox> {
         let mut tracked = self
             .solution_start_boxes
@@ -679,87 +457,6 @@ impl LevelEditorSession {
             .find_map(|entry| (entry.start_index == start_index).then_some(entry.count))
     }
 
-    fn draw_box_move_counts_on_visible_window(
-        &self,
-        frame: &mut [u8],
-        visible: &VisibleBoardWindow,
-    ) {
-        let box_counts = self.box_move_counts_by_position();
-        for y in 0..visible.board.height() {
-            for x in 0..visible.board.width() {
-                let world_x = visible.world_origin_x + x as i32;
-                let world_y = visible.world_origin_y + y as i32;
-                if !Self::is_box_tile(self.world.tile(world_x, world_y)) {
-                    continue;
-                }
-
-                let count = box_counts.get(&(world_x, world_y)).copied().unwrap_or(0);
-                let (cell_x, cell_y, cell_w, cell_h) = visible.viewport.cell_to_screen_rect(x, y);
-                let inset = (cell_w / 24).max(1);
-                let box_x = cell_x + inset as i32;
-                let box_y = cell_y + inset as i32;
-                if box_x < 0 || box_y < 0 {
-                    continue;
-                }
-
-                let rect = ScreenRect {
-                    x: box_x as u32,
-                    y: box_y as u32,
-                    w: cell_w.saturating_sub(inset * 2),
-                    h: cell_h.saturating_sub(inset * 2),
-                };
-                if rect.w == 0 || rect.h == 0 {
-                    continue;
-                }
-                draw_box_move_count(frame, self.surface_width, self.surface_height, rect, count);
-            }
-        }
-    }
-
-    fn draw_pull_destination_hints_on_visible_window(
-        &self,
-        frame: &mut [u8],
-        visible: &VisibleBoardWindow,
-    ) {
-        if !matches!(self.mode, EditorMode::Manipulate) || self.selected_box.is_none() {
-            return;
-        }
-
-        let width = visible.board.width() as i32;
-        let height = visible.board.height() as i32;
-        for (&(world_x, world_y), hint_state) in &self.pull_destination_hints {
-            let local_x = world_x - visible.world_origin_x;
-            let local_y = world_y - visible.world_origin_y;
-            if local_x < 0 || local_y < 0 || local_x >= width || local_y >= height {
-                continue;
-            }
-            let (cell_x, cell_y, cell_w, cell_h) = visible
-                .viewport
-                .cell_to_screen_rect(local_x as u32, local_y as u32);
-            if cell_x < 0 || cell_y < 0 {
-                continue;
-            }
-            let rect = ScreenRect {
-                x: cell_x as u32,
-                y: cell_y as u32,
-                w: cell_w,
-                h: cell_h,
-            };
-            match hint_state {
-                PullHintState::Pending => {
-                    draw_move_hint_pending(frame, self.surface_width, self.surface_height, rect)
-                }
-                PullHintState::Ready(count) => draw_move_hint_count(
-                    frame,
-                    self.surface_width,
-                    self.surface_height,
-                    rect,
-                    *count,
-                ),
-            }
-        }
-    }
-
     fn clear_pull_destination_hints(&mut self) {
         self.pull_destination_hints.clear();
         self.pull_hints_dirty = false;
@@ -778,7 +475,6 @@ impl LevelEditorSession {
         }
     }
 
-    // Optional debug profiling for hint generation cost breakdowns.
     fn hint_profiling_enabled() -> bool {
         static ENABLED: OnceLock<bool> = OnceLock::new();
         *ENABLED.get_or_init(|| {
@@ -834,10 +530,6 @@ impl LevelEditorSession {
         false
     }
 
-    // Conservative fast-path gate:
-    // - cheap to compute
-    // - false positives are acceptable (we may still optimize)
-    // - false negatives should be uncommon for practical editor flows
     fn quick_rewrite_feasibility_check(&self, selected: (i32, i32)) -> bool {
         if self.solution_history.len() < 2 {
             return false;
@@ -1034,31 +726,14 @@ impl LevelEditorSession {
         }
     }
 
-    fn refresh_pull_destination_hints_if_needed(&mut self) {
-        if !self.pull_hints_dirty {
-            return;
-        }
-        let Some(selected) = self.selected_box else {
-            self.clear_pull_destination_hints();
-            return;
-        };
-        if !matches!(self.mode, EditorMode::Manipulate) {
-            self.clear_pull_destination_hints();
-            return;
-        }
-        self.start_pull_destination_hints_job(selected);
-        self.pull_hints_dirty = false;
-    }
-
-    fn paint_world_cell(&mut self, world_x: i32, world_y: i32, mode: PaintMode) {
+    fn paint_world_cell(&mut self, world_x: i32, world_y: i32, tool: DrawTool) -> bool {
         let original_tile = self.world.tile(world_x, world_y);
-        match mode {
-            PaintMode::SetFloor => self.world.set_tile(world_x, world_y, EditableTile::Floor),
-            PaintMode::SetBoxOnGoal => {
-                self.world
-                    .set_tile(world_x, world_y, EditableTile::BoxOnGoal)
-            }
-            PaintMode::SetVoid => self.world.set_tile(world_x, world_y, EditableTile::Void),
+        match tool {
+            DrawTool::Floor => self.world.set_tile(world_x, world_y, EditableTile::Floor),
+            DrawTool::BoxOnGoal => self
+                .world
+                .set_tile(world_x, world_y, EditableTile::BoxOnGoal),
+            DrawTool::Void => self.world.set_tile(world_x, world_y, EditableTile::Void),
         }
         let updated_tile = self.world.tile(world_x, world_y);
         if self.selected_box == Some((world_x, world_y)) && !Self::is_box_tile(updated_tile) {
@@ -1067,88 +742,9 @@ impl LevelEditorSession {
         if original_tile != updated_tile {
             self.reset_solution_tracking();
             self.mark_pull_destination_hints_dirty();
+            return true;
         }
-    }
-
-    fn resolve_paint_mode(&mut self, world_x: i32, world_y: i32) -> PaintMode {
-        let current_tile = self.world.tile(world_x, world_y);
-        if current_tile == EditableTile::BoxOnGoal {
-            self.last_tap = None;
-            return PaintMode::SetVoid;
-        }
-
-        let now = Instant::now();
-        let is_double_tap = self.last_tap.is_some_and(|last| {
-            last.world_x == world_x
-                && last.world_y == world_y
-                && now.duration_since(last.at) <= DOUBLE_TAP_WINDOW
-        });
-
-        if is_double_tap {
-            self.last_tap = None;
-            PaintMode::SetBoxOnGoal
-        } else {
-            self.last_tap = Some(LastTap {
-                world_x,
-                world_y,
-                at: now,
-            });
-            PaintMode::from_start_tile(current_tile)
-        }
-    }
-
-    fn begin_paint_stroke(&mut self, screen_x: f64, screen_y: f64) -> Option<PaintMode> {
-        if top_left_level_button_rect().contains(screen_x, screen_y) {
-            self.toggle_mode();
-            return None;
-        }
-        match self.mode {
-            EditorMode::Draw => {
-                if let Some(action) = zoom_button_action_at(
-                    screen_x,
-                    screen_y,
-                    self.surface_width,
-                    self.surface_height,
-                    self.can_zoom_out(),
-                    self.can_zoom_in(),
-                ) {
-                    self.apply_zoom(action);
-                    return None;
-                }
-                let (world_x, world_y) = self.world_cell_at_screen_position(screen_x, screen_y)?;
-                let mode = self.resolve_paint_mode(world_x, world_y);
-                self.paint_world_cell(world_x, world_y, mode);
-                Some(mode)
-            }
-            EditorMode::Manipulate => {
-                if let Some(action) = manipulate_button_action_at(
-                    screen_x,
-                    screen_y,
-                    self.surface_width,
-                    self.surface_height,
-                    self.can_undo(),
-                    self.can_restart(),
-                ) {
-                    match action {
-                        ManipulateButtonAction::Restart => self.restart_to_goals(),
-                        ManipulateButtonAction::Undo => self.undo_last_move(),
-                    }
-                    return None;
-                }
-                let (world_x, world_y) = self.world_cell_at_screen_position(screen_x, screen_y)?;
-                self.handle_manipulate_tap(world_x, world_y);
-                None
-            }
-        }
-    }
-
-    fn continue_paint_stroke(&mut self, screen_x: f64, screen_y: f64, mode: PaintMode) {
-        if !matches!(self.mode, EditorMode::Draw) {
-            return;
-        }
-        if let Some((world_x, world_y)) = self.world_cell_at_screen_position(screen_x, screen_y) {
-            self.paint_world_cell(world_x, world_y, mode);
-        }
+        false
     }
 
     fn is_box_tile(tile: EditableTile) -> bool {
@@ -1270,39 +866,46 @@ impl LevelEditorSession {
         })
     }
 
-    fn handle_manipulate_tap(&mut self, world_x: i32, world_y: i32) {
+    fn select_box(&mut self, world_x: i32, world_y: i32) -> bool {
         let tapped_tile = self.world.tile(world_x, world_y);
-        if Self::is_box_tile(tapped_tile) {
-            self.selected_box = if self.selected_box == Some((world_x, world_y)) {
-                None
-            } else {
-                Some((world_x, world_y))
-            };
-            self.mark_pull_destination_hints_dirty();
-            return;
+        if !Self::is_box_tile(tapped_tile) {
+            return false;
         }
 
+        let previous = self.selected_box;
+        self.selected_box = if previous == Some((world_x, world_y)) {
+            None
+        } else {
+            Some((world_x, world_y))
+        };
+        self.mark_pull_destination_hints_dirty();
+        previous != self.selected_box
+    }
+
+    fn move_selected_box_to(&mut self, world_x: i32, world_y: i32) -> bool {
+        let tapped_tile = self.world.tile(world_x, world_y);
         if matches!(tapped_tile, EditableTile::Void) {
-            self.selected_box = None;
-            self.clear_pull_destination_hints();
-            return;
+            if self.selected_box.take().is_some() {
+                self.clear_pull_destination_hints();
+            }
+            return false;
         }
 
         let Some((from_x, from_y)) = self.selected_box else {
-            return;
+            return false;
         };
         if from_x == world_x && from_y == world_y {
-            return;
+            return false;
         }
 
         let from_tile = self.world.tile(from_x, from_y);
         if !Self::is_box_tile(from_tile) {
             self.selected_box = None;
             self.clear_pull_destination_hints();
-            return;
+            return false;
         }
         let Some(plan) = self.find_pull_move_plan(from_x, from_y, world_x, world_y) else {
-            return;
+            return false;
         };
 
         let undo_snapshot = self.make_undo_snapshot();
@@ -1325,6 +928,7 @@ impl LevelEditorSession {
         self.undo_history.push(undo_snapshot);
         self.selected_box = None;
         self.clear_pull_destination_hints();
+        true
     }
 
     fn toggle_mode(&mut self) {
@@ -1332,15 +936,12 @@ impl LevelEditorSession {
             EditorMode::Draw => EditorMode::Manipulate,
             EditorMode::Manipulate => EditorMode::Draw,
         };
-        self.mouse_paint_mode = None;
-        self.active_touch_paint = None;
         self.selected_box = None;
-        self.last_tap = None;
         self.clear_pull_destination_hints();
     }
 }
 
-impl Default for LevelEditorSession {
+impl Default for LevelEditor {
     fn default() -> Self {
         Self::new()
     }
@@ -1348,96 +949,127 @@ impl Default for LevelEditorSession {
 
 #[cfg(test)]
 mod tests {
-    use super::{LevelEditorSession, PullHintState};
+    use super::{LevelEditor, PullHintState};
+    use crate::command::{DrawTool, EditorCommand, EditorMode};
+    use crate::snapshot::PullHintStatus;
     use crate::world::EditableTile;
 
-    fn clear_world(session: &mut LevelEditorSession) {
-        let Some(bounds) = session.world.non_void_bounds() else {
+    fn clear_world(editor: &mut LevelEditor) {
+        let Some(bounds) = editor.world.non_void_bounds() else {
             return;
         };
         for y in bounds.min_y..=bounds.max_y {
             for x in bounds.min_x..=bounds.max_x {
-                session.world.set_tile(x, y, EditableTile::Void);
+                editor.world.set_tile(x, y, EditableTile::Void);
             }
         }
-        session.world.set_player(None);
+        editor.world.set_player(None);
+    }
+
+    #[test]
+    fn paint_command_updates_world() {
+        let mut editor = LevelEditor::new();
+        let effects = editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 0,
+            cell_y: 0,
+            tool: DrawTool::Void,
+        });
+
+        assert_eq!(editor.world().tile(0, 0), EditableTile::Void);
+        assert!(effects.world_changed);
+        assert!(effects.needs_revalidation);
+    }
+
+    #[test]
+    fn snapshot_exposes_mode_and_selection() {
+        let mut editor = LevelEditor::new();
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Manipulate));
+        editor.world.set_tile(1, 0, EditableTile::Box);
+        editor.apply_command(EditorCommand::SelectBox {
+            cell_x: 1,
+            cell_y: 0,
+        });
+
+        let snapshot = editor.snapshot();
+        assert_eq!(snapshot.mode, EditorMode::Manipulate);
+        assert_eq!(snapshot.selected_box, Some((1, 0)));
     }
 
     #[test]
     fn consecutive_moves_of_the_same_box_are_consolidated() {
-        let mut session = LevelEditorSession::new();
-        session.solution_start_boxes = vec![(0, 0)];
-        session.solution_history.clear();
+        let mut editor = LevelEditor::new();
+        editor.solution_start_boxes = vec![(0, 0)];
+        editor.solution_history.clear();
 
-        session.record_box_move(vec![(0, 0), (1, 0)]);
-        session.record_box_move(vec![(1, 0), (2, 0)]);
-        session.record_box_move(vec![(2, 0), (3, 0)]);
+        editor.record_box_move(vec![(0, 0), (1, 0)]);
+        editor.record_box_move(vec![(1, 0), (2, 0)]);
+        editor.record_box_move(vec![(2, 0), (3, 0)]);
 
-        assert_eq!(session.solution_history.len(), 1);
+        assert_eq!(editor.solution_history.len(), 1);
         assert_eq!(
-            session.solution_history[0],
+            editor.solution_history[0],
             vec![(0, 0), (1, 0), (2, 0), (3, 0)]
         );
 
-        let counts = session.box_move_counts_by_position();
+        let counts = editor.box_move_counts_by_position();
         assert_eq!(counts.get(&(3, 0)).copied(), Some(1));
     }
 
     #[test]
     fn non_consecutive_moves_are_not_consolidated() {
-        let mut session = LevelEditorSession::new();
-        session.solution_start_boxes = vec![(0, 0), (2, 0)];
-        session.solution_history.clear();
+        let mut editor = LevelEditor::new();
+        editor.solution_start_boxes = vec![(0, 0), (2, 0)];
+        editor.solution_history.clear();
 
-        session.record_box_move(vec![(0, 0), (1, 0)]);
-        session.record_box_move(vec![(2, 0), (3, 0)]);
-        session.record_box_move(vec![(1, 0), (0, 0)]);
+        editor.record_box_move(vec![(0, 0), (1, 0)]);
+        editor.record_box_move(vec![(2, 0), (3, 0)]);
+        editor.record_box_move(vec![(1, 0), (0, 0)]);
 
-        assert_eq!(session.solution_history.len(), 3);
+        assert_eq!(editor.solution_history.len(), 3);
 
-        let counts = session.box_move_counts_by_position();
+        let counts = editor.box_move_counts_by_position();
         assert_eq!(counts.get(&(0, 0)).copied(), Some(2));
         assert_eq!(counts.get(&(3, 0)).copied(), Some(1));
     }
 
     #[test]
     fn undo_restores_previous_solution_snapshot() {
-        let mut session = LevelEditorSession::new();
-        let snapshot = session.make_undo_snapshot();
+        let mut editor = LevelEditor::new();
+        let snapshot = editor.make_undo_snapshot();
 
-        session.world.set_tile(0, 0, EditableTile::Void);
-        session.world.set_player(Some((1, 1)));
-        session.solution_history.push(vec![(1, 1), (1, 2)]);
-        session.undo_history.push(snapshot);
-        session.undo_last_move();
+        editor.world.set_tile(0, 0, EditableTile::Void);
+        editor.world.set_player(Some((1, 1)));
+        editor.solution_history.push(vec![(1, 1), (1, 2)]);
+        editor.undo_history.push(snapshot);
+        editor.undo_last_move();
 
-        assert!(session.solution_history.is_empty());
-        assert_ne!(session.world.tile(0, 0), EditableTile::Void);
-        assert_eq!(session.world.player(), None);
+        assert!(editor.solution_history.is_empty());
+        assert_ne!(editor.world.tile(0, 0), EditableTile::Void);
+        assert_eq!(editor.world.player(), None);
     }
 
     #[test]
     fn restart_resets_boxes_on_goals_and_clears_undo_history() {
-        let mut session = LevelEditorSession::new();
-        session.world.set_tile(-2, -1, EditableTile::Goal);
-        session.world.set_tile(0, 0, EditableTile::Box);
-        session.solution_history.push(vec![(-2, -1), (0, 0)]);
-        session.undo_history.push(session.make_undo_snapshot());
+        let mut editor = LevelEditor::new();
+        editor.world.set_tile(-2, -1, EditableTile::Goal);
+        editor.world.set_tile(0, 0, EditableTile::Box);
+        editor.solution_history.push(vec![(-2, -1), (0, 0)]);
+        editor.undo_history.push(editor.make_undo_snapshot());
 
-        session.restart_to_goals();
+        editor.restart_to_goals();
 
-        assert!(session.solution_history.is_empty());
-        assert!(session.undo_history.is_empty());
-        assert_eq!(session.world.player(), None);
-        for (x, y) in session.world.box_positions() {
-            assert_eq!(session.world.tile(x, y), EditableTile::BoxOnGoal);
+        assert!(editor.solution_history.is_empty());
+        assert!(editor.undo_history.is_empty());
+        assert_eq!(editor.world.player(), None);
+        for (x, y) in editor.world.box_positions() {
+            assert_eq!(editor.world.tile(x, y), EditableTile::BoxOnGoal);
         }
     }
 
     #[test]
     fn tracked_box_identity_preserves_selected_box_count() {
-        let mut session = LevelEditorSession::new();
-        session.solution_start_boxes = vec![(0, 0), (2, 0)];
+        let mut editor = LevelEditor::new();
+        editor.solution_start_boxes = vec![(0, 0), (2, 0)];
         let history = vec![
             vec![(0, 0), (1, 0)],
             vec![(2, 0), (0, 0)],
@@ -1445,82 +1077,84 @@ mod tests {
         ];
 
         assert_eq!(
-            session.box_start_index_for_position_in_history(&history, (2, 0)),
+            editor.box_start_index_for_position_in_history(&history, (2, 0)),
             Some(0)
         );
         assert_eq!(
-            session.box_start_index_for_position_in_history(&history, (0, 0)),
+            editor.box_start_index_for_position_in_history(&history, (0, 0)),
             Some(1)
         );
         assert_eq!(
-            session.box_move_count_for_start_index_in_history(&history, 0),
+            editor.box_move_count_for_start_index_in_history(&history, 0),
             Some(2)
         );
         assert_eq!(
-            session.box_move_count_for_start_index_in_history(&history, 1),
+            editor.box_move_count_for_start_index_in_history(&history, 1),
             Some(1)
         );
     }
 
     #[test]
     fn trivial_hint_path_marks_all_destinations_ready_without_job() {
-        let mut session = LevelEditorSession::new();
-        clear_world(&mut session);
+        let mut editor = LevelEditor::new();
+        clear_world(&mut editor);
         for x in 0..=4 {
             for y in 0..=1 {
-                session.world.set_tile(x, y, EditableTile::Floor);
+                editor.world.set_tile(x, y, EditableTile::Floor);
             }
         }
-        session.world.set_tile(2, 0, EditableTile::Box);
-        session.world.set_player(None);
-        session.solution_start_boxes = vec![(2, 0)];
-        session.solution_start_player = None;
-        session.solution_history.clear();
-        session.selected_box = Some((2, 0));
+        editor.world.set_tile(2, 0, EditableTile::Box);
+        editor.world.set_player(None);
+        editor.solution_start_boxes = vec![(2, 0)];
+        editor.solution_start_player = None;
+        editor.solution_history.clear();
+        editor.selected_box = Some((2, 0));
+        editor.mode = EditorMode::Manipulate;
 
-        session.start_pull_destination_hints_job((2, 0));
+        editor.start_pull_destination_hints_job((2, 0));
 
-        assert!(!session.pull_destination_hints.is_empty());
-        assert!(session.active_pull_hint_job.is_none());
-        for hint in session.pull_destination_hints.values() {
+        assert!(!editor.pull_destination_hints.is_empty());
+        assert!(editor.active_pull_hint_job.is_none());
+        for hint in editor.pull_destination_hints.values() {
             assert_eq!(*hint, PullHintState::Ready(1));
         }
     }
 
     #[test]
     fn nontrivial_hint_path_starts_incremental_pending_job() {
-        let mut session = LevelEditorSession::new();
-        clear_world(&mut session);
+        let mut editor = LevelEditor::new();
+        clear_world(&mut editor);
         for x in 0..=4 {
             for y in 0..=1 {
-                session.world.set_tile(x, y, EditableTile::Floor);
+                editor.world.set_tile(x, y, EditableTile::Floor);
             }
         }
-        session.world.set_tile(2, 0, EditableTile::Box);
-        session.world.set_player(None);
-        session.solution_start_boxes = vec![(2, 0)];
-        session.solution_start_player = None;
-        session.solution_history = vec![vec![(2, 0), (3, 0)], vec![(3, 0), (2, 0)]];
-        session.selected_box = Some((2, 0));
+        editor.world.set_tile(2, 0, EditableTile::Box);
+        editor.world.set_player(None);
+        editor.solution_start_boxes = vec![(2, 0)];
+        editor.solution_start_player = None;
+        editor.solution_history = vec![vec![(2, 0), (3, 0)], vec![(3, 0), (2, 0)]];
+        editor.selected_box = Some((2, 0));
+        editor.mode = EditorMode::Manipulate;
 
-        session.start_pull_destination_hints_job((2, 0));
+        editor.start_pull_destination_hints_job((2, 0));
 
-        assert!(!session.pull_destination_hints.is_empty());
-        assert!(session.active_pull_hint_job.is_some());
+        assert!(!editor.pull_destination_hints.is_empty());
+        assert!(editor.active_pull_hint_job.is_some());
         assert!(
-            session
+            editor
                 .pull_destination_hints
                 .values()
                 .any(|hint| matches!(hint, PullHintState::Pending))
         );
 
-        let pending_before = session
+        let pending_before = editor
             .pull_destination_hints
             .values()
             .filter(|hint| matches!(hint, PullHintState::Pending))
             .count();
-        session.advance_pull_destination_hints_job(1);
-        let pending_after = session
+        editor.advance_pull_destination_hints_job(1);
+        let pending_after = editor
             .pull_destination_hints
             .values()
             .filter(|hint| matches!(hint, PullHintState::Pending))
@@ -1530,74 +1164,75 @@ mod tests {
 
     #[test]
     fn stale_hint_results_are_ignored_when_selection_changes() {
-        let mut session = LevelEditorSession::new();
-        clear_world(&mut session);
+        let mut editor = LevelEditor::new();
+        clear_world(&mut editor);
         for x in 0..=4 {
             for y in 0..=1 {
-                session.world.set_tile(x, y, EditableTile::Floor);
+                editor.world.set_tile(x, y, EditableTile::Floor);
             }
         }
-        session.world.set_tile(2, 0, EditableTile::Box);
-        session.world.set_player(None);
-        session.solution_start_boxes = vec![(2, 0)];
-        session.solution_start_player = None;
-        session.solution_history = vec![vec![(2, 0), (3, 0)], vec![(3, 0), (2, 0)]];
-        session.selected_box = Some((2, 0));
+        editor.world.set_tile(2, 0, EditableTile::Box);
+        editor.world.set_player(None);
+        editor.solution_start_boxes = vec![(2, 0)];
+        editor.solution_start_player = None;
+        editor.solution_history = vec![vec![(2, 0), (3, 0)], vec![(3, 0), (2, 0)]];
+        editor.selected_box = Some((2, 0));
+        editor.mode = EditorMode::Manipulate;
 
-        session.start_pull_destination_hints_job((2, 0));
-        assert!(session.active_pull_hint_job.is_some());
+        editor.start_pull_destination_hints_job((2, 0));
+        assert!(editor.active_pull_hint_job.is_some());
         assert!(
-            session
+            editor
                 .pull_destination_hints
                 .values()
                 .all(|hint| matches!(hint, PullHintState::Pending))
         );
 
-        session.selected_box = None;
-        session.advance_pull_destination_hints_job(1);
+        editor.selected_box = None;
+        editor.advance_pull_destination_hints_job(1);
 
         assert!(
-            session
+            editor
                 .pull_destination_hints
                 .values()
-                .all(|hint| matches!(hint, PullHintState::Pending)),
-            "stale computation must not write ready results after selection changes",
+                .all(|hint| matches!(hint, PullHintState::Pending))
         );
     }
 
     #[test]
-    fn hint_job_completes_and_clears_active_state() {
-        let mut session = LevelEditorSession::new();
-        clear_world(&mut session);
+    fn hint_job_completes_and_snapshot_reports_ready_hints() {
+        let mut editor = LevelEditor::new();
+        clear_world(&mut editor);
         for x in 0..=4 {
             for y in 0..=1 {
-                session.world.set_tile(x, y, EditableTile::Floor);
+                editor.world.set_tile(x, y, EditableTile::Floor);
             }
         }
-        session.world.set_tile(2, 0, EditableTile::Box);
-        session.world.set_player(None);
-        session.solution_start_boxes = vec![(2, 0)];
-        session.solution_start_player = None;
-        session.solution_history = vec![vec![(2, 0), (3, 0)], vec![(3, 0), (2, 0)]];
-        session.selected_box = Some((2, 0));
+        editor.world.set_tile(2, 0, EditableTile::Box);
+        editor.world.set_player(None);
+        editor.solution_start_boxes = vec![(2, 0)];
+        editor.solution_start_player = None;
+        editor.solution_history = vec![vec![(2, 0), (3, 0)], vec![(3, 0), (2, 0)]];
+        editor.selected_box = Some((2, 0));
+        editor.mode = EditorMode::Manipulate;
 
-        session.start_pull_destination_hints_job((2, 0));
-        assert!(session.active_pull_hint_job.is_some());
+        editor.start_pull_destination_hints_job((2, 0));
+        assert!(editor.active_pull_hint_job.is_some());
 
         let mut steps = 0usize;
-        while session.active_pull_hint_job.is_some() && steps < 64 {
-            session.advance_pull_destination_hints_job(1);
+        while editor.active_pull_hint_job.is_some() && steps < 64 {
+            editor.advance_pull_destination_hints_job(1);
             steps += 1;
         }
 
-        assert!(session.active_pull_hint_job.is_none());
+        let snapshot = editor.snapshot();
+        assert!(editor.active_pull_hint_job.is_none());
         assert!(steps > 0);
         assert!(
-            session
+            snapshot
                 .pull_destination_hints
-                .values()
-                .all(|hint| matches!(hint, PullHintState::Ready(_))),
-            "all hints should be resolved once the active job is exhausted",
+                .iter()
+                .all(|hint| matches!(hint.state, PullHintStatus::Ready(_)))
         );
     }
 }

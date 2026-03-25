@@ -2,20 +2,10 @@ use crate::app_state::AppState;
 use crate::frame::FrameRequest;
 use crate::overlay::{is_gameplay_menu_open, level_select_page_start};
 use crate::presentation_profile::PresentMode;
+use renderer::{
+    GameplayMenuScreenRequest, GameplayScreenRequest, LevelSelectScreenRequest, UiIcon,
+};
 use sokobanitron_gameplay::GameplayController;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GameplayScreenRequest {
-    pub can_undo: bool,
-    pub can_restart: bool,
-    pub level_number: usize,
-    pub show_solved_overlay: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LevelSelectScreenRequest {
-    pub page_start: usize,
-}
 
 pub fn build_gameplay_frame_request(
     controller: &GameplayController,
@@ -52,7 +42,11 @@ pub fn build_current_frame_request(
     if let Some(page_start) = level_select_page_start(app_state) {
         build_level_select_frame_request(page_start, PresentMode::Full)
     } else if is_gameplay_menu_open(app_state) {
-        FrameRequest::GameplayMenu
+        FrameRequest::GameplayMenu {
+            screen: GameplayMenuScreenRequest {
+                primary_action_icon: app_state.editor_available.then_some(UiIcon::Draw),
+            },
+        }
     } else {
         build_current_gameplay_frame_request(controller, app_state)
     }
@@ -74,6 +68,7 @@ pub(crate) fn build_gameplay_screen_request(
 mod tests {
     use super::{build_current_frame_request, build_level_select_frame_request};
     use crate::{AppOverlay, AppState, FrameRequest, PresentMode};
+    use renderer::GameplayMenuScreenRequest;
     use sokobanitron_gameplay::GameplayController;
 
     fn controller() -> GameplayController {
@@ -101,7 +96,11 @@ mod tests {
 
         assert_eq!(
             build_current_frame_request(&controller, &app_state),
-            FrameRequest::GameplayMenu,
+            FrameRequest::GameplayMenu {
+                screen: GameplayMenuScreenRequest {
+                    primary_action_icon: None,
+                },
+            },
         );
     }
 

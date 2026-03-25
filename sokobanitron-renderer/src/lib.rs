@@ -1,7 +1,7 @@
 mod background;
 mod controls;
+mod editor_screen;
 mod entities;
-mod gameplay_tap;
 mod icons;
 mod level_select_scrollbar;
 mod menu;
@@ -9,23 +9,26 @@ mod overlay;
 mod overlay_chrome;
 mod pixel_ui;
 mod pixels;
+mod screen_requests;
 mod sprites;
 mod tiles;
 mod viewport;
 
 use image::RgbaImage;
-use sokobanitron_app::GameplayScreenRequest;
 use sokobanitron_gameplay::{BoardView, TileKind};
 use std::collections::HashMap;
 
 pub use controls::{
     BOARD_HORIZONTAL_MARGIN, BOARD_VERTICAL_MARGIN, ControlsButtonAction, ControlsButtonRects,
     ControlsUiMode, ScreenRect, UI_BUTTON_MARGIN, UI_BUTTON_SIZE, UI_MENU_BUTTON_HEIGHT,
-    board_viewport_margins, controls_button_action_at, controls_button_rects, draw_controls_ui,
-    draw_top_left_level_button, draw_top_menu_toggle, top_left_level_button_rect,
-    top_menu_toggle_button_contains, top_menu_toggle_button_hit_rect, top_menu_toggle_button_rect,
+    board_viewport_margins, bottom_left_corner_button_rect, bottom_right_corner_button_rect,
+    controls_button_action_at, controls_button_rects, draw_controls_ui, draw_top_left_level_button,
+    draw_top_menu_toggle, top_left_level_button_rect, top_menu_toggle_button_contains,
+    top_menu_toggle_button_hit_rect, top_menu_toggle_button_rect,
 };
-pub use gameplay_tap::{GameplayTapContext, interpret_gameplay_tap};
+pub use editor_screen::{
+    editor_bottom_left_button_rect, editor_bottom_right_button_rect, editor_viewport_size,
+};
 pub use icons::{UiIcon, draw_ui_icon_in_rect};
 pub use menu::{
     MenuNavAction, level_select_menu_clamp_start, level_select_menu_indices,
@@ -38,6 +41,10 @@ pub use overlay_chrome::{
 };
 pub use pixel_ui::{
     PIXEL_FONT_HEIGHT, draw_centered_text_in_rect, draw_icon_bits_in_rect, measure_text_width,
+};
+pub use screen_requests::{
+    EditorCountOverlay, EditorHintOverlay, EditorMenuScreenRequest, EditorScreenRequest,
+    GameplayMenuScreenRequest, GameplayScreenRequest, LevelSelectScreenRequest,
 };
 pub use viewport::{BoardViewport, BoardViewportOptions};
 pub type Rgba = [u8; 4];

@@ -1,5 +1,6 @@
-use crate::constants::INITIAL_PATCH_SIZE;
 use std::collections::HashMap;
+
+const INITIAL_PATCH_SIZE: i32 = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EditableTile {
@@ -134,8 +135,7 @@ impl Default for EditableWorld {
 
 #[cfg(test)]
 mod tests {
-    use super::{EditableTile, EditableWorld, NonVoidBounds};
-    use crate::constants::INITIAL_PATCH_SIZE;
+    use super::{EditableTile, EditableWorld, INITIAL_PATCH_SIZE, NonVoidBounds};
 
     #[test]
     fn seeded_world_starts_with_center_three_by_three_floor() {

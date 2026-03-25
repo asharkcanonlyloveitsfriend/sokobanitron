@@ -1,12 +1,10 @@
 use crate::{config, platform};
-use renderer::{
-    BoardViewport, GameplayTapContext, fit_board_viewport_for_controls, interpret_gameplay_tap,
-    overlay_primary_action_button_contains,
-};
+use renderer::{BoardViewport, fit_board_viewport_for_controls};
 use sokobanitron_app::{
-    AppAction, AppDriverContext, AppInput, AppState, apply_action_and_present_in_context,
-    interpret_input, is_editor_menu_open, is_gameplay_menu_open, is_gameplay_screen,
-    is_level_select_open, is_overlay_open, level_select_page_start, load_initial_levels_for_app,
+    AppAction, AppDriverContext, AppInput, AppState, GameplayTapContext,
+    apply_action_and_present_in_context, interpret_gameplay_tap, interpret_input,
+    is_gameplay_menu_open, is_gameplay_screen, is_level_select_open, is_overlay_open,
+    level_select_page_start, load_initial_levels_for_app,
 };
 use sokobanitron_gameplay::{
     BoardView, GameplayController, GameplayControllerChanges, GameplayPreferences,
@@ -101,6 +99,7 @@ impl KindleApp {
 
     fn on_gameplay_tap(&mut self, screen_x: f64, screen_y: f64) -> Result<()> {
         let input = interpret_gameplay_tap(GameplayTapContext {
+            allow_enter_editor: self.app_state.editor_available,
             is_gameplay_screen: is_gameplay_screen(&self.app_state),
             is_gameplay_menu_open: is_gameplay_menu_open(&self.app_state),
             is_level_select_open: is_level_select_open(&self.app_state),
@@ -131,19 +130,6 @@ impl KindleApp {
 
     fn on_tap(&mut self, raw_x: i32, raw_y: i32) -> Result<()> {
         let (screen_x, screen_y) = platform::map_touch_to_screen(raw_x, raw_y)?;
-        if is_editor_menu_open(&self.app_state)
-            && overlay_primary_action_button_contains(
-                screen_x as f64,
-                screen_y as f64,
-                config::WIDTH as u32,
-                config::HEIGHT as u32,
-            )
-        {
-            self.apply_app_input(AppInput::EnterGameplayMode)?;
-            self.render()?;
-            return Ok(());
-        }
-
         self.on_gameplay_tap(screen_x as f64, screen_y as f64)
     }
 }

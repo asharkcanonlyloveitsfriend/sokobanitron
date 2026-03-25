@@ -4,4 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+renderer = { package = "sokobanitron-renderer", path = "../sokobanitron-renderer" }
+sokobanitron-level-editor = { path = "../sokobanitron-level-editor" }
 sokobanitron-gameplay = { path = "../sokobanitron-gameplay" }

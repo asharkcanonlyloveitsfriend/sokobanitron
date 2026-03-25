@@ -125,6 +125,14 @@ pub fn top_left_level_button_rect() -> ScreenRect {
     to_screen_rect(top_left_level_button_rect_inner())
 }
 
+pub fn bottom_left_corner_button_rect(height: u32) -> ScreenRect {
+    to_screen_rect(bottom_left_button_rect(height as usize))
+}
+
+pub fn bottom_right_corner_button_rect(width: u32, height: u32) -> ScreenRect {
+    to_screen_rect(bottom_right_button_rect(width as usize, height as usize))
+}
+
 pub fn draw_top_left_level_button(frame: &mut [u8], width: u32, height: u32, level_number: usize) {
     draw_button(
         frame,

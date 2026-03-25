@@ -1,6 +1,6 @@
 use sokobanitron_gameplay::BoardView;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoardViewport {
     pub origin_x: i32,
     pub origin_y: i32,
@@ -10,7 +10,7 @@ pub struct BoardViewport {
     pub outer_margin_tiles: u32,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoardViewportOptions {
     pub outer_margin_tiles: u32,
 }

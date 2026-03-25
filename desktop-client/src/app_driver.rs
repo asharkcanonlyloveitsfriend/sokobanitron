@@ -1,19 +1,17 @@
 use pixels::{Pixels, SurfaceTexture};
-use renderer::{
-    BoardViewport, GameplayTapContext, Renderer, fit_board_viewport_for_controls,
-    interpret_gameplay_tap, overlay_primary_action_button_contains,
-    top_menu_toggle_button_contains,
-};
+use renderer::{BoardViewport, Renderer, fit_board_viewport_for_controls};
 use sokobanitron_app::{
-    AppAction, AppDriverContext, AppInput, AppState, apply_action_and_present_in_context,
-    interpret_input, is_editor_menu_open, is_editor_screen, is_gameplay_menu_open,
-    is_gameplay_screen, is_level_select_open, is_overlay_open, level_select_page_start,
-    load_initial_levels_for_app,
+    AppAction, AppDriverContext, AppInput, AppState, EditorPointerPhase, GameplayTapContext,
+    apply_action_and_present_in_context, editor_cursor_moved, editor_mouse_pressed,
+    editor_mouse_released, editor_touch, interpret_gameplay_tap, interpret_input,
+    is_editor_menu_open, is_editor_screen, is_gameplay_menu_open, is_gameplay_screen,
+    is_level_select_open, is_overlay_open, level_select_page_start, load_initial_levels_for_app,
+    reset_editor_interaction_state, resize_editor_surface,
 };
 use sokobanitron_gameplay::{
     BoardView, GameplayController, GameplayControllerChanges, GameplayPreferences,
 };
-use sokobanitron_level_editor::{LevelEditorSession, TouchInputPhase};
+use sokobanitron_level_editor::LevelEditor;
 use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
@@ -41,7 +39,7 @@ pub struct App {
     cursor_position: Option<(f64, f64)>,
     pub(crate) surface_width: u32,
     pub(crate) surface_height: u32,
-    pub(crate) editor_session: LevelEditorSession,
+    pub(crate) editor: LevelEditor,
 }
 
 impl App {
@@ -54,6 +52,8 @@ impl App {
             GameplayController::new(levels.clone(), preferences.level_index(levels.len()));
         let board_viewport =
             Self::compute_viewport(INITIAL_WIDTH, INITIAL_HEIGHT, controller.board());
+        let mut app_state = AppState::default();
+        app_state.editor_available = true;
         Self {
             window: None,
             pixels: None,
@@ -61,13 +61,13 @@ impl App {
             levels,
             preview_boards,
             controller,
-            app_state: AppState::default(),
+            app_state,
             preferences,
             board_viewport,
             cursor_position: None,
             surface_width: INITIAL_WIDTH,
             surface_height: INITIAL_HEIGHT,
-            editor_session: LevelEditorSession::new(),
+            editor: LevelEditor::new(),
         }
     }
 
@@ -112,16 +112,12 @@ impl App {
 
     fn enter_editor_mode(&mut self) {
         self.apply_app_input(AppInput::EnterEditorMode);
-        self.editor_session.reset_interaction_state();
-    }
-
-    fn enter_gameplay_mode(&mut self) {
-        self.apply_app_input(AppInput::EnterGameplayMode);
-        self.editor_session.reset_interaction_state();
+        reset_editor_interaction_state(&mut self.app_state);
     }
 
     fn on_gameplay_tap(&mut self, x: f64, y: f64) {
         let input = interpret_gameplay_tap(GameplayTapContext {
+            allow_enter_editor: self.app_state.editor_available,
             is_gameplay_screen: is_gameplay_screen(&self.app_state),
             is_gameplay_menu_open: is_gameplay_menu_open(&self.app_state),
             is_level_select_open: is_level_select_open(&self.app_state),
@@ -153,73 +149,6 @@ impl App {
             }
         }
     }
-
-    fn on_editor_press(&mut self, x: f64, y: f64) {
-        self.editor_session.cursor_moved(x, y);
-
-        if is_editor_menu_open(&self.app_state) {
-            if top_menu_toggle_button_contains(x, y, self.surface_width) {
-                self.apply_app_input(AppInput::OverlayClose);
-                self.editor_session.reset_interaction_state();
-                return;
-            }
-
-            if overlay_primary_action_button_contains(x, y, self.surface_width, self.surface_height)
-            {
-                self.enter_gameplay_mode();
-            }
-            return;
-        }
-
-        if top_menu_toggle_button_contains(x, y, self.surface_width) {
-            self.apply_app_input(AppInput::OverlayOpen);
-            self.editor_session.reset_interaction_state();
-            return;
-        }
-
-        self.editor_session.mouse_pressed_left();
-    }
-
-    fn on_editor_touch(&mut self, id: u64, phase: TouchPhase, x: f64, y: f64) {
-        let touch_phase = match phase {
-            TouchPhase::Started => Some(TouchInputPhase::Started),
-            TouchPhase::Moved => Some(TouchInputPhase::Moved),
-            TouchPhase::Ended => Some(TouchInputPhase::Ended),
-            TouchPhase::Cancelled => Some(TouchInputPhase::Cancelled),
-        };
-
-        if is_editor_menu_open(&self.app_state) {
-            if matches!(phase, TouchPhase::Started) {
-                if top_menu_toggle_button_contains(x, y, self.surface_width) {
-                    self.apply_app_input(AppInput::OverlayClose);
-                    self.editor_session.reset_interaction_state();
-                    return;
-                }
-                if overlay_primary_action_button_contains(
-                    x,
-                    y,
-                    self.surface_width,
-                    self.surface_height,
-                ) {
-                    self.enter_gameplay_mode();
-                    return;
-                }
-            }
-            return;
-        }
-
-        if matches!(phase, TouchPhase::Started)
-            && top_menu_toggle_button_contains(x, y, self.surface_width)
-        {
-            self.apply_app_input(AppInput::OverlayOpen);
-            self.editor_session.reset_interaction_state();
-            return;
-        }
-
-        if let Some(phase) = touch_phase {
-            self.editor_session.touch(id, phase, x, y);
-        }
-    }
 }
 
 impl AppDriverContext for App {
@@ -239,8 +168,7 @@ impl ApplicationHandler for App {
         self.surface_width = size.width.max(1);
         self.surface_height = size.height.max(1);
         self.update_viewport();
-        self.editor_session
-            .resize_surface(self.surface_width, self.surface_height);
+        resize_editor_surface(&mut self.app_state, self.surface_width, self.surface_height);
 
         let surface_texture =
             SurfaceTexture::new(self.surface_width, self.surface_height, window.clone());
@@ -271,8 +199,7 @@ impl ApplicationHandler for App {
                         .expect("resize buffer");
                 }
                 self.update_viewport();
-                self.editor_session
-                    .resize_surface(self.surface_width, self.surface_height);
+                resize_editor_surface(&mut self.app_state, self.surface_width, self.surface_height);
             }
             WindowEvent::ScaleFactorChanged { .. } => {
                 if let (Some(window), Some(pixels)) = (&self.window, &mut self.pixels) {
@@ -286,14 +213,22 @@ impl ApplicationHandler for App {
                         .resize_buffer(self.surface_width, self.surface_height)
                         .expect("resize buffer");
                     self.update_viewport();
-                    self.editor_session
-                        .resize_surface(self.surface_width, self.surface_height);
+                    resize_editor_surface(
+                        &mut self.app_state,
+                        self.surface_width,
+                        self.surface_height,
+                    );
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor_position = Some((position.x, position.y));
                 if is_editor_screen(&self.app_state) && !is_editor_menu_open(&self.app_state) {
-                    self.editor_session.cursor_moved(position.x, position.y);
+                    editor_cursor_moved(
+                        &mut self.app_state,
+                        &mut self.editor,
+                        position.x,
+                        position.y,
+                    );
                 }
             }
             WindowEvent::MouseInput {
@@ -303,7 +238,12 @@ impl ApplicationHandler for App {
             } => {
                 if let Some((cursor_x, cursor_y)) = self.cursor_position {
                     if is_editor_screen(&self.app_state) {
-                        self.on_editor_press(cursor_x, cursor_y);
+                        editor_mouse_pressed(
+                            &mut self.app_state,
+                            &mut self.editor,
+                            cursor_x,
+                            cursor_y,
+                        );
                         self.render_current();
                         return;
                     }
@@ -318,12 +258,25 @@ impl ApplicationHandler for App {
                 ..
             } => {
                 if is_editor_screen(&self.app_state) {
-                    self.editor_session.mouse_released_left();
+                    editor_mouse_released(&mut self.app_state);
                 }
             }
             WindowEvent::Touch(touch) => {
                 if is_editor_screen(&self.app_state) {
-                    self.on_editor_touch(touch.id, touch.phase, touch.location.x, touch.location.y);
+                    let phase = match touch.phase {
+                        TouchPhase::Started => EditorPointerPhase::Started,
+                        TouchPhase::Moved => EditorPointerPhase::Moved,
+                        TouchPhase::Ended => EditorPointerPhase::Ended,
+                        TouchPhase::Cancelled => EditorPointerPhase::Cancelled,
+                    };
+                    editor_touch(
+                        &mut self.app_state,
+                        &mut self.editor,
+                        touch.id,
+                        phase,
+                        touch.location.x,
+                        touch.location.y,
+                    );
                     self.render_current();
                 }
             }
