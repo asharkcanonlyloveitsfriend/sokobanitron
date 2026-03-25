@@ -10,6 +10,8 @@ use renderer::{
 use sokobanitron_gameplay::{BoardView, TileKind};
 use sokobanitron_level_editor::{EditorMode, LevelEditor, NonVoidBounds};
 
+use crate::pointer::{DoubleTapTracker, PointerGestureState, PointerId};
+
 use super::paint_mode::PaintMode;
 
 const GRID_MARGIN_TILES: u32 = 1;
@@ -37,16 +39,15 @@ pub struct EditorViewportState {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct EditorInteractionState {
     pub cursor_position: Option<(i32, i32)>,
-    pub mouse_paint_mode: Option<PaintMode>,
-    pub active_touch_paint: Option<(u64, PaintMode)>,
-    pub last_tap: Option<LastTap>,
+    pub pointer: PointerGestureState,
+    pub active_stroke: Option<ActiveEditorStroke>,
+    pub double_tap: DoubleTapTracker<(i32, i32)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct LastTap {
-    pub world_x: i32,
-    pub world_y: i32,
-    pub at: std::time::Instant,
+pub(crate) struct ActiveEditorStroke {
+    pub pointer_id: PointerId,
+    pub mode: PaintMode,
 }
 
 impl Default for EditorUiState {
@@ -71,8 +72,8 @@ pub fn resize_editor_surface(editor: &mut EditorUiState, width: u32, height: u32
 }
 
 pub fn reset_editor_interaction_state(editor: &mut EditorUiState) {
-    editor.interaction.mouse_paint_mode = None;
-    editor.interaction.active_touch_paint = None;
+    editor.interaction.pointer.reset();
+    editor.interaction.active_stroke = None;
 }
 
 #[derive(Debug)]

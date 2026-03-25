@@ -6,6 +6,9 @@
 
 use crate::AppState;
 use crate::overlay::is_editor_menu_open;
+use crate::pointer::{
+    MOUSE_POINTER_ID, PointerContact, PointerEvent, PointerGesture, PointerId, PointerPhase,
+};
 use crate::ui_state::{AppOverlay, AppScreen};
 use renderer::{
     ControlsButtonAction, overlay_primary_action_button_contains, top_left_level_button_rect,
@@ -16,118 +19,264 @@ use std::time::{Duration, Instant};
 
 use super::paint_mode::PaintMode;
 use super::view::{
-    EditorUiState, LastTap, can_zoom_in, can_zoom_out, reset_editor_interaction_state,
+    ActiveEditorStroke, EditorUiState, can_zoom_in, can_zoom_out, reset_editor_interaction_state,
     world_cell_at_screen_position, zoom_in, zoom_in_button_rect, zoom_out, zoom_out_button_rect,
 };
 
 const DOUBLE_TAP_WINDOW: Duration = Duration::from_millis(325);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EditorPointerPhase {
-    Started,
-    Moved,
-    Ended,
-    Cancelled,
-}
-
 pub fn editor_cursor_moved(app_state: &mut AppState, editor: &mut LevelEditor, x: f64, y: f64) {
     let x = x.round() as i32;
     let y = y.round() as i32;
     app_state.editor.interaction.cursor_position = Some((x, y));
-    if let Some(mode) = app_state.editor.interaction.mouse_paint_mode {
-        continue_paint_stroke(&mut app_state.editor, editor, x as f64, y as f64, mode);
+    if app_state
+        .editor
+        .interaction
+        .pointer
+        .is_active_pointer(MOUSE_POINTER_ID)
+    {
+        handle_editor_pointer_event(
+            app_state,
+            editor,
+            PointerEvent::new(
+                MOUSE_POINTER_ID,
+                PointerPhase::Moved,
+                x as f64,
+                y as f64,
+                Instant::now(),
+            ),
+        );
     }
 }
 
 pub fn editor_mouse_pressed(app_state: &mut AppState, editor: &mut LevelEditor, x: f64, y: f64) {
     app_state.editor.interaction.cursor_position = Some((x.round() as i32, y.round() as i32));
-    if handle_menu_interaction(app_state, x, y) {
-        return;
-    }
-
-    if top_menu_toggle_button_contains(x, y, app_state.editor.viewport.surface_width) {
-        open_editor_menu(app_state);
-        return;
-    }
-
-    app_state.editor.interaction.mouse_paint_mode =
-        begin_paint_stroke(&mut app_state.editor, editor, x, y);
+    handle_editor_pointer_event(
+        app_state,
+        editor,
+        PointerEvent::new(
+            MOUSE_POINTER_ID,
+            PointerPhase::Started,
+            x,
+            y,
+            Instant::now(),
+        ),
+    );
 }
 
 pub fn editor_mouse_released(app_state: &mut AppState) {
-    app_state.editor.interaction.mouse_paint_mode = None;
+    let Some((x, y)) = app_state.editor.interaction.cursor_position.or_else(|| {
+        app_state
+            .editor
+            .interaction
+            .pointer
+            .active_position()
+            .map(|position| (position.x, position.y))
+    }) else {
+        app_state.editor.interaction.pointer.reset();
+        app_state.editor.interaction.active_stroke = None;
+        return;
+    };
+    let Some(gesture) = app_state
+        .editor
+        .interaction
+        .pointer
+        .handle_event(PointerEvent::new(
+            MOUSE_POINTER_ID,
+            PointerPhase::Ended,
+            x as f64,
+            y as f64,
+            Instant::now(),
+        ))
+    else {
+        return;
+    };
+    match gesture {
+        PointerGesture::Ended(contact) | PointerGesture::Cancelled(contact) => {
+            clear_active_stroke(app_state, contact.id);
+        }
+        PointerGesture::Tap(tap) => {
+            clear_active_stroke(app_state, tap.id);
+        }
+        PointerGesture::Started(_)
+        | PointerGesture::DragStarted(_)
+        | PointerGesture::DragMoved(_) => {}
+    }
 }
 
 pub fn editor_touch(
     app_state: &mut AppState,
     editor: &mut LevelEditor,
     id: u64,
-    phase: EditorPointerPhase,
+    phase: PointerPhase,
     x: f64,
     y: f64,
 ) {
-    if is_editor_menu_open(app_state) {
-        if matches!(phase, EditorPointerPhase::Started) {
-            let _ = handle_menu_interaction(app_state, x, y);
-        }
-        return;
-    }
+    handle_editor_pointer_event(
+        app_state,
+        editor,
+        PointerEvent::new(id, phase, x, y, Instant::now()),
+    );
+}
 
-    if matches!(phase, EditorPointerPhase::Started)
-        && top_menu_toggle_button_contains(x, y, app_state.editor.viewport.surface_width)
-    {
-        open_editor_menu(app_state);
+fn handle_editor_pointer_event(
+    app_state: &mut AppState,
+    editor: &mut LevelEditor,
+    event: PointerEvent,
+) {
+    let Some(gesture) = app_state.editor.interaction.pointer.handle_event(event) else {
         return;
-    }
+    };
+    handle_editor_gesture(app_state, editor, gesture);
+}
 
-    match phase {
-        EditorPointerPhase::Started => {
-            if app_state.editor.interaction.active_touch_paint.is_none() {
-                app_state.editor.interaction.active_touch_paint =
-                    begin_paint_stroke(&mut app_state.editor, editor, x, y).map(|mode| (id, mode));
+fn handle_editor_gesture(
+    app_state: &mut AppState,
+    editor: &mut LevelEditor,
+    gesture: PointerGesture,
+) {
+    match gesture {
+        PointerGesture::Started(contact) => {
+            let target = classify_editor_hit_target(app_state, editor, contact);
+            if is_editor_menu_open(app_state) {
+                handle_editor_menu_target(app_state, target);
+                return;
             }
+            handle_editor_started_target(app_state, editor, contact, target);
         }
-        EditorPointerPhase::Moved => {
-            if let Some((active_id, mode)) = app_state.editor.interaction.active_touch_paint
-                && active_id == id
-            {
-                continue_paint_stroke(&mut app_state.editor, editor, x, y, mode);
-            }
+        PointerGesture::DragStarted(contact) | PointerGesture::DragMoved(contact) => {
+            continue_editor_drag(app_state, editor, contact);
         }
-        EditorPointerPhase::Ended | EditorPointerPhase::Cancelled => {
-            if app_state
-                .editor
-                .interaction
-                .active_touch_paint
-                .is_some_and(|(active_id, _)| active_id == id)
-            {
-                app_state.editor.interaction.active_touch_paint = None;
-            }
+        PointerGesture::Ended(contact) | PointerGesture::Cancelled(contact) => {
+            clear_active_stroke(app_state, contact.id);
+        }
+        PointerGesture::Tap(tap) => {
+            clear_active_stroke(app_state, tap.id);
         }
     }
 }
 
-fn handle_menu_interaction(app_state: &mut AppState, x: f64, y: f64) -> bool {
-    if !is_editor_menu_open(app_state) {
-        return false;
+fn handle_editor_menu_target(app_state: &mut AppState, target: EditorHitTarget) {
+    match target {
+        EditorHitTarget::TopMenuToggle => close_editor_menu(app_state),
+        EditorHitTarget::OverlayPrimaryAction => leave_editor_for_gameplay(app_state),
+        _ => {}
+    }
+}
+
+fn handle_editor_started_target(
+    app_state: &mut AppState,
+    editor: &mut LevelEditor,
+    contact: PointerContact,
+    target: EditorHitTarget,
+) {
+    match target {
+        EditorHitTarget::TopMenuToggle => open_editor_menu(app_state),
+        EditorHitTarget::ModeToggle => {
+            editor.apply_command(EditorCommand::ToggleMode);
+            app_state.editor.interaction.double_tap.clear();
+            app_state.editor.interaction.active_stroke = None;
+        }
+        EditorHitTarget::BottomLeftButton | EditorHitTarget::BottomRightButton => {
+            apply_editor_corner_button(app_state, editor, target);
+        }
+        EditorHitTarget::BoardCell { world_x, world_y } => {
+            begin_editor_board_interaction(app_state, editor, contact, world_x, world_y);
+        }
+        EditorHitTarget::OverlayPrimaryAction | EditorHitTarget::Background => {}
+    }
+}
+
+fn apply_editor_corner_button(
+    app_state: &mut AppState,
+    editor: &mut LevelEditor,
+    target: EditorHitTarget,
+) {
+    match editor.mode() {
+        EditorMode::Draw => match resolve_zoom_action(&app_state.editor, editor, target) {
+            Some(ZoomAction::ZoomIn) => zoom_in(&mut app_state.editor, editor),
+            Some(ZoomAction::ZoomOut) => zoom_out(&mut app_state.editor),
+            None => {}
+        },
+        EditorMode::Manipulate => match resolve_manipulate_action(editor, target) {
+            Some(ControlsButtonAction::Undo) => {
+                editor.apply_command(EditorCommand::Undo);
+            }
+            Some(ControlsButtonAction::Restart) => {
+                editor.apply_command(EditorCommand::RestartToGoals);
+            }
+            _ => {}
+        },
+    }
+}
+
+fn begin_editor_board_interaction(
+    app_state: &mut AppState,
+    editor: &mut LevelEditor,
+    contact: PointerContact,
+    world_x: i32,
+    world_y: i32,
+) {
+    match editor.mode() {
+        EditorMode::Draw => {
+            let mode =
+                resolve_paint_mode(&mut app_state.editor, editor, world_x, world_y, contact.at);
+            editor.apply_command(mode.to_command(world_x, world_y));
+            app_state.editor.interaction.active_stroke = Some(ActiveEditorStroke {
+                pointer_id: contact.id,
+                mode,
+            });
+        }
+        EditorMode::Manipulate => match editor.world().tile(world_x, world_y) {
+            EditableTile::Box | EditableTile::BoxOnGoal => {
+                editor.apply_command(EditorCommand::SelectBox {
+                    cell_x: world_x,
+                    cell_y: world_y,
+                });
+            }
+            EditableTile::Void => {
+                editor.apply_command(EditorCommand::ClearSelection);
+            }
+            _ => {
+                editor.apply_command(EditorCommand::MoveSelectedBoxTo {
+                    cell_x: world_x,
+                    cell_y: world_y,
+                });
+            }
+        },
+    }
+}
+
+fn continue_editor_drag(
+    app_state: &mut AppState,
+    editor: &mut LevelEditor,
+    contact: PointerContact,
+) {
+    if !matches!(editor.mode(), EditorMode::Draw) {
+        return;
+    }
+    let Some(active) = app_state.editor.interaction.active_stroke else {
+        return;
+    };
+    if active.pointer_id != contact.id {
+        return;
     }
 
-    if top_menu_toggle_button_contains(x, y, app_state.editor.viewport.surface_width) {
-        close_editor_menu(app_state);
-        return true;
+    let target = classify_editor_hit_target(app_state, editor, contact);
+    if let EditorHitTarget::BoardCell { world_x, world_y } = target {
+        editor.apply_command(active.mode.to_command(world_x, world_y));
     }
+}
 
-    if overlay_primary_action_button_contains(
-        x,
-        y,
-        app_state.editor.viewport.surface_width,
-        app_state.editor.viewport.surface_height,
-    ) {
-        leave_editor_for_gameplay(app_state);
-        return true;
+fn clear_active_stroke(app_state: &mut AppState, pointer_id: PointerId) {
+    if app_state
+        .editor
+        .interaction
+        .active_stroke
+        .is_some_and(|active| active.pointer_id == pointer_id)
+    {
+        app_state.editor.interaction.active_stroke = None;
     }
-
-    true
 }
 
 fn open_editor_menu(app_state: &mut AppState) {
@@ -146,84 +295,44 @@ fn leave_editor_for_gameplay(app_state: &mut AppState) {
     reset_editor_interaction_state(&mut app_state.editor);
 }
 
-fn begin_paint_stroke(
-    ui: &mut EditorUiState,
-    editor: &mut LevelEditor,
-    screen_x: f64,
-    screen_y: f64,
-) -> Option<PaintMode> {
+fn classify_editor_hit_target(
+    app_state: &AppState,
+    editor: &LevelEditor,
+    contact: PointerContact,
+) -> EditorHitTarget {
+    let (screen_x, screen_y) = contact.position.as_f64();
     if top_left_level_button_rect().contains(screen_x, screen_y) {
-        editor.apply_command(EditorCommand::ToggleMode);
-        ui.interaction.last_tap = None;
-        ui.interaction.mouse_paint_mode = None;
-        ui.interaction.active_touch_paint = None;
-        return None;
+        return EditorHitTarget::ModeToggle;
     }
-
-    match editor.mode() {
-        EditorMode::Draw => {
-            if let Some(action) = zoom_button_action(ui, editor, screen_x, screen_y) {
-                match action {
-                    ZoomAction::ZoomIn => zoom_in(ui, editor),
-                    ZoomAction::ZoomOut => zoom_out(ui),
-                }
-                return None;
-            }
-            let (world_x, world_y) = world_cell_at_screen_position(ui, editor, screen_x, screen_y)?;
-            let mode = resolve_paint_mode(ui, editor, world_x, world_y);
-            editor.apply_command(mode.to_command(world_x, world_y));
-            Some(mode)
-        }
-        EditorMode::Manipulate => {
-            if let Some(action) = manipulate_button_action(ui, editor, screen_x, screen_y) {
-                match action {
-                    ControlsButtonAction::Undo => {
-                        editor.apply_command(EditorCommand::Undo);
-                    }
-                    ControlsButtonAction::Restart => {
-                        editor.apply_command(EditorCommand::RestartToGoals);
-                    }
-                    ControlsButtonAction::ShowMenu => {}
-                }
-                return None;
-            }
-            let (world_x, world_y) = world_cell_at_screen_position(ui, editor, screen_x, screen_y)?;
-            match editor.world().tile(world_x, world_y) {
-                EditableTile::Box | EditableTile::BoxOnGoal => {
-                    editor.apply_command(EditorCommand::SelectBox {
-                        cell_x: world_x,
-                        cell_y: world_y,
-                    });
-                }
-                EditableTile::Void => {
-                    editor.apply_command(EditorCommand::ClearSelection);
-                }
-                _ => {
-                    editor.apply_command(EditorCommand::MoveSelectedBoxTo {
-                        cell_x: world_x,
-                        cell_y: world_y,
-                    });
-                }
-            }
-            None
-        }
-    }
-}
-
-fn continue_paint_stroke(
-    ui: &mut EditorUiState,
-    editor: &mut LevelEditor,
-    screen_x: f64,
-    screen_y: f64,
-    mode: PaintMode,
-) {
-    if !matches!(editor.mode(), EditorMode::Draw) {
-        return;
-    }
-    if let Some((world_x, world_y)) = world_cell_at_screen_position(ui, editor, screen_x, screen_y)
+    if top_menu_toggle_button_contains(screen_x, screen_y, app_state.editor.viewport.surface_width)
     {
-        editor.apply_command(mode.to_command(world_x, world_y));
+        return EditorHitTarget::TopMenuToggle;
     }
+    if overlay_primary_action_button_contains(
+        screen_x,
+        screen_y,
+        app_state.editor.viewport.surface_width,
+        app_state.editor.viewport.surface_height,
+    ) {
+        return EditorHitTarget::OverlayPrimaryAction;
+    }
+    if zoom_out_button_rect(app_state.editor.viewport.surface_height).contains(screen_x, screen_y) {
+        return EditorHitTarget::BottomLeftButton;
+    }
+    if zoom_in_button_rect(
+        app_state.editor.viewport.surface_width,
+        app_state.editor.viewport.surface_height,
+    )
+    .contains(screen_x, screen_y)
+    {
+        return EditorHitTarget::BottomRightButton;
+    }
+    if let Some((world_x, world_y)) =
+        world_cell_at_screen_position(&app_state.editor, editor, screen_x, screen_y)
+    {
+        return EditorHitTarget::BoardCell { world_x, world_y };
+    }
+    EditorHitTarget::Background
 }
 
 fn resolve_paint_mode(
@@ -231,71 +340,59 @@ fn resolve_paint_mode(
     editor: &LevelEditor,
     world_x: i32,
     world_y: i32,
+    at: Instant,
 ) -> PaintMode {
     let current_tile = editor.world().tile(world_x, world_y);
     if current_tile == EditableTile::BoxOnGoal {
-        ui.interaction.last_tap = None;
+        ui.interaction.double_tap.clear();
         return PaintMode::SetVoid;
     }
 
-    let now = Instant::now();
-    let is_double_tap = ui.interaction.last_tap.is_some_and(|last| {
-        last.world_x == world_x
-            && last.world_y == world_y
-            && now.duration_since(last.at) <= DOUBLE_TAP_WINDOW
-    });
-
-    if is_double_tap {
-        ui.interaction.last_tap = None;
+    if ui
+        .interaction
+        .double_tap
+        .register_tap((world_x, world_y), at, DOUBLE_TAP_WINDOW)
+    {
         PaintMode::SetBoxOnGoal
     } else {
-        ui.interaction.last_tap = Some(LastTap {
-            world_x,
-            world_y,
-            at: now,
-        });
         PaintMode::from_start_tile(current_tile)
     }
 }
 
-fn zoom_button_action(
+fn resolve_zoom_action(
     ui: &EditorUiState,
     editor: &LevelEditor,
-    screen_x: f64,
-    screen_y: f64,
+    target: EditorHitTarget,
 ) -> Option<ZoomAction> {
-    if can_zoom_out(ui)
-        && zoom_out_button_rect(ui.viewport.surface_height).contains(screen_x, screen_y)
-    {
-        return Some(ZoomAction::ZoomOut);
+    match target {
+        EditorHitTarget::BottomLeftButton if can_zoom_out(ui) => Some(ZoomAction::ZoomOut),
+        EditorHitTarget::BottomRightButton if can_zoom_in(ui, editor) => Some(ZoomAction::ZoomIn),
+        _ => None,
     }
-    if can_zoom_in(ui, editor)
-        && zoom_in_button_rect(ui.viewport.surface_width, ui.viewport.surface_height)
-            .contains(screen_x, screen_y)
-    {
-        return Some(ZoomAction::ZoomIn);
-    }
-    None
 }
 
-fn manipulate_button_action(
-    ui: &EditorUiState,
+fn resolve_manipulate_action(
     editor: &LevelEditor,
-    screen_x: f64,
-    screen_y: f64,
+    target: EditorHitTarget,
 ) -> Option<ControlsButtonAction> {
-    if editor.can_undo()
-        && zoom_out_button_rect(ui.viewport.surface_height).contains(screen_x, screen_y)
-    {
-        return Some(ControlsButtonAction::Undo);
+    match target {
+        EditorHitTarget::BottomLeftButton if editor.can_undo() => Some(ControlsButtonAction::Undo),
+        EditorHitTarget::BottomRightButton if editor.can_restart() => {
+            Some(ControlsButtonAction::Restart)
+        }
+        _ => None,
     }
-    if editor.can_restart()
-        && zoom_in_button_rect(ui.viewport.surface_width, ui.viewport.surface_height)
-            .contains(screen_x, screen_y)
-    {
-        return Some(ControlsButtonAction::Restart);
-    }
-    None
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EditorHitTarget {
+    ModeToggle,
+    TopMenuToggle,
+    OverlayPrimaryAction,
+    BottomLeftButton,
+    BottomRightButton,
+    BoardCell { world_x: i32, world_y: i32 },
+    Background,
 }
 
 #[derive(Clone, Copy)]

@@ -1,12 +1,12 @@
 use pixels::{Pixels, SurfaceTexture};
 use renderer::{BoardViewport, Renderer, fit_board_viewport_for_controls};
 use sokobanitron_app::{
-    AppAction, AppDriverContext, AppInput, AppState, EditorPointerPhase, GameplayTapContext,
+    AppAction, AppDriverContext, AppInput, AppState, GameplayInputContext, PointerPhase,
     apply_action_and_present_in_context, editor_cursor_moved, editor_mouse_pressed,
-    editor_mouse_released, editor_touch, interpret_gameplay_tap, interpret_input,
-    is_editor_menu_open, is_editor_screen, is_gameplay_menu_open, is_gameplay_screen,
-    is_level_select_open, is_overlay_open, level_select_page_start, load_initial_levels_for_app,
-    reset_editor_interaction_state, resize_editor_surface,
+    editor_mouse_released, editor_touch, gameplay_pointer_event, gameplay_pointer_tap,
+    interpret_input, is_editor_menu_open, is_editor_screen, is_gameplay_menu_open,
+    is_gameplay_screen, is_level_select_open, is_overlay_open, level_select_page_start,
+    load_initial_levels_for_app, reset_editor_interaction_state, resize_editor_surface,
 };
 use sokobanitron_gameplay::{
     BoardView, GameplayController, GameplayControllerChanges, GameplayPreferences,
@@ -115,27 +115,7 @@ impl App {
         reset_editor_interaction_state(&mut self.app_state);
     }
 
-    fn on_gameplay_tap(&mut self, x: f64, y: f64) {
-        let input = interpret_gameplay_tap(GameplayTapContext {
-            allow_enter_editor: self.app_state.editor_available,
-            is_gameplay_screen: is_gameplay_screen(&self.app_state),
-            is_gameplay_menu_open: is_gameplay_menu_open(&self.app_state),
-            is_level_select_open: is_level_select_open(&self.app_state),
-            is_overlay_open: is_overlay_open(&self.app_state),
-            surface_width: self.surface_width,
-            surface_height: self.surface_height,
-            tap_x: x,
-            tap_y: y,
-            level_count: self.levels.len(),
-            current_level: self.controller.current_level(),
-            current_level_select_page_start: level_select_page_start(&self.app_state).unwrap_or(0),
-            can_undo: self.controller.can_undo(),
-            can_restart: self.controller.can_restart(),
-            is_solved: self.controller.board().is_solved(),
-            board_viewport: self.board_viewport,
-            board: self.controller.board(),
-        });
-
+    fn handle_gameplay_input(&mut self, input: AppInput) {
         match input {
             AppInput::NoOp => {}
             AppInput::EnterEditorMode => {
@@ -148,6 +128,50 @@ impl App {
                 self.render_active_gameplay_screen();
             }
         }
+    }
+
+    fn on_gameplay_tap(&mut self, x: f64, y: f64) {
+        let context = GameplayInputContext {
+            allow_enter_editor: self.app_state.editor_available,
+            is_gameplay_screen: is_gameplay_screen(&self.app_state),
+            is_gameplay_menu_open: is_gameplay_menu_open(&self.app_state),
+            is_level_select_open: is_level_select_open(&self.app_state),
+            is_overlay_open: is_overlay_open(&self.app_state),
+            surface_width: self.surface_width,
+            surface_height: self.surface_height,
+            level_count: self.levels.len(),
+            current_level: self.controller.current_level(),
+            current_level_select_page_start: level_select_page_start(&self.app_state).unwrap_or(0),
+            can_undo: self.controller.can_undo(),
+            can_restart: self.controller.can_restart(),
+            is_solved: self.controller.board().is_solved(),
+            board_viewport: self.board_viewport,
+            board: self.controller.board(),
+        };
+        let input = gameplay_pointer_tap(&mut self.app_state.gameplay, context, x, y);
+        self.handle_gameplay_input(input);
+    }
+
+    fn on_gameplay_pointer_event(&mut self, id: u64, phase: PointerPhase, x: f64, y: f64) {
+        let context = GameplayInputContext {
+            allow_enter_editor: self.app_state.editor_available,
+            is_gameplay_screen: is_gameplay_screen(&self.app_state),
+            is_gameplay_menu_open: is_gameplay_menu_open(&self.app_state),
+            is_level_select_open: is_level_select_open(&self.app_state),
+            is_overlay_open: is_overlay_open(&self.app_state),
+            surface_width: self.surface_width,
+            surface_height: self.surface_height,
+            level_count: self.levels.len(),
+            current_level: self.controller.current_level(),
+            current_level_select_page_start: level_select_page_start(&self.app_state).unwrap_or(0),
+            can_undo: self.controller.can_undo(),
+            can_restart: self.controller.can_restart(),
+            is_solved: self.controller.board().is_solved(),
+            board_viewport: self.board_viewport,
+            board: self.controller.board(),
+        };
+        let input = gameplay_pointer_event(&mut self.app_state.gameplay, context, id, phase, x, y);
+        self.handle_gameplay_input(input);
     }
 }
 
@@ -264,10 +288,10 @@ impl ApplicationHandler for App {
             WindowEvent::Touch(touch) => {
                 if is_editor_screen(&self.app_state) {
                     let phase = match touch.phase {
-                        TouchPhase::Started => EditorPointerPhase::Started,
-                        TouchPhase::Moved => EditorPointerPhase::Moved,
-                        TouchPhase::Ended => EditorPointerPhase::Ended,
-                        TouchPhase::Cancelled => EditorPointerPhase::Cancelled,
+                        TouchPhase::Started => PointerPhase::Started,
+                        TouchPhase::Moved => PointerPhase::Moved,
+                        TouchPhase::Ended => PointerPhase::Ended,
+                        TouchPhase::Cancelled => PointerPhase::Cancelled,
                     };
                     editor_touch(
                         &mut self.app_state,
@@ -278,6 +302,19 @@ impl ApplicationHandler for App {
                         touch.location.y,
                     );
                     self.render_current();
+                } else if is_gameplay_screen(&self.app_state) {
+                    let phase = match touch.phase {
+                        TouchPhase::Started => PointerPhase::Started,
+                        TouchPhase::Moved => PointerPhase::Moved,
+                        TouchPhase::Ended => PointerPhase::Ended,
+                        TouchPhase::Cancelled => PointerPhase::Cancelled,
+                    };
+                    self.on_gameplay_pointer_event(
+                        touch.id,
+                        phase,
+                        touch.location.x,
+                        touch.location.y,
+                    );
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {

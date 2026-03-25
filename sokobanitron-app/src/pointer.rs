@@ -1,0 +1,292 @@
+use std::time::{Duration, Instant};
+
+pub type PointerId = u64;
+pub const MOUSE_POINTER_ID: PointerId = u64::MAX;
+
+const TAP_SLOP_PX: i32 = 8;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointerPhase {
+    Started,
+    Moved,
+    Ended,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScreenPoint {
+    pub x: i32,
+    pub y: i32,
+}
+
+impl ScreenPoint {
+    pub fn from_f64(x: f64, y: f64) -> Self {
+        Self {
+            x: x.round() as i32,
+            y: y.round() as i32,
+        }
+    }
+
+    pub fn as_f64(self) -> (f64, f64) {
+        (self.x as f64, self.y as f64)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PointerEvent {
+    pub id: PointerId,
+    pub phase: PointerPhase,
+    pub position: ScreenPoint,
+    pub at: Instant,
+}
+
+impl PointerEvent {
+    pub fn new(id: PointerId, phase: PointerPhase, x: f64, y: f64, at: Instant) -> Self {
+        Self {
+            id,
+            phase,
+            position: ScreenPoint::from_f64(x, y),
+            at,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PointerContact {
+    pub id: PointerId,
+    pub position: ScreenPoint,
+    pub at: Instant,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TapGesture {
+    pub id: PointerId,
+    pub position: ScreenPoint,
+    pub at: Instant,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointerGesture {
+    Started(PointerContact),
+    DragStarted(PointerContact),
+    DragMoved(PointerContact),
+    Ended(PointerContact),
+    Cancelled(PointerContact),
+    Tap(TapGesture),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PointerGestureState {
+    active: Option<ActivePointer>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ActivePointer {
+    id: PointerId,
+    start: ScreenPoint,
+    current: ScreenPoint,
+}
+
+impl PointerGestureState {
+    pub fn handle_event(&mut self, event: PointerEvent) -> Option<PointerGesture> {
+        match event.phase {
+            PointerPhase::Started => {
+                if self.active.is_some() {
+                    return None;
+                }
+                self.active = Some(ActivePointer {
+                    id: event.id,
+                    start: event.position,
+                    current: event.position,
+                });
+                Some(PointerGesture::Started(PointerContact {
+                    id: event.id,
+                    position: event.position,
+                    at: event.at,
+                }))
+            }
+            PointerPhase::Moved => {
+                let active = self.active.as_mut()?;
+                if active.id != event.id {
+                    return None;
+                }
+                let was_dragging = exceeds_tap_slop(active.start, active.current);
+                active.current = event.position;
+                let contact = PointerContact {
+                    id: event.id,
+                    position: event.position,
+                    at: event.at,
+                };
+                if !was_dragging && exceeds_tap_slop(active.start, active.current) {
+                    return Some(PointerGesture::DragStarted(contact));
+                }
+                if exceeds_tap_slop(active.start, active.current) {
+                    return Some(PointerGesture::DragMoved(contact));
+                }
+                None
+            }
+            PointerPhase::Ended => {
+                let active = self.active?;
+                if active.id != event.id {
+                    return None;
+                }
+                self.active = None;
+                if exceeds_tap_slop(active.start, event.position) {
+                    Some(PointerGesture::Ended(PointerContact {
+                        id: event.id,
+                        position: event.position,
+                        at: event.at,
+                    }))
+                } else {
+                    Some(PointerGesture::Tap(TapGesture {
+                        id: event.id,
+                        position: event.position,
+                        at: event.at,
+                    }))
+                }
+            }
+            PointerPhase::Cancelled => {
+                let active = self.active?;
+                if active.id != event.id {
+                    return None;
+                }
+                self.active = None;
+                Some(PointerGesture::Cancelled(PointerContact {
+                    id: event.id,
+                    position: event.position,
+                    at: event.at,
+                }))
+            }
+        }
+    }
+
+    pub fn synthetic_tap(&mut self, id: PointerId, x: f64, y: f64, at: Instant) -> TapGesture {
+        let start = PointerEvent::new(id, PointerPhase::Started, x, y, at);
+        let end = PointerEvent::new(id, PointerPhase::Ended, x, y, at);
+        let _ = self.handle_event(start);
+        match self.handle_event(end) {
+            Some(PointerGesture::Tap(tap)) => tap,
+            _ => unreachable!("synthetic tap should always end as a tap"),
+        }
+    }
+
+    pub fn is_active_pointer(&self, id: PointerId) -> bool {
+        self.active.is_some_and(|active| active.id == id)
+    }
+
+    pub fn active_position(&self) -> Option<ScreenPoint> {
+        self.active.map(|active| active.current)
+    }
+
+    pub fn reset(&mut self) {
+        self.active = None;
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DoubleTapTracker<T> {
+    last_tap: Option<DoubleTapRecord<T>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DoubleTapRecord<T> {
+    target: T,
+    at: Instant,
+}
+
+impl<T> DoubleTapTracker<T>
+where
+    T: Copy + Eq,
+{
+    pub fn register_tap(&mut self, target: T, at: Instant, window: Duration) -> bool {
+        let is_double_tap = self
+            .last_tap
+            .as_ref()
+            .is_some_and(|last| last.target == target && at.duration_since(last.at) <= window);
+        if is_double_tap {
+            self.last_tap = None;
+            true
+        } else {
+            self.last_tap = Some(DoubleTapRecord { target, at });
+            false
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.last_tap = None;
+    }
+}
+
+fn exceeds_tap_slop(start: ScreenPoint, current: ScreenPoint) -> bool {
+    let dx = (current.x - start.x).abs();
+    let dy = (current.y - start.y).abs();
+    dx.max(dy) > TAP_SLOP_PX
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        DoubleTapTracker, MOUSE_POINTER_ID, PointerEvent, PointerGesture, PointerGestureState,
+        PointerPhase,
+    };
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn stationary_press_and_release_is_tap() {
+        let at = Instant::now();
+        let mut state = PointerGestureState::default();
+        assert!(matches!(
+            state.handle_event(PointerEvent::new(
+                MOUSE_POINTER_ID,
+                PointerPhase::Started,
+                12.0,
+                34.0,
+                at,
+            )),
+            Some(PointerGesture::Started(_))
+        ));
+        assert!(matches!(
+            state.handle_event(PointerEvent::new(
+                MOUSE_POINTER_ID,
+                PointerPhase::Ended,
+                12.0,
+                34.0,
+                at,
+            )),
+            Some(PointerGesture::Tap(_))
+        ));
+    }
+
+    #[test]
+    fn movement_past_slop_becomes_drag() {
+        let at = Instant::now();
+        let mut state = PointerGestureState::default();
+        let _ = state.handle_event(PointerEvent::new(1, PointerPhase::Started, 10.0, 10.0, at));
+
+        assert!(matches!(
+            state.handle_event(PointerEvent::new(1, PointerPhase::Moved, 25.0, 10.0, at)),
+            Some(PointerGesture::DragStarted(_))
+        ));
+        assert!(matches!(
+            state.handle_event(PointerEvent::new(1, PointerPhase::Moved, 30.0, 10.0, at)),
+            Some(PointerGesture::DragMoved(_))
+        ));
+        assert!(matches!(
+            state.handle_event(PointerEvent::new(1, PointerPhase::Ended, 30.0, 10.0, at)),
+            Some(PointerGesture::Ended(_))
+        ));
+    }
+
+    #[test]
+    fn double_tap_tracker_matches_same_target_inside_window() {
+        let now = Instant::now();
+        let mut tracker = DoubleTapTracker::default();
+
+        assert!(!tracker.register_tap((3, 4), now, Duration::from_millis(325)));
+        assert!(tracker.register_tap(
+            (3, 4),
+            now + Duration::from_millis(200),
+            Duration::from_millis(325),
+        ));
+    }
+}

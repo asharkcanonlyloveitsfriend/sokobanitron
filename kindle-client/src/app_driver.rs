@@ -1,8 +1,8 @@
 use crate::{config, platform};
 use renderer::{BoardViewport, fit_board_viewport_for_controls};
 use sokobanitron_app::{
-    AppAction, AppDriverContext, AppInput, AppState, GameplayTapContext,
-    apply_action_and_present_in_context, interpret_gameplay_tap, interpret_input,
+    AppAction, AppDriverContext, AppInput, AppState, GameplayInputContext,
+    apply_action_and_present_in_context, gameplay_pointer_tap, interpret_input,
     is_gameplay_menu_open, is_gameplay_screen, is_level_select_open, is_overlay_open,
     level_select_page_start, load_initial_levels_for_app,
 };
@@ -98,7 +98,7 @@ impl KindleApp {
     }
 
     fn on_gameplay_tap(&mut self, screen_x: f64, screen_y: f64) -> Result<()> {
-        let input = interpret_gameplay_tap(GameplayTapContext {
+        let context = GameplayInputContext {
             allow_enter_editor: self.app_state.editor_available,
             is_gameplay_screen: is_gameplay_screen(&self.app_state),
             is_gameplay_menu_open: is_gameplay_menu_open(&self.app_state),
@@ -106,8 +106,6 @@ impl KindleApp {
             is_overlay_open: is_overlay_open(&self.app_state),
             surface_width: config::WIDTH as u32,
             surface_height: config::HEIGHT as u32,
-            tap_x: screen_x,
-            tap_y: screen_y,
             level_count: self.levels.len(),
             current_level: self.controller.current_level(),
             current_level_select_page_start: level_select_page_start(&self.app_state).unwrap_or(0),
@@ -116,7 +114,8 @@ impl KindleApp {
             is_solved: self.controller.board().is_solved(),
             board_viewport: self.viewport,
             board: self.controller.board(),
-        });
+        };
+        let input = gameplay_pointer_tap(&mut self.app_state.gameplay, context, screen_x, screen_y);
 
         match input {
             AppInput::NoOp => Ok(()),
