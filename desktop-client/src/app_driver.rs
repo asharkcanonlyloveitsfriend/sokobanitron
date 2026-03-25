@@ -1,9 +1,7 @@
 use pixels::{Pixels, SurfaceTexture};
 use renderer::{
-    BoardViewport, ControlsButtonAction, Renderer, controls_button_action_at,
-    fit_board_viewport_for_controls, level_select_menu_nav_action_at,
-    level_select_menu_start_for_nav, level_select_menu_target_at,
-    overlay_primary_action_button_contains, top_left_level_button_rect,
+    BoardViewport, GameplayTapContext, Renderer, fit_board_viewport_for_controls,
+    interpret_gameplay_tap, overlay_primary_action_button_contains,
     top_menu_toggle_button_contains,
 };
 use sokobanitron_app::{
@@ -120,6 +118,40 @@ impl App {
     fn enter_gameplay_mode(&mut self) {
         self.apply_app_input(AppInput::EnterGameplayMode);
         self.editor_session.reset_interaction_state();
+    }
+
+    fn on_gameplay_tap(&mut self, x: f64, y: f64) {
+        let input = interpret_gameplay_tap(GameplayTapContext {
+            is_gameplay_screen: is_gameplay_screen(&self.app_state),
+            is_gameplay_menu_open: is_gameplay_menu_open(&self.app_state),
+            is_level_select_open: is_level_select_open(&self.app_state),
+            is_overlay_open: is_overlay_open(&self.app_state),
+            surface_width: self.surface_width,
+            surface_height: self.surface_height,
+            tap_x: x,
+            tap_y: y,
+            level_count: self.levels.len(),
+            current_level: self.controller.current_level(),
+            current_level_select_page_start: level_select_page_start(&self.app_state).unwrap_or(0),
+            can_undo: self.controller.can_undo(),
+            can_restart: self.controller.can_restart(),
+            is_solved: self.controller.board().is_solved(),
+            board_viewport: self.board_viewport,
+            board: self.controller.board(),
+        });
+
+        match input {
+            AppInput::NoOp => {}
+            AppInput::EnterEditorMode => {
+                self.enter_editor_mode();
+                self.render_current();
+            }
+            AppInput::BoardTap { .. } => self.apply_app_input(input),
+            _ => {
+                self.apply_app_input(input);
+                self.render_active_gameplay_screen();
+            }
+        }
     }
 
     fn on_editor_press(&mut self, x: f64, y: f64) {
@@ -276,109 +308,7 @@ impl ApplicationHandler for App {
                         return;
                     }
                     if is_gameplay_screen(&self.app_state) {
-                        if !is_overlay_open(&self.app_state)
-                            && top_left_level_button_rect().contains(cursor_x, cursor_y)
-                        {
-                            self.apply_app_input(AppInput::OpenLevelSelect);
-                            self.render_active_gameplay_screen();
-                            return;
-                        }
-
-                        if let Some(action) = controls_button_action_at(
-                            cursor_x,
-                            cursor_y,
-                            self.surface_width,
-                            self.surface_height,
-                            self.controller.can_undo(),
-                            self.controller.can_restart(),
-                        ) {
-                            match action {
-                                ControlsButtonAction::Restart => {
-                                    if !is_overlay_open(&self.app_state) {
-                                        self.apply_app_input(AppInput::ControlRestart);
-                                        self.render_active_gameplay_screen();
-                                        return;
-                                    }
-                                }
-                                ControlsButtonAction::Undo => {
-                                    if !is_overlay_open(&self.app_state) {
-                                        self.apply_app_input(AppInput::ControlUndo);
-                                        self.render_active_gameplay_screen();
-                                        return;
-                                    }
-                                }
-                                ControlsButtonAction::ShowMenu => {
-                                    self.apply_app_input(AppInput::OverlayToggle);
-                                    self.render_active_gameplay_screen();
-                                    return;
-                                }
-                            }
-                        }
-
-                        if is_gameplay_menu_open(&self.app_state) {
-                            if overlay_primary_action_button_contains(
-                                cursor_x,
-                                cursor_y,
-                                self.surface_width,
-                                self.surface_height,
-                            ) {
-                                self.enter_editor_mode();
-                                self.render_current();
-                                return;
-                            }
-                            return;
-                        }
-
-                        if is_level_select_open(&self.app_state) {
-                            let page_start_idx =
-                                level_select_page_start(&self.app_state).unwrap_or(0);
-                            if let Some(nav_action) = level_select_menu_nav_action_at(
-                                cursor_x,
-                                cursor_y,
-                                self.surface_width,
-                                self.surface_height,
-                                self.levels.len(),
-                                self.controller.current_level(),
-                                page_start_idx,
-                            ) {
-                                let page_start = level_select_menu_start_for_nav(
-                                    self.levels.len(),
-                                    self.controller.current_level(),
-                                    page_start_idx,
-                                    nav_action,
-                                );
-                                self.apply_app_input(AppInput::LevelSelectNavigate { page_start });
-                                self.render_active_gameplay_screen();
-                                return;
-                            }
-
-                            if let Some(target) = level_select_menu_target_at(
-                                cursor_x,
-                                cursor_y,
-                                self.surface_width,
-                                self.surface_height,
-                                self.levels.len(),
-                                page_start_idx,
-                            ) {
-                                self.apply_app_input(AppInput::LevelSelectSelect(target));
-                                self.render_active_gameplay_screen();
-                            }
-                            return;
-                        }
-
-                        if self.controller.board().is_solved() {
-                            self.apply_app_input(AppInput::SolvedAdvance);
-                            self.render_active_gameplay_screen();
-                            return;
-                        }
-
-                        if let Some((x, y)) = self.board_viewport.screen_to_cell(
-                            cursor_x,
-                            cursor_y,
-                            self.controller.board(),
-                        ) {
-                            self.apply_app_input(AppInput::BoardTap { x, y });
-                        }
+                        self.on_gameplay_tap(cursor_x, cursor_y);
                     }
                 }
             }

@@ -1,6 +1,7 @@
 mod background;
 mod controls;
 mod entities;
+mod gameplay_tap;
 mod icons;
 mod level_select_scrollbar;
 mod menu;
@@ -24,6 +25,7 @@ pub use controls::{
     draw_top_left_level_button, draw_top_menu_toggle, top_left_level_button_rect,
     top_menu_toggle_button_contains, top_menu_toggle_button_hit_rect, top_menu_toggle_button_rect,
 };
+pub use gameplay_tap::{GameplayTapContext, interpret_gameplay_tap};
 pub use icons::{UiIcon, draw_ui_icon_in_rect};
 pub use menu::{
     MenuNavAction, level_select_menu_clamp_start, level_select_menu_indices,
