@@ -6,7 +6,7 @@ use sokobanitron_app::{
         AppAction, AppDriverContext, AppInput, AppState, apply_action_and_present_in_context,
         interpret_input,
     },
-    gameplay::{GameplayInputContext, gameplay_pointer_tap},
+    gameplay::{build_gameplay_policy_context, build_gameplay_surface_model, gameplay_pointer_tap},
     level_bootstrap::load_initial_levels_for_app,
 };
 use sokobanitron_gameplay::{
@@ -17,7 +17,6 @@ use std::io::Result;
 pub struct KindleApp {
     pub(crate) renderer: Renderer,
     pub(crate) rgba_frame: Vec<u8>,
-    levels: Vec<String>,
     pub(crate) preview_boards: Vec<BoardView>,
     pub(crate) controller: GameplayController,
     pub(crate) app_state: AppState,
@@ -38,7 +37,6 @@ impl KindleApp {
         Ok(Self {
             renderer: Self::build_renderer(),
             rgba_frame: vec![0; config::WIDTH * config::HEIGHT * 4],
-            levels,
             preview_boards,
             controller,
             app_state: AppState::default(),
@@ -101,24 +99,21 @@ impl KindleApp {
     }
 
     fn on_gameplay_tap(&mut self, screen_x: f64, screen_y: f64) -> Result<()> {
-        let context = GameplayInputContext {
-            allow_enter_editor: self.app_state.editor_available,
-            is_gameplay_screen: self.app_state.is_gameplay_screen(),
-            is_gameplay_menu_open: self.app_state.is_gameplay_menu_open(),
-            is_level_select_open: self.app_state.is_level_select_open(),
-            is_overlay_open: self.app_state.is_overlay_open(),
-            surface_width: config::WIDTH as u32,
-            surface_height: config::HEIGHT as u32,
-            level_count: self.levels.len(),
-            current_level: self.controller.current_level(),
-            current_level_select_page_start: self.app_state.level_select_page_start().unwrap_or(0),
-            can_undo: self.controller.can_undo(),
-            can_restart: self.controller.can_restart(),
-            is_solved: self.controller.board().is_solved(),
-            board_viewport: self.viewport,
-            board: self.controller.board(),
-        };
-        let input = gameplay_pointer_tap(&mut self.app_state.gameplay, context, screen_x, screen_y);
+        let surface = build_gameplay_surface_model(
+            &self.app_state,
+            &self.controller,
+            config::WIDTH as u32,
+            config::HEIGHT as u32,
+            self.viewport,
+        );
+        let policy = build_gameplay_policy_context(&self.app_state, &self.controller);
+        let input = gameplay_pointer_tap(
+            &mut self.app_state.gameplay,
+            &surface,
+            policy,
+            screen_x,
+            screen_y,
+        );
 
         match input {
             AppInput::NoOp => Ok(()),

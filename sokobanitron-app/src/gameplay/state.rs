@@ -1,6 +1,6 @@
-use crate::shared::PointerGestureState;
+use crate::shared::SinglePointerGestureState;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GameplayInteractionState {
-    pub(crate) pointer: PointerGestureState,
+    pub(crate) pointer: SinglePointerGestureState,
 }

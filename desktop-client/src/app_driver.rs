@@ -10,7 +10,10 @@ use sokobanitron_app::{
         editor_cursor_moved, editor_mouse_pressed, editor_mouse_released, editor_touch,
         reset_editor_interaction_state, resize_editor_surface,
     },
-    gameplay::{GameplayInputContext, gameplay_pointer_event, gameplay_pointer_tap},
+    gameplay::{
+        build_gameplay_policy_context, build_gameplay_surface_model, gameplay_pointer_event,
+        gameplay_pointer_tap,
+    },
     level_bootstrap::load_initial_levels_for_app,
     shared::PointerPhase,
 };
@@ -36,7 +39,6 @@ pub struct App {
     window: Option<Arc<Window>>,
     pub(crate) pixels: Option<Pixels<'static>>,
     pub(crate) renderer: Renderer,
-    levels: Vec<String>,
     pub(crate) preview_boards: Vec<BoardView>,
     pub(crate) controller: GameplayController,
     pub(crate) app_state: AppState,
@@ -64,7 +66,6 @@ impl App {
             window: None,
             pixels: None,
             renderer: Renderer::new(),
-            levels,
             preview_boards,
             controller,
             app_state,
@@ -137,46 +138,36 @@ impl App {
     }
 
     fn on_gameplay_tap(&mut self, x: f64, y: f64) {
-        let context = GameplayInputContext {
-            allow_enter_editor: self.app_state.editor_available,
-            is_gameplay_screen: self.app_state.is_gameplay_screen(),
-            is_gameplay_menu_open: self.app_state.is_gameplay_menu_open(),
-            is_level_select_open: self.app_state.is_level_select_open(),
-            is_overlay_open: self.app_state.is_overlay_open(),
-            surface_width: self.surface_width,
-            surface_height: self.surface_height,
-            level_count: self.levels.len(),
-            current_level: self.controller.current_level(),
-            current_level_select_page_start: self.app_state.level_select_page_start().unwrap_or(0),
-            can_undo: self.controller.can_undo(),
-            can_restart: self.controller.can_restart(),
-            is_solved: self.controller.board().is_solved(),
-            board_viewport: self.board_viewport,
-            board: self.controller.board(),
-        };
-        let input = gameplay_pointer_tap(&mut self.app_state.gameplay, context, x, y);
+        let surface = build_gameplay_surface_model(
+            &self.app_state,
+            &self.controller,
+            self.surface_width,
+            self.surface_height,
+            self.board_viewport,
+        );
+        let policy = build_gameplay_policy_context(&self.app_state, &self.controller);
+        let input = gameplay_pointer_tap(&mut self.app_state.gameplay, &surface, policy, x, y);
         self.handle_gameplay_input(input);
     }
 
     fn on_gameplay_pointer_event(&mut self, id: u64, phase: PointerPhase, x: f64, y: f64) {
-        let context = GameplayInputContext {
-            allow_enter_editor: self.app_state.editor_available,
-            is_gameplay_screen: self.app_state.is_gameplay_screen(),
-            is_gameplay_menu_open: self.app_state.is_gameplay_menu_open(),
-            is_level_select_open: self.app_state.is_level_select_open(),
-            is_overlay_open: self.app_state.is_overlay_open(),
-            surface_width: self.surface_width,
-            surface_height: self.surface_height,
-            level_count: self.levels.len(),
-            current_level: self.controller.current_level(),
-            current_level_select_page_start: self.app_state.level_select_page_start().unwrap_or(0),
-            can_undo: self.controller.can_undo(),
-            can_restart: self.controller.can_restart(),
-            is_solved: self.controller.board().is_solved(),
-            board_viewport: self.board_viewport,
-            board: self.controller.board(),
-        };
-        let input = gameplay_pointer_event(&mut self.app_state.gameplay, context, id, phase, x, y);
+        let surface = build_gameplay_surface_model(
+            &self.app_state,
+            &self.controller,
+            self.surface_width,
+            self.surface_height,
+            self.board_viewport,
+        );
+        let policy = build_gameplay_policy_context(&self.app_state, &self.controller);
+        let input = gameplay_pointer_event(
+            &mut self.app_state.gameplay,
+            &surface,
+            policy,
+            id,
+            phase,
+            x,
+            y,
+        );
         self.handle_gameplay_input(input);
     }
 }

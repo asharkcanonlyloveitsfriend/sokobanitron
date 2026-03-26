@@ -1,6 +1,7 @@
 use super::action::AppAction;
 use super::presentation::{PresentationPlan, build_presentation_plan};
 use super::state::{AppOverlay, AppScreen, AppState};
+use presentation::layout::level_select_menu_start_index;
 use sokobanitron_gameplay::{GameplayController, GameplayControllerChanges};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -8,8 +9,6 @@ pub struct AppUpdate {
     pub changes: GameplayControllerChanges,
     pub presentation_plan: Option<PresentationPlan>,
 }
-
-const LEVEL_SELECT_PAGE_SIZE: usize = 4;
 
 pub fn apply_action(
     controller: &mut GameplayController,
@@ -51,7 +50,7 @@ pub fn apply_action(
         AppAction::OpenLevelSelect => {
             if matches!(app_state.ui.screen, AppScreen::Gameplay) {
                 let page_start =
-                    level_select_start_index(controller.level_count(), controller.current_level());
+                    level_select_menu_start_index(controller.level_count(), controller.current_level());
                 app_state.ui.overlay = Some(AppOverlay::LevelSelect { page_start });
             }
         }
@@ -97,16 +96,6 @@ pub fn apply_action(
     }
 
     update
-}
-
-fn level_select_start_index(level_count: usize, current_level: usize) -> usize {
-    if level_count <= LEVEL_SELECT_PAGE_SIZE || current_level == 0 {
-        0
-    } else if current_level >= level_count.saturating_sub(1) {
-        level_count.saturating_sub(LEVEL_SELECT_PAGE_SIZE)
-    } else {
-        current_level.saturating_sub(1)
-    }
 }
 
 #[cfg(test)]

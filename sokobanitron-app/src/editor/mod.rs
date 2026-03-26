@@ -1,4 +1,5 @@
 mod frame;
+mod hit_test;
 mod input;
 mod paint_mode;
 mod view;

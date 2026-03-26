@@ -10,7 +10,7 @@ use presentation::layout::{
 use sokobanitron_gameplay::{BoardView, TileKind};
 use sokobanitron_level_editor::{EditorMode, LevelEditor, NonVoidBounds};
 
-use crate::shared::{DoubleTapTracker, PointerGestureState, PointerId};
+use crate::shared::{DoubleTapTracker, PointerId, SinglePointerGestureState};
 
 use super::paint_mode::PaintMode;
 
@@ -39,7 +39,7 @@ pub struct EditorViewportState {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct EditorInteractionState {
     pub cursor_position: Option<(i32, i32)>,
-    pub pointer: PointerGestureState,
+    pub pointer: SinglePointerGestureState,
     pub active_stroke: Option<ActiveEditorStroke>,
     pub double_tap: DoubleTapTracker<(i32, i32)>,
 }
@@ -82,6 +82,19 @@ pub(crate) struct VisibleBoardWindow {
     pub viewport: BoardViewport,
     pub world_origin_x: i32,
     pub world_origin_y: i32,
+}
+
+impl VisibleBoardWindow {
+    pub(crate) fn screen_to_world_cell(&self, screen_x: f64, screen_y: f64) -> Option<(i32, i32)> {
+        self.viewport
+            .screen_to_cell(screen_x, screen_y, &self.board)
+            .map(|(x, y)| {
+                (
+                    self.world_origin_x + x as i32,
+                    self.world_origin_y + y as i32,
+                )
+            })
+    }
 }
 
 pub(crate) fn build_visible_window(ui: &EditorUiState, editor: &LevelEditor) -> VisibleBoardWindow {
@@ -167,24 +180,6 @@ pub(crate) fn build_visible_window(ui: &EditorUiState, editor: &LevelEditor) -> 
         world_origin_x,
         world_origin_y,
     }
-}
-
-pub(crate) fn world_cell_at_screen_position(
-    ui: &EditorUiState,
-    editor: &LevelEditor,
-    screen_x: f64,
-    screen_y: f64,
-) -> Option<(i32, i32)> {
-    let visible = build_visible_window(ui, editor);
-    visible
-        .viewport
-        .screen_to_cell(screen_x, screen_y, &visible.board)
-        .map(|(x, y)| {
-            (
-                visible.world_origin_x + x as i32,
-                visible.world_origin_y + y as i32,
-            )
-        })
 }
 
 fn board_dimensions_for_steps(

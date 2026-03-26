@@ -8,17 +8,17 @@ use crate::app::state::{AppOverlay, AppScreen, AppState};
 use crate::shared::{
     MOUSE_POINTER_ID, PointerContact, PointerEvent, PointerGesture, PointerId, PointerPhase,
 };
-use presentation::hit_test::{
-    ControlsButtonAction, overlay_primary_action_button_contains, top_menu_toggle_button_contains,
-};
-use presentation::layout::top_left_level_button_rect;
+use presentation::hit_test::ControlsButtonAction;
 use sokobanitron_level_editor::{EditableTile, EditorCommand, EditorMode, LevelEditor};
 use std::time::{Duration, Instant};
 
+use super::hit_test::{
+    EditorControlSlot, EditorSurfaceTarget, build_editor_surface_model, editor_surface_target_at,
+};
 use super::paint_mode::PaintMode;
 use super::view::{
     ActiveEditorStroke, EditorUiState, can_zoom_in, can_zoom_out, reset_editor_interaction_state,
-    world_cell_at_screen_position, zoom_in, zoom_in_button_rect, zoom_out, zoom_out_button_rect,
+    zoom_in, zoom_out,
 };
 
 const DOUBLE_TAP_WINDOW: Duration = Duration::from_millis(325);
@@ -135,7 +135,9 @@ fn handle_editor_gesture(
 ) {
     match gesture {
         PointerGesture::Started(contact) => {
-            let target = classify_editor_hit_target(app_state, editor, contact);
+            let surface = build_editor_surface_model(app_state, editor);
+            let (screen_x, screen_y) = contact.position.as_f64();
+            let target = editor_surface_target_at(&surface, screen_x, screen_y);
             if app_state.is_editor_menu_open() {
                 handle_editor_menu_target(app_state, target);
                 return;
@@ -154,10 +156,10 @@ fn handle_editor_gesture(
     }
 }
 
-fn handle_editor_menu_target(app_state: &mut AppState, target: EditorHitTarget) {
+fn handle_editor_menu_target(app_state: &mut AppState, target: Option<EditorSurfaceTarget>) {
     match target {
-        EditorHitTarget::TopMenuToggle => close_editor_menu(app_state),
-        EditorHitTarget::OverlayPrimaryAction => leave_editor_for_gameplay(app_state),
+        Some(EditorSurfaceTarget::TopMenuToggle) => close_editor_menu(app_state),
+        Some(EditorSurfaceTarget::OverlayPrimaryAction) => leave_editor_for_gameplay(app_state),
         _ => {}
     }
 }
@@ -166,37 +168,37 @@ fn handle_editor_started_target(
     app_state: &mut AppState,
     editor: &mut LevelEditor,
     contact: PointerContact,
-    target: EditorHitTarget,
+    target: Option<EditorSurfaceTarget>,
 ) {
     match target {
-        EditorHitTarget::TopMenuToggle => open_editor_menu(app_state),
-        EditorHitTarget::ModeToggle => {
+        Some(EditorSurfaceTarget::TopMenuToggle) => open_editor_menu(app_state),
+        Some(EditorSurfaceTarget::ModeToggle) => {
             editor.apply_command(EditorCommand::ToggleMode);
             app_state.editor.interaction.double_tap.clear();
             app_state.editor.interaction.active_stroke = None;
         }
-        EditorHitTarget::BottomLeftButton | EditorHitTarget::BottomRightButton => {
-            apply_editor_corner_button(app_state, editor, target);
+        Some(EditorSurfaceTarget::ControlSlot(slot)) => {
+            apply_editor_control_slot(app_state, editor, slot);
         }
-        EditorHitTarget::BoardCell { world_x, world_y } => {
+        Some(EditorSurfaceTarget::BoardCell { world_x, world_y }) => {
             begin_editor_board_interaction(app_state, editor, contact, world_x, world_y);
         }
-        EditorHitTarget::OverlayPrimaryAction | EditorHitTarget::Background => {}
+        Some(EditorSurfaceTarget::OverlayPrimaryAction) | None => {}
     }
 }
 
-fn apply_editor_corner_button(
+fn apply_editor_control_slot(
     app_state: &mut AppState,
     editor: &mut LevelEditor,
-    target: EditorHitTarget,
+    slot: EditorControlSlot,
 ) {
     match editor.mode() {
-        EditorMode::Draw => match resolve_zoom_action(&app_state.editor, editor, target) {
+        EditorMode::Draw => match resolve_zoom_action(&app_state.editor, editor, slot) {
             Some(ZoomAction::ZoomIn) => zoom_in(&mut app_state.editor, editor),
             Some(ZoomAction::ZoomOut) => zoom_out(&mut app_state.editor),
             None => {}
         },
-        EditorMode::Manipulate => match resolve_manipulate_action(editor, target) {
+        EditorMode::Manipulate => match resolve_manipulate_action(editor, slot) {
             Some(ControlsButtonAction::Undo) => {
                 editor.apply_command(EditorCommand::Undo);
             }
@@ -260,8 +262,10 @@ fn continue_editor_drag(
         return;
     }
 
-    let target = classify_editor_hit_target(app_state, editor, contact);
-    if let EditorHitTarget::BoardCell { world_x, world_y } = target {
+    let surface = build_editor_surface_model(app_state, editor);
+    let (screen_x, screen_y) = contact.position.as_f64();
+    let target = editor_surface_target_at(&surface, screen_x, screen_y);
+    if let Some(EditorSurfaceTarget::BoardCell { world_x, world_y }) = target {
         editor.apply_command(active.mode.to_command(world_x, world_y));
     }
 }
@@ -293,46 +297,6 @@ fn leave_editor_for_gameplay(app_state: &mut AppState) {
     reset_editor_interaction_state(&mut app_state.editor);
 }
 
-fn classify_editor_hit_target(
-    app_state: &AppState,
-    editor: &LevelEditor,
-    contact: PointerContact,
-) -> EditorHitTarget {
-    let (screen_x, screen_y) = contact.position.as_f64();
-    if top_left_level_button_rect().contains(screen_x, screen_y) {
-        return EditorHitTarget::ModeToggle;
-    }
-    if top_menu_toggle_button_contains(screen_x, screen_y, app_state.editor.viewport.surface_width)
-    {
-        return EditorHitTarget::TopMenuToggle;
-    }
-    if overlay_primary_action_button_contains(
-        screen_x,
-        screen_y,
-        app_state.editor.viewport.surface_width,
-        app_state.editor.viewport.surface_height,
-    ) {
-        return EditorHitTarget::OverlayPrimaryAction;
-    }
-    if zoom_out_button_rect(app_state.editor.viewport.surface_height).contains(screen_x, screen_y) {
-        return EditorHitTarget::BottomLeftButton;
-    }
-    if zoom_in_button_rect(
-        app_state.editor.viewport.surface_width,
-        app_state.editor.viewport.surface_height,
-    )
-    .contains(screen_x, screen_y)
-    {
-        return EditorHitTarget::BottomRightButton;
-    }
-    if let Some((world_x, world_y)) =
-        world_cell_at_screen_position(&app_state.editor, editor, screen_x, screen_y)
-    {
-        return EditorHitTarget::BoardCell { world_x, world_y };
-    }
-    EditorHitTarget::Background
-}
-
 fn resolve_paint_mode(
     ui: &mut EditorUiState,
     editor: &LevelEditor,
@@ -360,37 +324,26 @@ fn resolve_paint_mode(
 fn resolve_zoom_action(
     ui: &EditorUiState,
     editor: &LevelEditor,
-    target: EditorHitTarget,
+    slot: EditorControlSlot,
 ) -> Option<ZoomAction> {
-    match target {
-        EditorHitTarget::BottomLeftButton if can_zoom_out(ui) => Some(ZoomAction::ZoomOut),
-        EditorHitTarget::BottomRightButton if can_zoom_in(ui, editor) => Some(ZoomAction::ZoomIn),
+    match slot {
+        EditorControlSlot::BottomLeft if can_zoom_out(ui) => Some(ZoomAction::ZoomOut),
+        EditorControlSlot::BottomRight if can_zoom_in(ui, editor) => Some(ZoomAction::ZoomIn),
         _ => None,
     }
 }
 
 fn resolve_manipulate_action(
     editor: &LevelEditor,
-    target: EditorHitTarget,
+    slot: EditorControlSlot,
 ) -> Option<ControlsButtonAction> {
-    match target {
-        EditorHitTarget::BottomLeftButton if editor.can_undo() => Some(ControlsButtonAction::Undo),
-        EditorHitTarget::BottomRightButton if editor.can_restart() => {
+    match slot {
+        EditorControlSlot::BottomLeft if editor.can_undo() => Some(ControlsButtonAction::Undo),
+        EditorControlSlot::BottomRight if editor.can_restart() => {
             Some(ControlsButtonAction::Restart)
         }
         _ => None,
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EditorHitTarget {
-    ModeToggle,
-    TopMenuToggle,
-    OverlayPrimaryAction,
-    BottomLeftButton,
-    BottomRightButton,
-    BoardCell { world_x: i32, world_y: i32 },
-    Background,
 }
 
 #[derive(Clone, Copy)]

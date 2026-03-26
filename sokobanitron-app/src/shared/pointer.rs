@@ -75,8 +75,11 @@ pub enum PointerGesture {
     Tap(TapGesture),
 }
 
+/// Tracks one active pointer at a time.
+///
+/// Additional concurrent contacts are ignored until the active pointer ends or is cancelled.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct PointerGestureState {
+pub struct SinglePointerGestureState {
     active: Option<ActivePointer>,
 }
 
@@ -87,7 +90,7 @@ struct ActivePointer {
     current: ScreenPoint,
 }
 
-impl PointerGestureState {
+impl SinglePointerGestureState {
     pub fn handle_event(&mut self, event: PointerEvent) -> Option<PointerGesture> {
         match event.phase {
             PointerPhase::Started => {
@@ -226,15 +229,15 @@ fn exceeds_tap_slop(start: ScreenPoint, current: ScreenPoint) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        DoubleTapTracker, MOUSE_POINTER_ID, PointerEvent, PointerGesture, PointerGestureState,
-        PointerPhase,
+        DoubleTapTracker, MOUSE_POINTER_ID, PointerEvent, PointerGesture, PointerPhase,
+        SinglePointerGestureState,
     };
     use std::time::{Duration, Instant};
 
     #[test]
     fn stationary_press_and_release_is_tap() {
         let at = Instant::now();
-        let mut state = PointerGestureState::default();
+        let mut state = SinglePointerGestureState::default();
         assert!(matches!(
             state.handle_event(PointerEvent::new(
                 MOUSE_POINTER_ID,
@@ -260,7 +263,7 @@ mod tests {
     #[test]
     fn movement_past_slop_becomes_drag() {
         let at = Instant::now();
-        let mut state = PointerGestureState::default();
+        let mut state = SinglePointerGestureState::default();
         let _ = state.handle_event(PointerEvent::new(1, PointerPhase::Started, 10.0, 10.0, at));
 
         assert!(matches!(
