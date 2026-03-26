@@ -8,7 +8,6 @@
 // - caller keeps only strict lexicographic score improvements
 use crate::optimizer::model::{BoxMovePath, Coord};
 use std::collections::HashSet;
-use std::time::{Duration, Instant};
 
 pub(crate) const DEFAULT_MAX_INVENTED_DESTINATIONS_PER_MOVE: usize = 3;
 pub(crate) const DEFAULT_MAX_REWRITE_PROPOSALS: usize = 160;
@@ -25,19 +24,6 @@ pub(crate) struct RewritePlan {
     pub(crate) window_size: usize,
     pub(crate) removed_index: usize,
     pub(crate) replacements: Vec<(usize, Coord)>,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct RewritePlanEnumerationStats {
-    pub(crate) emitted_plans: usize,
-    pub(crate) total_time: Duration,
-    pub(crate) emit_callback_time: Duration,
-}
-
-impl RewritePlanEnumerationStats {
-    pub(crate) fn generation_time(self) -> Duration {
-        self.total_time.saturating_sub(self.emit_callback_time)
-    }
 }
 
 #[inline]
@@ -315,7 +301,6 @@ fn enumerate_window_assignments<Emit>(
     seen: &mut HashSet<RewritePlan>,
     generated_total: &mut usize,
     emit_plan: &mut Emit,
-    emit_callback_time: &mut Duration,
     max_proposals_per_window: usize,
     max_proposals_per_removal: usize,
     max_proposals: usize,
@@ -345,9 +330,7 @@ where
             *generated_total += 1;
             *generated_for_window += 1;
             *generated_for_removal += 1;
-            let emit_started = Instant::now();
             let should_continue = emit_plan(&plan);
-            *emit_callback_time += emit_started.elapsed();
             if !should_continue {
                 return false;
             }
@@ -368,7 +351,6 @@ where
             seen,
             generated_total,
             emit_plan,
-            emit_callback_time,
             max_proposals_per_window,
             max_proposals_per_removal,
             max_proposals,
@@ -403,19 +385,16 @@ pub(crate) fn for_each_k_minus_one_rewrite_plan<Emit>(
     max_proposals_per_window: usize,
     max_proposals_per_removal: usize,
     mut emit: Emit,
-) -> RewritePlanEnumerationStats
-where
+) where
     Emit: FnMut(&RewritePlan) -> bool,
 {
-    let started = Instant::now();
-    let mut emit_callback_time = Duration::ZERO;
     let mut seen = HashSet::new();
     if paths.len() < WINDOW_SIZES[0]
         || max_proposals == 0
         || max_proposals_per_window == 0
         || max_proposals_per_removal == 0
     {
-        return RewritePlanEnumerationStats::default();
+        return;
     }
 
     let mut generated_total = 0usize;
@@ -484,34 +463,19 @@ where
                     &mut seen,
                     &mut generated_total,
                     &mut emit,
-                    &mut emit_callback_time,
                     max_proposals_per_window,
                     max_proposals_per_removal,
                     max_proposals,
                     &mut generated_for_window,
                     &mut generated_for_removal,
                 ) {
-                    return RewritePlanEnumerationStats {
-                        emitted_plans: generated_total,
-                        total_time: started.elapsed(),
-                        emit_callback_time,
-                    };
+                    return;
                 }
                 if generated_total >= max_proposals {
-                    return RewritePlanEnumerationStats {
-                        emitted_plans: generated_total,
-                        total_time: started.elapsed(),
-                        emit_callback_time,
-                    };
+                    return;
                 }
             }
         }
-    }
-
-    RewritePlanEnumerationStats {
-        emitted_plans: generated_total,
-        total_time: started.elapsed(),
-        emit_callback_time,
     }
 }
 
@@ -525,7 +489,7 @@ pub(crate) fn generate_k_minus_one_rewrite_plans(
     max_proposals_per_removal: usize,
 ) -> Vec<RewritePlan> {
     let mut plans = Vec::new();
-    let _ = for_each_k_minus_one_rewrite_plan(
+    for_each_k_minus_one_rewrite_plan(
         paths,
         walkable_cells,
         max_invented_destinations_per_move,

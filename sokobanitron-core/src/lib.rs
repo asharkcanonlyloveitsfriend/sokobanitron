@@ -6,10 +6,6 @@ pub mod optimizer;
 pub mod pathfinder;
 
 mod grid;
-mod util;
-
-#[cfg(feature = "stage-profile")]
-pub use crate::util::stage_profile;
 
 pub use api::canonical_hash::canonical_hash;
 pub use api::normalize::{normalize_to_walkable_region, normalize_to_walkable_region_lines};

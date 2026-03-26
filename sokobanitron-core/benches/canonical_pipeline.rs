@@ -4,9 +4,6 @@ use sokobanitron_core::canonical_hash;
 use std::hint::black_box;
 use std::path::PathBuf;
 
-#[cfg(feature = "stage-profile")]
-use sokobanitron_core::stage_profile;
-
 fn load_all_grids() -> Vec<String> {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let db_path: PathBuf = [manifest_dir, "benches", "fixtures", "puzzles.db"]
@@ -37,18 +34,9 @@ fn bench_canonical_pipeline(c: &mut Criterion) {
 
     group.bench_function(BenchmarkId::new("pipeline", grids.len()), |b| {
         b.iter(|| {
-            #[cfg(feature = "stage-profile")]
-            stage_profile::reset();
-
             for grid in &grids {
                 let hash = canonical_hash(grid).expect("canonical_hash returned error");
                 black_box(hash);
-            }
-
-            #[cfg(feature = "stage-profile")]
-            {
-                let report = stage_profile::report();
-                black_box(&report);
             }
         })
     });

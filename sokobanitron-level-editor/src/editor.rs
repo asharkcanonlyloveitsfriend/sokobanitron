@@ -6,12 +6,9 @@ use crate::snapshot::{
 use crate::world::{EditableTile, EditableWorld};
 use sokobanitron_core::optimizer::{
     ReverseOptimizationInput, optimize_reverse_solution_in_place,
-    optimize_reverse_solution_in_place_with_stats,
 };
 use sokobanitron_core::pathfinder::{Position, PullPathfinder};
 use std::collections::{HashMap, VecDeque};
-use std::sync::OnceLock;
-use std::time::{Duration, Instant};
 
 struct PullMovePlan {
     player_start: (i32, i32),
@@ -22,19 +19,6 @@ struct PullPlanningContext {
     grid: Vec<Vec<bool>>,
     min_x: i32,
     min_y: i32,
-}
-
-#[derive(Default)]
-struct HintComputationProfile {
-    total_time: Duration,
-    destination_enumeration_time: Duration,
-    destination_count: usize,
-    optimization_calls: usize,
-    optimization_time: Duration,
-    rewrite_plan_count: usize,
-    rewrite_plan_generation_time: Duration,
-    replay_count: usize,
-    replay_time: Duration,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,8 +45,6 @@ struct ActivePullHintJob {
     selected_start_index: usize,
     optimization_input: ReverseOptimizationInput,
     pending_candidates: VecDeque<PullHintCandidate>,
-    profile: HintComputationProfile,
-    started_at: Instant,
 }
 
 #[derive(Clone)]
@@ -475,43 +457,6 @@ impl LevelEditor {
         }
     }
 
-    fn hint_profiling_enabled() -> bool {
-        static ENABLED: OnceLock<bool> = OnceLock::new();
-        *ENABLED.get_or_init(|| {
-            std::env::var("SOKOBANITRON_HINT_PROFILE")
-                .ok()
-                .map(|value| {
-                    let normalized = value.trim().to_ascii_lowercase();
-                    normalized == "1" || normalized == "true" || normalized == "yes"
-                })
-                .unwrap_or(false)
-        })
-    }
-
-    fn duration_ms(duration: Duration) -> f64 {
-        duration.as_secs_f64() * 1_000.0
-    }
-
-    fn log_hint_profile(selected: (i32, i32), profile: &HintComputationProfile) {
-        if !Self::hint_profiling_enabled() {
-            return;
-        }
-        eprintln!(
-            "hint_profile selected=({}, {}) legal_destinations={} enumerate_ms={:.3} optimize_calls={} optimize_ms={:.3} rewrite_plans={} rewrite_gen_ms={:.3} replay_count={} replay_ms={:.3} total_ms={:.3}",
-            selected.0,
-            selected.1,
-            profile.destination_count,
-            Self::duration_ms(profile.destination_enumeration_time),
-            profile.optimization_calls,
-            Self::duration_ms(profile.optimization_time),
-            profile.rewrite_plan_count,
-            Self::duration_ms(profile.rewrite_plan_generation_time),
-            profile.replay_count,
-            Self::duration_ms(profile.replay_time),
-            Self::duration_ms(profile.total_time),
-        );
-    }
-
     fn manhattan_distance(a: (i32, i32), b: (i32, i32)) -> i32 {
         (a.0 - b.0).abs() + (a.1 - b.1).abs()
     }
@@ -546,9 +491,6 @@ impl LevelEditor {
         self.pull_destination_hints.clear();
         self.active_pull_hint_job = None;
 
-        let discovery_started = Instant::now();
-        let mut profile = HintComputationProfile::default();
-        let enumeration_started = Instant::now();
         let legal_pull_destinations = self
             .enumerate_pull_move_plans(selected.0, selected.1)
             .into_iter()
@@ -557,11 +499,7 @@ impl LevelEditor {
                 box_path: plan.box_path,
             })
             .collect::<Vec<_>>();
-        profile.destination_enumeration_time = enumeration_started.elapsed();
-        profile.destination_count = legal_pull_destinations.len();
         if legal_pull_destinations.is_empty() {
-            profile.total_time = discovery_started.elapsed();
-            Self::log_hint_profile(selected, &profile);
             return;
         }
 
@@ -579,8 +517,6 @@ impl LevelEditor {
                     PullHintState::Ready(base_selected_count),
                 );
             }
-            profile.total_time = discovery_started.elapsed();
-            Self::log_hint_profile(selected, &profile);
             return;
         }
 
@@ -605,8 +541,6 @@ impl LevelEditor {
             player: self.solution_start_player,
         };
         if pending_candidates.is_empty() {
-            profile.total_time = discovery_started.elapsed();
-            Self::log_hint_profile(selected, &profile);
             return;
         }
         self.active_pull_hint_job = Some(ActivePullHintJob {
@@ -615,8 +549,6 @@ impl LevelEditor {
             selected_start_index,
             optimization_input,
             pending_candidates,
-            profile,
-            started_at: discovery_started,
         });
     }
 
@@ -625,26 +557,10 @@ impl LevelEditor {
         candidate: &PullHintCandidate,
         optimization_input: &ReverseOptimizationInput,
         selected_start_index: usize,
-    ) -> (u32, HintComputationProfile) {
-        let mut profile = HintComputationProfile::default();
-        let profiling_enabled = Self::hint_profiling_enabled();
+    ) -> u32 {
         let mut candidate_history = self.solution_history.clone();
         candidate_history.push(candidate.box_path.clone());
-        profile.optimization_calls = 1;
-        let optimization_started = Instant::now();
-        if profiling_enabled {
-            let (_, optimization_stats) = optimize_reverse_solution_in_place_with_stats(
-                optimization_input,
-                &mut candidate_history,
-            );
-            profile.rewrite_plan_count = optimization_stats.rewrite_plan_count;
-            profile.rewrite_plan_generation_time = optimization_stats.rewrite_plan_generation_time;
-            profile.replay_count = optimization_stats.replay_count;
-            profile.replay_time = optimization_stats.replay_time;
-        } else {
-            optimize_reverse_solution_in_place(optimization_input, &mut candidate_history);
-        }
-        profile.optimization_time = optimization_started.elapsed();
+        optimize_reverse_solution_in_place(optimization_input, &mut candidate_history);
 
         let Some(count) = self
             .box_move_count_for_start_index_in_history(&candidate_history, selected_start_index)
@@ -654,7 +570,7 @@ impl LevelEditor {
                 selected_start_index, candidate.destination.0, candidate.destination.1,
             );
         };
-        (count, profile)
+        count
     }
 
     fn advance_pull_destination_hints_job(&mut self, steps: usize) {
@@ -662,38 +578,25 @@ impl LevelEditor {
             return;
         }
         for _ in 0..steps {
-            let Some((generation, selected, selected_start_index, optimization_input, candidate)) =
-                ({
-                    let job = match self.active_pull_hint_job.as_mut() {
-                        Some(job) => job,
-                        None => return,
-                    };
-                    let Some(candidate) = job.pending_candidates.pop_front() else {
-                        let mut finished = self
-                            .active_pull_hint_job
-                            .take()
-                            .expect("active pull hint job");
-                        finished.profile.total_time = finished.started_at.elapsed();
-                        Self::log_hint_profile(finished.selected, &finished.profile);
-                        return;
-                    };
-                    Some((
-                        job.generation,
-                        job.selected,
-                        job.selected_start_index,
-                        job.optimization_input.clone(),
-                        candidate,
-                    ))
-                })
-            else {
-                return;
+            let (generation, selected, selected_start_index, optimization_input, candidate) = {
+                let Some(job) = self.active_pull_hint_job.as_mut() else {
+                    return;
+                };
+                let Some(candidate) = job.pending_candidates.pop_front() else {
+                    self.active_pull_hint_job = None;
+                    return;
+                };
+                (
+                    job.generation,
+                    job.selected,
+                    job.selected_start_index,
+                    job.optimization_input.clone(),
+                    candidate,
+                )
             };
 
-            let (count, step_profile) = self.evaluate_pull_hint_candidate(
-                &candidate,
-                &optimization_input,
-                selected_start_index,
-            );
+            let count =
+                self.evaluate_pull_hint_candidate(&candidate, &optimization_input, selected_start_index);
 
             if generation != self.pull_hint_generation || self.selected_box != Some(selected) {
                 return;
@@ -705,22 +608,11 @@ impl LevelEditor {
             if job.generation != generation {
                 return;
             }
-            job.profile.optimization_calls += step_profile.optimization_calls;
-            job.profile.optimization_time += step_profile.optimization_time;
-            job.profile.rewrite_plan_count += step_profile.rewrite_plan_count;
-            job.profile.rewrite_plan_generation_time += step_profile.rewrite_plan_generation_time;
-            job.profile.replay_count += step_profile.replay_count;
-            job.profile.replay_time += step_profile.replay_time;
             self.pull_destination_hints
                 .insert(candidate.destination, PullHintState::Ready(count));
 
             if job.pending_candidates.is_empty() {
-                let mut finished = self
-                    .active_pull_hint_job
-                    .take()
-                    .expect("active pull hint job");
-                finished.profile.total_time = finished.started_at.elapsed();
-                Self::log_hint_profile(finished.selected, &finished.profile);
+                self.active_pull_hint_job = None;
                 return;
             }
         }

@@ -12,26 +12,11 @@ use passes::{
 };
 use replay_reverse::replay_reverse_solution_trace_from_state;
 use std::collections::HashSet;
-use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct SolutionScore {
     discrete_moves: usize,
     total_path_steps: usize,
-}
-
-/// Debug/profiling counters for reverse-optimizer runs.
-///
-/// This stays public intentionally so clients (like the level creator) can
-/// inspect optimizer cost while keeping optimization behavior identical.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ReverseOptimizationStats {
-    pub iterations: usize,
-    pub rewrite_plan_count: usize,
-    pub rewrite_plan_generation_time: Duration,
-    pub replay_count: usize,
-    pub replay_time: Duration,
-    pub total_time: Duration,
 }
 
 pub fn optimize_box_move_paths_in_place(paths: &mut Vec<BoxMovePath>) {
@@ -42,17 +27,80 @@ pub fn optimize_reverse_solution_in_place(
     input: &ReverseOptimizationInput,
     paths: &mut Vec<BoxMovePath>,
 ) -> bool {
-    optimize_reverse_solution_in_place_internal(input, paths, None)
-}
+    let before = paths.clone();
+    normalize_paths_in_place(paths);
+    optimize_adjacent_merge_in_place(paths);
+    let Some(target_final_boxes) = final_box_positions(&input.box_positions, paths) else {
+        return false;
+    };
+    let walkable = input.walkable_cells.iter().copied().collect::<HashSet<_>>();
+    let mut sorted_start_boxes = input.box_positions.clone();
+    sorted_start_boxes.sort_unstable();
 
-/// Same optimizer as `optimize_reverse_solution_in_place`, plus profiling stats.
-pub fn optimize_reverse_solution_in_place_with_stats(
-    input: &ReverseOptimizationInput,
-    paths: &mut Vec<BoxMovePath>,
-) -> (bool, ReverseOptimizationStats) {
-    let mut stats = ReverseOptimizationStats::default();
-    let changed = optimize_reverse_solution_in_place_internal(input, paths, Some(&mut stats));
-    (changed, stats)
+    loop {
+        let current_score = score(paths);
+        let mut best_candidate: Option<(Vec<BoxMovePath>, SolutionScore)> = None;
+        let Some(base_trace) = replay_reverse_solution_trace_from_state(
+            &walkable,
+            &input.box_positions,
+            input.player,
+            paths,
+        ) else {
+            return false;
+        };
+        if base_trace.steps.len() != paths.len() {
+            return false;
+        }
+
+        for_each_k_minus_one_rewrite_plan(
+            paths,
+            &input.walkable_cells,
+            DEFAULT_MAX_INVENTED_DESTINATIONS_PER_MOVE,
+            DEFAULT_MAX_REWRITE_PROPOSALS,
+            DEFAULT_MAX_REWRITE_PROPOSALS_PER_WINDOW,
+            DEFAULT_MAX_REWRITE_PROPOSALS_PER_REMOVAL,
+            |plan| {
+                let Some(rewritten) = apply_rewrite_plan(paths, plan) else {
+                    return true;
+                };
+                let (prefix_boxes, prefix_player) = if plan.window_start == 0 {
+                    (sorted_start_boxes.as_slice(), input.player)
+                } else {
+                    let after = &base_trace.steps[plan.window_start - 1].after;
+                    (after.boxes.as_slice(), after.player)
+                };
+                let Some((realized, candidate_score)) = evaluate_candidate_paths(
+                    CandidateEval {
+                        walkable: &walkable,
+                        prefix_paths: &paths[..plan.window_start],
+                        state_boxes: prefix_boxes,
+                        state_player: prefix_player,
+                        suffix_paths: &rewritten[plan.window_start..],
+                        current_score,
+                        target_final_boxes: &target_final_boxes,
+                    },
+                ) else {
+                    return true;
+                };
+                let should_replace = match &best_candidate {
+                    None => true,
+                    Some((_, best_score)) => candidate_score < *best_score,
+                };
+                if should_replace {
+                    best_candidate = Some((realized, candidate_score));
+                }
+                true
+            },
+        );
+
+        if let Some((candidate, _)) = best_candidate {
+            *paths = candidate;
+        } else {
+            break;
+        }
+    }
+
+    *paths != before
 }
 
 fn score(paths: &[BoxMovePath]) -> SolutionScore {
@@ -96,17 +144,13 @@ struct CandidateEval<'a> {
 
 fn evaluate_candidate_paths(
     candidate: CandidateEval<'_>,
-    stats: &mut ReverseOptimizationStats,
 ) -> Option<(Vec<BoxMovePath>, SolutionScore)> {
-    stats.replay_count += 1;
-    let replay_started = Instant::now();
     let replay_trace = replay_reverse_solution_trace_from_state(
         candidate.walkable,
         candidate.state_boxes,
         candidate.state_player,
         candidate.suffix_paths,
     );
-    stats.replay_time += replay_started.elapsed();
     let replay_trace = replay_trace?;
 
     let mut realized = Vec::with_capacity(candidate.prefix_paths.len() + replay_trace.steps.len());
@@ -131,97 +175,6 @@ fn evaluate_candidate_paths(
 
     let candidate_score = score(&realized);
     (candidate_score < candidate.current_score).then_some((realized, candidate_score))
-}
-
-fn optimize_reverse_solution_in_place_internal(
-    input: &ReverseOptimizationInput,
-    paths: &mut Vec<BoxMovePath>,
-    stats: Option<&mut ReverseOptimizationStats>,
-) -> bool {
-    let started = Instant::now();
-    let mut local_stats = ReverseOptimizationStats::default();
-    let before = paths.clone();
-    normalize_paths_in_place(paths);
-    optimize_adjacent_merge_in_place(paths);
-    let Some(target_final_boxes) = final_box_positions(&input.box_positions, paths) else {
-        return false;
-    };
-    let walkable = input.walkable_cells.iter().copied().collect::<HashSet<_>>();
-    let mut sorted_start_boxes = input.box_positions.clone();
-    sorted_start_boxes.sort_unstable();
-
-    loop {
-        local_stats.iterations += 1;
-        let current_score = score(paths);
-        let mut best_candidate: Option<(Vec<BoxMovePath>, SolutionScore)> = None;
-        let Some(base_trace) = replay_reverse_solution_trace_from_state(
-            &walkable,
-            &input.box_positions,
-            input.player,
-            paths,
-        ) else {
-            return false;
-        };
-        if base_trace.steps.len() != paths.len() {
-            return false;
-        }
-
-        let plan_stats = for_each_k_minus_one_rewrite_plan(
-            paths,
-            &input.walkable_cells,
-            DEFAULT_MAX_INVENTED_DESTINATIONS_PER_MOVE,
-            DEFAULT_MAX_REWRITE_PROPOSALS,
-            DEFAULT_MAX_REWRITE_PROPOSALS_PER_WINDOW,
-            DEFAULT_MAX_REWRITE_PROPOSALS_PER_REMOVAL,
-            |plan| {
-                let Some(rewritten) = apply_rewrite_plan(paths, plan) else {
-                    return true;
-                };
-                let (prefix_boxes, prefix_player) = if plan.window_start == 0 {
-                    (sorted_start_boxes.as_slice(), input.player)
-                } else {
-                    let after = &base_trace.steps[plan.window_start - 1].after;
-                    (after.boxes.as_slice(), after.player)
-                };
-                let Some((realized, candidate_score)) = evaluate_candidate_paths(
-                    CandidateEval {
-                        walkable: &walkable,
-                        prefix_paths: &paths[..plan.window_start],
-                        state_boxes: prefix_boxes,
-                        state_player: prefix_player,
-                        suffix_paths: &rewritten[plan.window_start..],
-                        current_score,
-                        target_final_boxes: &target_final_boxes,
-                    },
-                    &mut local_stats,
-                ) else {
-                    return true;
-                };
-                let should_replace = match &best_candidate {
-                    None => true,
-                    Some((_, best_score)) => candidate_score < *best_score,
-                };
-                if should_replace {
-                    best_candidate = Some((realized, candidate_score));
-                }
-                true
-            },
-        );
-        local_stats.rewrite_plan_count += plan_stats.emitted_plans;
-        local_stats.rewrite_plan_generation_time += plan_stats.generation_time();
-
-        if let Some((candidate, _)) = best_candidate {
-            *paths = candidate;
-        } else {
-            break;
-        }
-    }
-
-    local_stats.total_time = started.elapsed();
-    if let Some(stats) = stats {
-        *stats = local_stats;
-    }
-    *paths != before
 }
 
 #[cfg(test)]
