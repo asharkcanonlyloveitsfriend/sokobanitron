@@ -5,6 +5,8 @@ use sokobanitron_level_editor::PullHintStatus;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameplayScreenRequest {
+    pub board: BoardView,
+    pub viewport: BoardViewport,
     pub can_undo: bool,
     pub can_restart: bool,
     pub level_number: usize,

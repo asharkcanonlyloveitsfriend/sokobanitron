@@ -69,17 +69,15 @@ pub fn optimize_reverse_solution_in_place(
                     let after = &base_trace.steps[plan.window_start - 1].after;
                     (after.boxes.as_slice(), after.player)
                 };
-                let Some((realized, candidate_score)) = evaluate_candidate_paths(
-                    CandidateEval {
-                        walkable: &walkable,
-                        prefix_paths: &paths[..plan.window_start],
-                        state_boxes: prefix_boxes,
-                        state_player: prefix_player,
-                        suffix_paths: &rewritten[plan.window_start..],
-                        current_score,
-                        target_final_boxes: &target_final_boxes,
-                    },
-                ) else {
+                let Some((realized, candidate_score)) = evaluate_candidate_paths(CandidateEval {
+                    walkable: &walkable,
+                    prefix_paths: &paths[..plan.window_start],
+                    state_boxes: prefix_boxes,
+                    state_player: prefix_player,
+                    suffix_paths: &rewritten[plan.window_start..],
+                    current_score,
+                    target_final_boxes: &target_final_boxes,
+                }) else {
                     return true;
                 };
                 let should_replace = match &best_candidate {

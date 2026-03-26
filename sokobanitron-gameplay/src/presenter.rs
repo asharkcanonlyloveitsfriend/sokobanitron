@@ -1,3 +1,9 @@
+//! Gameplay-owned logical board presentation.
+//!
+//! This module shapes gameplay engine state into a logical `BoardView`. It does not draw pixels
+//! and should not grow device-specific rendering concerns. Shared visual rendering belongs in
+//! `sokobanitron-presentation`.
+
 use crate::level::{LevelCell, ParsedLevel};
 use std::collections::HashSet;
 

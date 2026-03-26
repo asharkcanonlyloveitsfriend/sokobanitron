@@ -4,9 +4,7 @@ use crate::snapshot::{
     PullHintSnapshot, PullHintStatus,
 };
 use crate::world::{EditableTile, EditableWorld};
-use sokobanitron_core::optimizer::{
-    ReverseOptimizationInput, optimize_reverse_solution_in_place,
-};
+use sokobanitron_core::optimizer::{ReverseOptimizationInput, optimize_reverse_solution_in_place};
 use sokobanitron_core::pathfinder::{Position, PullPathfinder};
 use std::collections::{HashMap, VecDeque};
 
@@ -595,8 +593,11 @@ impl LevelEditor {
                 )
             };
 
-            let count =
-                self.evaluate_pull_hint_candidate(&candidate, &optimization_input, selected_start_index);
+            let count = self.evaluate_pull_hint_candidate(
+                &candidate,
+                &optimization_input,
+                selected_start_index,
+            );
 
             if generation != self.pull_hint_generation || self.selected_box != Some(selected) {
                 return;

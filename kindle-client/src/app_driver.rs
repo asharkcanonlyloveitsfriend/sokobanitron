@@ -1,12 +1,14 @@
 use crate::{config, platform};
-use presentation::layout::{BoardViewport, fit_board_viewport_for_controls};
-use presentation::renderer::Renderer;
+use presentation::{GameplayPresentationState, Renderer};
 use sokobanitron_app::{
     app::{
-        AppAction, AppDriverContext, AppInput, AppState, apply_action_and_present_in_context,
-        interpret_input,
+        AppAction, AppDriverContext, AppInput, AppState, apply_action_in_context, interpret_input,
+        render_presentation_plan,
     },
-    gameplay::{build_gameplay_policy_context, build_gameplay_surface_model, gameplay_pointer_tap},
+    gameplay::{
+        build_gameplay_policy_context, build_gameplay_surface_model, gameplay_pointer_tap,
+        resize_gameplay_surface,
+    },
     level_bootstrap::load_initial_levels_for_app,
 };
 use sokobanitron_gameplay::{
@@ -16,12 +18,12 @@ use std::io::Result;
 
 pub struct KindleApp {
     pub(crate) renderer: Renderer,
+    pub(crate) gameplay_presentation: GameplayPresentationState,
     pub(crate) rgba_frame: Vec<u8>,
     pub(crate) preview_boards: Vec<BoardView>,
     pub(crate) controller: GameplayController,
     pub(crate) app_state: AppState,
     preferences: GameplayPreferences,
-    pub(crate) viewport: BoardViewport,
     pub(crate) display: platform::Display,
 }
 
@@ -33,15 +35,20 @@ impl KindleApp {
         let preferences = GameplayPreferences::load(config::PREFERENCES_PATH);
         let last_attempted_level = preferences.level_index(levels.len());
         let controller = GameplayController::new(levels.clone(), last_attempted_level);
-        let viewport = Self::compute_viewport(controller.board());
+        let mut app_state = AppState::default();
+        resize_gameplay_surface(
+            &mut app_state.gameplay,
+            config::WIDTH as u32,
+            config::HEIGHT as u32,
+        );
         Ok(Self {
             renderer: Self::build_renderer(),
+            gameplay_presentation: GameplayPresentationState::new(),
             rgba_frame: vec![0; config::WIDTH * config::HEIGHT * 4],
             preview_boards,
             controller,
-            app_state: AppState::default(),
+            app_state,
             preferences,
-            viewport,
             display: platform::Display::new()?,
         })
     }
@@ -67,10 +74,6 @@ impl KindleApp {
         }
     }
 
-    fn update_viewport(&mut self) {
-        self.viewport = Self::compute_viewport(self.controller.board());
-    }
-
     fn handle_gameplay_changes(&mut self, changes: GameplayControllerChanges) {
         if let Some(index) = changes.last_attempted_level_changed {
             self.preferences.last_started_level = Some(index + 1);
@@ -78,14 +81,14 @@ impl KindleApp {
                 eprintln!("warning: failed to persist preferences: {err}");
             }
         }
-        if changes.level_changed.is_some() {
-            self.update_viewport();
-        }
     }
 
     fn apply_app_action(&mut self, action: AppAction) -> Result<()> {
-        let applied = apply_action_and_present_in_context(self, action)?;
+        let applied = apply_action_in_context(self, action)?;
         self.handle_gameplay_changes(applied.changes);
+        if let Some(plan) = applied.presentation_plan {
+            render_presentation_plan(self, &plan)?;
+        }
         Ok(())
     }
 
@@ -94,18 +97,8 @@ impl KindleApp {
         self.apply_app_action(action)
     }
 
-    fn compute_viewport(board: &sokobanitron_gameplay::BoardView) -> BoardViewport {
-        fit_board_viewport_for_controls(config::WIDTH as u32, config::HEIGHT as u32, board)
-    }
-
     fn on_gameplay_tap(&mut self, screen_x: f64, screen_y: f64) -> Result<()> {
-        let surface = build_gameplay_surface_model(
-            &self.app_state,
-            &self.controller,
-            config::WIDTH as u32,
-            config::HEIGHT as u32,
-            self.viewport,
-        );
+        let surface = build_gameplay_surface_model(&self.app_state, &self.controller);
         let policy = build_gameplay_policy_context(&self.app_state, &self.controller);
         let input = gameplay_pointer_tap(
             &mut self.app_state.gameplay,
@@ -132,6 +125,8 @@ impl KindleApp {
 }
 
 impl AppDriverContext for KindleApp {
+    type Error = std::io::Error;
+
     fn controller_and_app_state_mut(&mut self) -> (&mut GameplayController, &mut AppState) {
         (&mut self.controller, &mut self.app_state)
     }

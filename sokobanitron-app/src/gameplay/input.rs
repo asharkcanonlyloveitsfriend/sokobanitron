@@ -1,4 +1,4 @@
-use super::state::GameplayInteractionState;
+use super::view::{GameplayUiState, build_gameplay_viewport};
 use crate::app::input::AppInput;
 use crate::app::state::{AppOverlay, AppState};
 use crate::shared::{MOUSE_POINTER_ID, PointerEvent, PointerGesture, PointerPhase};
@@ -6,7 +6,6 @@ use presentation::hit_test::{
     ControlsButtonAction, GameplaySurfaceLayer, GameplaySurfaceModel, GameplaySurfaceTarget,
     LevelSelectSurfaceTarget, gameplay_surface_target_at, level_select_menu_start_for_nav,
 };
-use presentation::layout::BoardViewport;
 use sokobanitron_gameplay::GameplayController;
 use std::time::Instant;
 
@@ -20,20 +19,18 @@ pub struct GameplayPolicyContext {
 pub fn build_gameplay_surface_model<'a>(
     app_state: &AppState,
     controller: &'a GameplayController,
-    surface_width: u32,
-    surface_height: u32,
-    board_viewport: BoardViewport,
 ) -> GameplaySurfaceModel<'a> {
+    let board = controller.board();
     GameplaySurfaceModel {
         layer: gameplay_surface_layer_from_app_state(app_state),
-        surface_width,
-        surface_height,
+        surface_width: app_state.gameplay.surface_width,
+        surface_height: app_state.gameplay.surface_height,
         level_count: controller.level_count(),
         current_level: controller.current_level(),
         can_undo: controller.can_undo(),
         can_restart: controller.can_restart(),
-        board_viewport,
-        board: controller.board(),
+        board_viewport: build_gameplay_viewport(&app_state.gameplay, board),
+        board,
     }
 }
 
@@ -59,20 +56,21 @@ pub fn build_gameplay_policy_context(
 }
 
 pub fn gameplay_pointer_tap(
-    interaction: &mut GameplayInteractionState,
+    gameplay: &mut GameplayUiState,
     surface: &GameplaySurfaceModel<'_>,
     policy: GameplayPolicyContext,
     x: f64,
     y: f64,
 ) -> AppInput {
-    let tap = interaction
+    let tap = gameplay
+        .interaction
         .pointer
         .synthetic_tap(MOUSE_POINTER_ID, x, y, Instant::now());
     interpret_gameplay_gesture(surface, policy, PointerGesture::Tap(tap))
 }
 
 pub fn gameplay_pointer_event(
-    interaction: &mut GameplayInteractionState,
+    gameplay: &mut GameplayUiState,
     surface: &GameplaySurfaceModel<'_>,
     policy: GameplayPolicyContext,
     id: u64,
@@ -80,11 +78,13 @@ pub fn gameplay_pointer_event(
     x: f64,
     y: f64,
 ) -> AppInput {
-    let Some(gesture) =
-        interaction
-            .pointer
-            .handle_event(PointerEvent::new(id, phase, x, y, Instant::now()))
-    else {
+    let Some(gesture) = gameplay.interaction.pointer.handle_event(PointerEvent::new(
+        id,
+        phase,
+        x,
+        y,
+        Instant::now(),
+    )) else {
         return AppInput::NoOp;
     };
     interpret_gameplay_gesture(surface, policy, gesture)
@@ -184,7 +184,6 @@ mod tests {
     use presentation::hit_test::{
         GameplaySurfaceLayer, GameplaySurfaceModel, gameplay_surface_target_at,
     };
-    use presentation::layout::fit_board_viewport_for_controls;
     use sokobanitron_gameplay::GameplayController;
 
     fn test_controller() -> GameplayController {
@@ -203,13 +202,7 @@ mod tests {
         controller: &'a GameplayController,
         app_state: &AppState,
     ) -> GameplaySurfaceModel<'a> {
-        build_gameplay_surface_model(
-            app_state,
-            controller,
-            670,
-            891,
-            fit_board_viewport_for_controls(670, 891, controller.board()),
-        )
+        build_gameplay_surface_model(app_state, controller)
     }
 
     fn test_policy(controller: &GameplayController, app_state: &AppState) -> GameplayPolicyContext {
@@ -219,13 +212,13 @@ mod tests {
     #[test]
     fn board_tap_is_not_misclassified_as_level_select_when_overlay_is_closed() {
         let controller = test_controller();
-        let mut interaction = super::GameplayInteractionState::default();
         let app_state = test_app_state();
+        let mut gameplay = app_state.gameplay.clone();
         let surface = test_surface(&controller, &app_state);
         let policy = test_policy(&controller, &app_state);
         let (x, y, w, h) = surface.board_viewport.cell_to_screen_rect(1, 1);
         let input = gameplay_pointer_tap(
-            &mut interaction,
+            &mut gameplay,
             &surface,
             policy,
             (x + (w / 2) as i32) as f64,
@@ -238,12 +231,12 @@ mod tests {
     #[test]
     fn level_select_targets_are_used_when_level_select_is_open() {
         let controller = test_controller();
-        let mut interaction = super::GameplayInteractionState::default();
         let mut app_state = test_app_state();
         app_state.ui.overlay = Some(AppOverlay::LevelSelect { page_start: 0 });
+        let mut gameplay = app_state.gameplay.clone();
         let surface = test_surface(&controller, &app_state);
         let policy = test_policy(&controller, &app_state);
-        let input = gameplay_pointer_tap(&mut interaction, &surface, policy, 12.0, 120.0);
+        let input = gameplay_pointer_tap(&mut gameplay, &surface, policy, 12.0, 120.0);
 
         assert!(matches!(input, AppInput::LevelSelectSelect(_)));
     }

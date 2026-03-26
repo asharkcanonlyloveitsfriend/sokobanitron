@@ -5,19 +5,24 @@
 //!
 //! Internally those responsibilities live in matching subdirectories so the crate can be read as
 //! a swappable presentation system rather than a single flat renderer module.
+//!
+//! This crate is the device-agnostic presentation layer. It owns shared geometry, screen request
+//! types, gameplay presentation state, and pixel drawing, while platform clients continue to own
+//! clocks, redraw scheduling, and final presentation to screen.
 
 pub mod assets;
+pub mod gameplay_presentation;
 pub mod hit_test;
 pub mod layout;
 pub mod renderer;
 pub mod screen_requests;
 
 pub use assets::{UiIcon, draw_ui_icon_in_rect};
+pub use gameplay_presentation::GameplayPresentationState;
 pub use hit_test::{
     ControlsButtonAction, GameplaySurfaceLayer, GameplaySurfaceModel, GameplaySurfaceTarget,
-    LevelSelectSurfaceTarget, MenuNavAction, controls_button_action_at,
-    gameplay_surface_target_at, level_select_menu_nav_action_at,
-    level_select_menu_start_for_nav, level_select_menu_target_at,
+    LevelSelectSurfaceTarget, MenuNavAction, controls_button_action_at, gameplay_surface_target_at,
+    level_select_menu_nav_action_at, level_select_menu_start_for_nav, level_select_menu_target_at,
     overlay_primary_action_button_contains, top_menu_toggle_button_contains,
 };
 pub use layout::{

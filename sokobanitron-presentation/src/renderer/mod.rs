@@ -1,9 +1,14 @@
 //! Drawing implementation for the presentation system.
+//!
+//! `Renderer` owns device-agnostic pixel composition for shared presentation requests. It draws
+//! into caller-provided RGBA buffers, but it does not own frame scheduling, invalidation, or
+//! platform refresh policy. Those remain client concerns.
 
 mod background;
 mod chrome;
 mod editor;
 mod entities;
+mod gameplay;
 mod level_select;
 mod level_select_scrollbar;
 mod overlay;
@@ -15,8 +20,7 @@ use image::RgbaImage;
 use sokobanitron_gameplay::BoardView;
 use std::collections::HashMap;
 
-use crate::layout::{BoardViewport, ControlsUiMode};
-use crate::screen_requests::GameplayScreenRequest;
+use crate::layout::BoardViewport;
 
 pub use chrome::{
     draw_controls_ui, draw_overlay_primary_action_button, draw_top_left_level_button,
@@ -195,36 +199,6 @@ impl Renderer {
     ) {
         self.draw_background_only(frame, width, height);
         self.draw_board_on_frame(frame, width, height, board, viewport, true, true);
-    }
-
-    pub fn draw_gameplay_screen(
-        &mut self,
-        frame: &mut [u8],
-        width: u32,
-        height: u32,
-        board: &BoardView,
-        viewport: &BoardViewport,
-        request: &GameplayScreenRequest,
-    ) {
-        self.draw_background_only(frame, width, height);
-        self.draw_board_on_frame(
-            frame,
-            width,
-            height,
-            board,
-            viewport,
-            true,
-            request.show_solved_overlay,
-        );
-        chrome::draw_controls_ui(
-            frame,
-            width,
-            height,
-            ControlsUiMode::Gameplay,
-            request.can_undo,
-            request.can_restart,
-        );
-        chrome::draw_top_left_level_button(frame, width, height, request.level_number);
     }
 
     pub fn draw_background_only(&mut self, frame: &mut [u8], width: u32, height: u32) {

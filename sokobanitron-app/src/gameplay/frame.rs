@@ -1,3 +1,14 @@
+//! Gameplay screen request shaping.
+//!
+//! This module converts gameplay/app state into gameplay-facing `FrameRequest` values.
+//! It should describe what the shared presentation layer needs to render gameplay, while staying
+//! free of pixel drawing and platform timing concerns.
+//!
+//! Gameplay now follows the same basic rendering contract as the editor path: the app shapes a
+//! request that includes the board scene and viewport, and clients hand that request to the shared
+//! presentation layer.
+
+use super::view::build_gameplay_viewport;
 use crate::app::presentation::{FrameRequest, PresentMode};
 use crate::app::state::AppState;
 use presentation::assets::UiIcon;
@@ -53,13 +64,16 @@ pub fn build_current_frame_request(
 
 pub(crate) fn build_gameplay_screen_request(
     controller: &GameplayController,
-    _app_state: &AppState,
+    app_state: &AppState,
 ) -> GameplayScreenRequest {
+    let board = controller.board();
     GameplayScreenRequest {
+        board: board.clone(),
+        viewport: build_gameplay_viewport(&app_state.gameplay, board),
         can_undo: controller.can_undo(),
         can_restart: controller.can_restart(),
         level_number: controller.current_level() + 1,
-        show_solved_overlay: controller.board().is_solved(),
+        show_solved_overlay: board.is_solved(),
     }
 }
 
@@ -68,7 +82,7 @@ mod tests {
     use super::{build_current_frame_request, build_level_select_frame_request};
     use crate::app::presentation::{FrameRequest, PresentMode};
     use crate::app::state::{AppOverlay, AppState};
-    use presentation::screen_requests::GameplayMenuScreenRequest;
+    use presentation::screen_requests::{GameplayMenuScreenRequest, GameplayScreenRequest};
     use sokobanitron_gameplay::GameplayController;
 
     fn controller() -> GameplayController {
@@ -109,12 +123,22 @@ mod tests {
         let controller = controller();
         let app_state = AppState::default();
 
-        assert!(matches!(
-            build_current_frame_request(&controller, &app_state),
-            FrameRequest::Gameplay {
-                present_mode: PresentMode::Full,
-                ..
-            }
-        ));
+        let request = build_current_frame_request(&controller, &app_state);
+        let FrameRequest::Gameplay {
+            screen:
+                GameplayScreenRequest {
+                    level_number,
+                    show_solved_overlay,
+                    ..
+                },
+            present_mode,
+        } = request
+        else {
+            panic!("expected gameplay request");
+        };
+
+        assert_eq!(present_mode, PresentMode::Full);
+        assert_eq!(level_number, 1);
+        assert!(!show_solved_overlay);
     }
 }

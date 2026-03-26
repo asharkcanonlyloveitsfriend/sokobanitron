@@ -1,3 +1,16 @@
+//! App-owned presentation planning.
+//!
+//! This module translates app/gameplay outcomes into presentation requests and ordered
+//! presentation steps. It is intentionally above the pixel renderer:
+//!
+//! - `sokobanitron-gameplay` owns semantic gameplay effects.
+//! - `sokobanitron-app` decides which presentation requests should follow from those effects.
+//! - `sokobanitron-presentation` renders those requests.
+//! - clients own final present-to-screen behavior.
+//!
+//! Presentation plans are currently render-only. The app builds them and clients execute them
+//! immediately through `FrameSink`; there is no shared timed or pending execution lifecycle.
+
 use super::state::AppState;
 use crate::gameplay::build_gameplay_frame_request;
 use presentation::screen_requests::{
@@ -49,28 +62,7 @@ pub trait FrameSink {
     fn render_frame(&mut self, request: &FrameRequest) -> Result<(), Self::Error>;
 }
 
-pub fn build_presentation_plan(
-    outcome: &GameplayTapOutcome,
-    controller: &GameplayController,
-    app_state: &AppState,
-) -> PresentationPlan {
-    let mut steps = Vec::new();
-
-    if !matches!(
-        outcome.effect,
-        GameplayTapEffect::None | GameplayTapEffect::MoveRejected
-    ) {
-        steps.push(gameplay_render_step(
-            controller,
-            app_state,
-            PresentMode::Full,
-        ));
-    }
-
-    PresentationPlan { steps }
-}
-
-pub fn execute_presentation_plan<S: FrameSink>(
+pub fn render_presentation_plan<S: FrameSink>(
     sink: &mut S,
     plan: &PresentationPlan,
 ) -> Result<(), S::Error> {
@@ -78,8 +70,24 @@ pub fn execute_presentation_plan<S: FrameSink>(
         let PresentationStep::Render(request) = step;
         sink.render_frame(request)?;
     }
-
     Ok(())
+}
+
+pub fn build_presentation_plan(
+    outcome: &GameplayTapOutcome,
+    controller: &GameplayController,
+    app_state: &AppState,
+) -> PresentationPlan {
+    match outcome.effect {
+        GameplayTapEffect::None | GameplayTapEffect::MoveRejected => PresentationPlan::default(),
+        _ => PresentationPlan {
+            steps: vec![gameplay_render_step(
+                controller,
+                app_state,
+                PresentMode::Full,
+            )],
+        },
+    }
 }
 
 fn gameplay_render_step(
@@ -96,9 +104,14 @@ fn gameplay_render_step(
 
 #[cfg(test)]
 mod tests {
-    use super::{PresentMode, PresentationStep, build_presentation_plan};
+    use super::{
+        FrameSink, PresentMode, PresentationPlan, PresentationStep, build_presentation_plan,
+        render_presentation_plan,
+    };
     use crate::app::{AppState, FrameRequest};
-    use presentation::screen_requests::GameplayScreenRequest;
+    use presentation::screen_requests::{
+        GameplayMenuScreenRequest, GameplayScreenRequest, LevelSelectScreenRequest,
+    };
     use sokobanitron_gameplay::GameplayController;
     use sokobanitron_gameplay::{GameplayControllerChanges, GameplayTapEffect, GameplayTapOutcome};
 
@@ -137,18 +150,28 @@ mod tests {
             &app_state,
         );
 
-        assert_eq!(
-            plan.steps,
-            vec![PresentationStep::Render(FrameRequest::Gameplay {
-                screen: GameplayScreenRequest {
-                    can_undo: false,
-                    can_restart: false,
-                    level_number: 1,
-                    show_solved_overlay: false,
-                },
-                present_mode: PresentMode::Full,
-            })]
-        );
+        let [
+            PresentationStep::Render(FrameRequest::Gameplay {
+                screen:
+                    GameplayScreenRequest {
+                        can_undo,
+                        can_restart,
+                        level_number,
+                        show_solved_overlay,
+                        ..
+                    },
+                present_mode,
+            }),
+        ] = plan.steps.as_slice()
+        else {
+            panic!("expected one gameplay render step");
+        };
+
+        assert_eq!(*present_mode, PresentMode::Full);
+        assert!(!can_undo);
+        assert!(!can_restart);
+        assert_eq!(*level_number, 1);
+        assert!(!show_solved_overlay);
     }
 
     #[test]
@@ -160,18 +183,24 @@ mod tests {
             &app_state,
         );
 
-        assert_eq!(
-            plan.steps,
-            vec![PresentationStep::Render(FrameRequest::Gameplay {
-                screen: GameplayScreenRequest {
-                    can_undo: false,
-                    can_restart: false,
-                    level_number: 1,
-                    show_solved_overlay: false,
-                },
-                present_mode: PresentMode::Full,
-            })]
-        );
+        let [
+            PresentationStep::Render(FrameRequest::Gameplay {
+                screen:
+                    GameplayScreenRequest {
+                        level_number,
+                        show_solved_overlay,
+                        ..
+                    },
+                present_mode,
+            }),
+        ] = plan.steps.as_slice()
+        else {
+            panic!("expected one gameplay render step");
+        };
+
+        assert_eq!(*present_mode, PresentMode::Full);
+        assert_eq!(*level_number, 1);
+        assert!(!show_solved_overlay);
     }
 
     #[test]
@@ -183,18 +212,24 @@ mod tests {
             &app_state,
         );
 
-        assert_eq!(
-            plan.steps,
-            vec![PresentationStep::Render(FrameRequest::Gameplay {
-                screen: GameplayScreenRequest {
-                    can_undo: false,
-                    can_restart: false,
-                    level_number: 1,
-                    show_solved_overlay: true,
-                },
-                present_mode: PresentMode::Full,
-            })]
-        );
+        let [
+            PresentationStep::Render(FrameRequest::Gameplay {
+                screen:
+                    GameplayScreenRequest {
+                        level_number,
+                        show_solved_overlay,
+                        ..
+                    },
+                present_mode,
+            }),
+        ] = plan.steps.as_slice()
+        else {
+            panic!("expected one gameplay render step");
+        };
+
+        assert_eq!(*present_mode, PresentMode::Full);
+        assert_eq!(*level_number, 1);
+        assert!(*show_solved_overlay);
     }
 
     #[test]
@@ -206,5 +241,54 @@ mod tests {
             &app_state,
         );
         assert!(plan.steps.is_empty());
+    }
+
+    #[derive(Default)]
+    struct TestSink {
+        rendered: Vec<FrameRequest>,
+    }
+
+    impl FrameSink for TestSink {
+        type Error = std::convert::Infallible;
+
+        fn render_frame(&mut self, request: &FrameRequest) -> Result<(), Self::Error> {
+            self.rendered.push(request.clone());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn render_presentation_plan_renders_each_step_in_order() {
+        let plan = PresentationPlan {
+            steps: vec![
+                PresentationStep::Render(FrameRequest::GameplayMenu {
+                    screen: GameplayMenuScreenRequest {
+                        primary_action_icon: None,
+                    },
+                }),
+                PresentationStep::Render(FrameRequest::LevelSelect {
+                    screen: LevelSelectScreenRequest { page_start: 3 },
+                    present_mode: PresentMode::Full,
+                }),
+            ],
+        };
+        let mut sink = TestSink::default();
+
+        render_presentation_plan(&mut sink, &plan).unwrap();
+
+        assert_eq!(
+            sink.rendered,
+            vec![
+                FrameRequest::GameplayMenu {
+                    screen: GameplayMenuScreenRequest {
+                        primary_action_icon: None,
+                    },
+                },
+                FrameRequest::LevelSelect {
+                    screen: LevelSelectScreenRequest { page_start: 3 },
+                    present_mode: PresentMode::Full,
+                },
+            ]
+        );
     }
 }

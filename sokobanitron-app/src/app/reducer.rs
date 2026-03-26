@@ -49,8 +49,10 @@ pub fn apply_action(
         }
         AppAction::OpenLevelSelect => {
             if matches!(app_state.ui.screen, AppScreen::Gameplay) {
-                let page_start =
-                    level_select_menu_start_index(controller.level_count(), controller.current_level());
+                let page_start = level_select_menu_start_index(
+                    controller.level_count(),
+                    controller.current_level(),
+                );
                 app_state.ui.overlay = Some(AppOverlay::LevelSelect { page_start });
             }
         }

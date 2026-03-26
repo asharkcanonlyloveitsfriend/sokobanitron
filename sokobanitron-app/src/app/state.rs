@@ -1,5 +1,5 @@
 use crate::editor::EditorUiState;
-use crate::gameplay::GameplayInteractionState;
+use crate::gameplay::GameplayUiState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppScreen {
@@ -33,7 +33,7 @@ impl Default for UiState {
 pub struct AppState {
     pub ui: UiState,
     pub editor: EditorUiState,
-    pub gameplay: GameplayInteractionState,
+    pub gameplay: GameplayUiState,
     pub editor_available: bool,
 }
 

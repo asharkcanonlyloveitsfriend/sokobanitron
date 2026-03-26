@@ -14,12 +14,8 @@ const BUTTON_TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
 impl App {
     pub(crate) fn render_current(&mut self) {
         let request = match self.app_state.active_screen() {
-            AppScreen::Gameplay => {
-                build_current_frame_request(&self.controller, &self.app_state)
-            }
-            AppScreen::Editor => {
-                build_current_editor_frame_request(&self.app_state, &self.editor)
-            }
+            AppScreen::Gameplay => build_current_frame_request(&self.controller, &self.app_state),
+            AppScreen::Editor => build_current_editor_frame_request(&self.app_state, &self.editor),
         };
         let _ = self.render_request(&request);
     }
@@ -33,14 +29,13 @@ impl App {
         match request {
             FrameRequest::Gameplay { screen, .. } => {
                 if let Some(pixels) = &mut self.pixels {
+                    self.gameplay_presentation.replace_scene(screen.clone());
                     let frame = pixels.frame_mut();
-                    self.renderer.draw_gameplay_screen(
+                    self.gameplay_presentation.draw(
+                        &mut self.renderer,
                         frame,
                         self.surface_width,
                         self.surface_height,
-                        self.controller.board(),
-                        &self.board_viewport,
-                        screen,
                     );
                     pixels.render().expect("render");
                 }

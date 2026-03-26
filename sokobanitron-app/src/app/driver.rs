@@ -1,19 +1,22 @@
 use super::action::AppAction;
-use super::presentation::{FrameSink, execute_presentation_plan};
+use super::presentation::PresentationPlan;
 use super::reducer::apply_action;
 use super::state::AppState;
 use sokobanitron_gameplay::{GameplayController, GameplayControllerChanges};
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppliedUpdate {
     pub changes: GameplayControllerChanges,
+    pub presentation_plan: Option<PresentationPlan>,
 }
 
-pub trait AppDriverContext: FrameSink {
+pub trait AppDriverContext {
+    type Error;
+
     fn controller_and_app_state_mut(&mut self) -> (&mut GameplayController, &mut AppState);
 }
 
-pub fn apply_action_and_present_in_context<C: AppDriverContext>(
+pub fn apply_action_in_context<C: AppDriverContext>(
     context: &mut C,
     action: AppAction,
 ) -> Result<AppliedUpdate, C::Error> {
@@ -22,28 +25,22 @@ pub fn apply_action_and_present_in_context<C: AppDriverContext>(
         apply_action(controller, app_state, action)
     };
 
-    if let Some(plan) = update.presentation_plan.as_ref() {
-        execute_presentation_plan(context, plan)?;
-    }
-
     Ok(AppliedUpdate {
         changes: update.changes,
+        presentation_plan: update.presentation_plan,
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{AppDriverContext, apply_action_and_present_in_context};
+    use super::{AppDriverContext, apply_action_in_context};
     use crate::app::action::AppAction;
-    use crate::app::presentation::{FrameRequest, FrameSink};
     use crate::app::state::AppState;
     use sokobanitron_gameplay::GameplayController;
-    use std::convert::Infallible;
 
     struct TestContext {
         controller: GameplayController,
         app_state: AppState,
-        render_calls: usize,
     }
 
     impl TestContext {
@@ -52,25 +49,13 @@ mod tests {
             Self {
                 controller: GameplayController::new(vec![level], None),
                 app_state: AppState::default(),
-                render_calls: 0,
             }
-        }
-
-        fn total_presentation_calls(&self) -> usize {
-            self.render_calls
-        }
-    }
-
-    impl FrameSink for TestContext {
-        type Error = Infallible;
-
-        fn render_frame(&mut self, _request: &FrameRequest) -> Result<(), Self::Error> {
-            self.render_calls += 1;
-            Ok(())
         }
     }
 
     impl AppDriverContext for TestContext {
+        type Error = std::convert::Infallible;
+
         fn controller_and_app_state_mut(&mut self) -> (&mut GameplayController, &mut AppState) {
             (&mut self.controller, &mut self.app_state)
         }
@@ -80,21 +65,19 @@ mod tests {
     fn no_op_action_has_no_presentation_calls() {
         let mut context = TestContext::new();
 
-        let applied = apply_action_and_present_in_context(&mut context, AppAction::NoOp).unwrap();
+        let applied = apply_action_in_context(&mut context, AppAction::NoOp).unwrap();
 
         assert_eq!(applied.changes, Default::default());
-        assert_eq!(context.total_presentation_calls(), 0);
+        assert!(applied.presentation_plan.is_none());
     }
 
     #[test]
-    fn board_tap_action_executes_some_presentation_calls() {
+    fn board_tap_action_returns_presentation_plan() {
         let mut context = TestContext::new();
 
-        let _ = apply_action_and_present_in_context(
-            &mut context,
-            AppAction::TapBoardCell { x: 1, y: 1 },
-        );
+        let applied =
+            apply_action_in_context(&mut context, AppAction::TapBoardCell { x: 1, y: 1 }).unwrap();
 
-        assert!(context.total_presentation_calls() > 0);
+        assert!(applied.presentation_plan.is_some());
     }
 }

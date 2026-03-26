@@ -40,21 +40,17 @@ impl KindleApp {
                 screen,
                 present_mode,
             } => {
-                let (renderer, rgba, display, controller, viewport) = (
-                    &mut self.renderer,
-                    &mut self.rgba_frame,
-                    &mut self.display,
-                    &self.controller,
-                    &self.viewport,
-                );
-                renderer.draw_gameplay_screen(
+                self.gameplay_presentation.replace_scene(screen.clone());
+                let (renderer, rgba, display) =
+                    (&mut self.renderer, &mut self.rgba_frame, &mut self.display);
+                self.gameplay_presentation.draw(
+                    renderer,
                     rgba,
                     config::WIDTH as u32,
                     config::HEIGHT as u32,
-                    controller.board(),
-                    viewport,
-                    screen,
                 );
+                // Keep the Kindle partial-refresh path available as a documented platform
+                // capability even though gameplay no longer uses timed or animated presentation.
                 if matches!(present_mode, PresentMode::FastPartial) {
                     display.present_rgba_fast_partial(rgba)
                 } else {
