@@ -4,19 +4,20 @@ use presentation::renderer::{
     draw_controls_ui, draw_overlay_primary_action_button, draw_top_menu_toggle,
 };
 use sokobanitron_app::{
-    FrameRequest, FrameSink, active_screen, build_current_editor_frame_request,
-    build_current_frame_request, is_gameplay_screen,
+    app::{AppScreen, FrameRequest, FrameSink},
+    editor::build_current_editor_frame_request,
+    gameplay::build_current_frame_request,
 };
 
 const BUTTON_TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
 
 impl App {
     pub(crate) fn render_current(&mut self) {
-        let request = match active_screen(&self.app_state) {
-            sokobanitron_app::AppScreen::Gameplay => {
+        let request = match self.app_state.active_screen() {
+            AppScreen::Gameplay => {
                 build_current_frame_request(&self.controller, &self.app_state)
             }
-            sokobanitron_app::AppScreen::Editor => {
+            AppScreen::Editor => {
                 build_current_editor_frame_request(&self.app_state, &self.editor)
             }
         };
@@ -125,7 +126,7 @@ impl FrameSink for App {
     type Error = ();
 
     fn render_frame(&mut self, request: &FrameRequest) -> Result<(), Self::Error> {
-        if !is_gameplay_screen(&self.app_state) {
+        if !self.app_state.is_gameplay_screen() {
             return Ok(());
         }
         self.render_request(request)

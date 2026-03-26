@@ -10,7 +10,7 @@ use presentation::layout::{
 use sokobanitron_gameplay::{BoardView, TileKind};
 use sokobanitron_level_editor::{EditorMode, LevelEditor, NonVoidBounds};
 
-use crate::pointer::{DoubleTapTracker, PointerGestureState, PointerId};
+use crate::shared::{DoubleTapTracker, PointerGestureState, PointerId};
 
 use super::paint_mode::PaintMode;
 

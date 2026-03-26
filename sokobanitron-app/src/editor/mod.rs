@@ -7,7 +7,7 @@ pub use frame::build_current_editor_frame_request;
 pub use input::{editor_cursor_moved, editor_mouse_pressed, editor_mouse_released, editor_touch};
 pub use view::EditorUiState;
 
-use crate::AppState;
+use crate::app::state::AppState;
 
 pub fn resize_editor_surface(app_state: &mut AppState, width: u32, height: u32) {
     view::resize_editor_surface(&mut app_state.editor, width, height);

@@ -1,7 +1,6 @@
-use crate::action::AppAction;
-use crate::app_state::AppState;
-use crate::present::{PresentationPlan, build_presentation_plan};
-use crate::ui_state::{AppOverlay, AppScreen};
+use super::action::AppAction;
+use super::presentation::{PresentationPlan, build_presentation_plan};
+use super::state::{AppOverlay, AppScreen, AppState};
 use sokobanitron_gameplay::{GameplayController, GameplayControllerChanges};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -113,7 +112,8 @@ fn level_select_start_index(level_count: usize, current_level: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::apply_action;
-    use crate::{AppAction, AppOverlay, AppScreen, AppState};
+    use crate::app::action::AppAction;
+    use crate::app::state::{AppOverlay, AppScreen, AppState};
     use sokobanitron_gameplay::GameplayController;
 
     fn test_controller() -> GameplayController {

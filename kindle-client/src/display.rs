@@ -5,7 +5,8 @@ use presentation::renderer::{
     draw_top_menu_toggle,
 };
 use sokobanitron_app::{
-    FrameRequest, FrameSink, PresentMode, build_current_frame_request, is_gameplay_screen,
+    app::{FrameRequest, FrameSink, PresentMode},
+    gameplay::build_current_frame_request,
 };
 use std::io::Result;
 
@@ -126,7 +127,7 @@ impl FrameSink for KindleApp {
     type Error = std::io::Error;
 
     fn render_frame(&mut self, request: &FrameRequest) -> std::result::Result<(), Self::Error> {
-        if !is_gameplay_screen(&self.app_state) {
+        if !self.app_state.is_gameplay_screen() {
             return Ok(());
         }
         self.render_request(request)

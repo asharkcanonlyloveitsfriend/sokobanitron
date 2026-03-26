@@ -2,10 +2,12 @@ use crate::{config, platform};
 use presentation::layout::{BoardViewport, fit_board_viewport_for_controls};
 use presentation::renderer::Renderer;
 use sokobanitron_app::{
-    AppAction, AppDriverContext, AppInput, AppState, GameplayInputContext,
-    apply_action_and_present_in_context, gameplay_pointer_tap, interpret_input,
-    is_gameplay_menu_open, is_gameplay_screen, is_level_select_open, is_overlay_open,
-    level_select_page_start, load_initial_levels_for_app,
+    app::{
+        AppAction, AppDriverContext, AppInput, AppState, apply_action_and_present_in_context,
+        interpret_input,
+    },
+    gameplay::{GameplayInputContext, gameplay_pointer_tap},
+    level_bootstrap::load_initial_levels_for_app,
 };
 use sokobanitron_gameplay::{
     BoardView, GameplayController, GameplayControllerChanges, GameplayPreferences,
@@ -101,15 +103,15 @@ impl KindleApp {
     fn on_gameplay_tap(&mut self, screen_x: f64, screen_y: f64) -> Result<()> {
         let context = GameplayInputContext {
             allow_enter_editor: self.app_state.editor_available,
-            is_gameplay_screen: is_gameplay_screen(&self.app_state),
-            is_gameplay_menu_open: is_gameplay_menu_open(&self.app_state),
-            is_level_select_open: is_level_select_open(&self.app_state),
-            is_overlay_open: is_overlay_open(&self.app_state),
+            is_gameplay_screen: self.app_state.is_gameplay_screen(),
+            is_gameplay_menu_open: self.app_state.is_gameplay_menu_open(),
+            is_level_select_open: self.app_state.is_level_select_open(),
+            is_overlay_open: self.app_state.is_overlay_open(),
             surface_width: config::WIDTH as u32,
             surface_height: config::HEIGHT as u32,
             level_count: self.levels.len(),
             current_level: self.controller.current_level(),
-            current_level_select_page_start: level_select_page_start(&self.app_state).unwrap_or(0),
+            current_level_select_page_start: self.app_state.level_select_page_start().unwrap_or(0),
             can_undo: self.controller.can_undo(),
             can_restart: self.controller.can_restart(),
             is_solved: self.controller.board().is_solved(),

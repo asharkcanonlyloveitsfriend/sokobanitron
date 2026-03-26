@@ -1,5 +1,7 @@
-use crate::present::{FrameSink, execute_presentation_plan};
-use crate::{AppAction, AppState, apply_action};
+use super::action::AppAction;
+use super::presentation::{FrameSink, execute_presentation_plan};
+use super::reducer::apply_action;
+use super::state::AppState;
 use sokobanitron_gameplay::{GameplayController, GameplayControllerChanges};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -32,7 +34,9 @@ pub fn apply_action_and_present_in_context<C: AppDriverContext>(
 #[cfg(test)]
 mod tests {
     use super::{AppDriverContext, apply_action_and_present_in_context};
-    use crate::{AppAction, AppState, FrameRequest, FrameSink};
+    use crate::app::action::AppAction;
+    use crate::app::presentation::{FrameRequest, FrameSink};
+    use crate::app::state::AppState;
     use sokobanitron_gameplay::GameplayController;
     use std::convert::Infallible;
 

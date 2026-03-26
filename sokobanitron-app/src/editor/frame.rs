@@ -3,9 +3,8 @@
 //! This module converts `LevelEditor` snapshots plus app-side viewport state into
 //! renderer request structs. It must not mutate editor domain state or draw pixels.
 
-use crate::AppState;
-use crate::frame::FrameRequest;
-use crate::overlay::is_editor_menu_open;
+use crate::app::presentation::FrameRequest;
+use crate::app::state::AppState;
 use presentation::assets::UiIcon;
 use presentation::layout::ScreenRect;
 use presentation::screen_requests::{
@@ -19,7 +18,7 @@ pub fn build_current_editor_frame_request(
     app_state: &AppState,
     editor: &LevelEditor,
 ) -> FrameRequest {
-    if is_editor_menu_open(app_state) {
+    if app_state.is_editor_menu_open() {
         FrameRequest::EditorMenu {
             screen: EditorMenuScreenRequest {
                 primary_action_icon: UiIcon::Manipulate,

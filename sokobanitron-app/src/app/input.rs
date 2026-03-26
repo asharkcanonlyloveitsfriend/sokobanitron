@@ -1,5 +1,5 @@
-use crate::action::AppAction;
-use crate::app_state::AppState;
+use super::action::AppAction;
+use super::state::AppState;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppInput {
@@ -47,7 +47,8 @@ pub fn interpret_input(_app_state: &AppState, input: AppInput) -> AppAction {
 #[cfg(test)]
 mod tests {
     use super::{AppInput, interpret_input};
-    use crate::{AppAction, AppState};
+    use crate::app::action::AppAction;
+    use crate::app::state::AppState;
 
     #[test]
     fn interpret_control_restart_maps_to_restart_action() {

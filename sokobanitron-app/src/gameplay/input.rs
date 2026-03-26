@@ -1,7 +1,6 @@
-use crate::AppInput;
-use crate::pointer::{
-    MOUSE_POINTER_ID, PointerEvent, PointerGesture, PointerGestureState, PointerPhase,
-};
+use super::state::GameplayInteractionState;
+use crate::app::input::AppInput;
+use crate::shared::{MOUSE_POINTER_ID, PointerEvent, PointerGesture, PointerPhase};
 use presentation::hit_test::{
     ControlsButtonAction, MenuNavAction, controls_button_action_at,
     level_select_menu_nav_action_at, level_select_menu_start_for_nav, level_select_menu_target_at,
@@ -10,11 +9,6 @@ use presentation::hit_test::{
 use presentation::layout::{BoardViewport, top_left_level_button_rect};
 use sokobanitron_gameplay::BoardView;
 use std::time::Instant;
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct GameplayInteractionState {
-    pub(crate) pointer: PointerGestureState,
-}
 
 #[derive(Debug, Clone, Copy)]
 pub struct GameplayInputContext<'a> {
@@ -210,7 +204,7 @@ enum GameplayHitTarget {
 #[cfg(test)]
 mod tests {
     use super::{GameplayInputContext, gameplay_pointer_tap};
-    use crate::AppInput;
+    use crate::app::input::AppInput;
     use presentation::layout::fit_board_viewport_for_controls;
     use sokobanitron_gameplay::GameplayController;
 

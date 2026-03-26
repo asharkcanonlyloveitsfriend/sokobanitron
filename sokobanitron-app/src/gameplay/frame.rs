@@ -1,7 +1,5 @@
-use crate::app_state::AppState;
-use crate::frame::FrameRequest;
-use crate::overlay::{is_gameplay_menu_open, level_select_page_start};
-use crate::presentation_profile::PresentMode;
+use crate::app::presentation::{FrameRequest, PresentMode};
+use crate::app::state::AppState;
 use presentation::assets::UiIcon;
 use presentation::screen_requests::{
     GameplayMenuScreenRequest, GameplayScreenRequest, LevelSelectScreenRequest,
@@ -40,9 +38,9 @@ pub fn build_current_frame_request(
     controller: &GameplayController,
     app_state: &AppState,
 ) -> FrameRequest {
-    if let Some(page_start) = level_select_page_start(app_state) {
+    if let Some(page_start) = app_state.level_select_page_start() {
         build_level_select_frame_request(page_start, PresentMode::Full)
-    } else if is_gameplay_menu_open(app_state) {
+    } else if app_state.is_gameplay_menu_open() {
         FrameRequest::GameplayMenu {
             screen: GameplayMenuScreenRequest {
                 primary_action_icon: app_state.editor_available.then_some(UiIcon::Draw),
@@ -68,7 +66,8 @@ pub(crate) fn build_gameplay_screen_request(
 #[cfg(test)]
 mod tests {
     use super::{build_current_frame_request, build_level_select_frame_request};
-    use crate::{AppOverlay, AppState, FrameRequest, PresentMode};
+    use crate::app::presentation::{FrameRequest, PresentMode};
+    use crate::app::state::{AppOverlay, AppState};
     use presentation::screen_requests::GameplayMenuScreenRequest;
     use sokobanitron_gameplay::GameplayController;
 

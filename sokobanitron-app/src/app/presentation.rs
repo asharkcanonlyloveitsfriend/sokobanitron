@@ -1,8 +1,37 @@
-use crate::app_state::AppState;
-use crate::frame::FrameRequest;
-use crate::gameplay_frames::build_gameplay_frame_request;
-use crate::presentation_profile::PresentMode;
+use super::state::AppState;
+use crate::gameplay::build_gameplay_frame_request;
+use presentation::screen_requests::{
+    EditorMenuScreenRequest, EditorScreenRequest, GameplayMenuScreenRequest, GameplayScreenRequest,
+    LevelSelectScreenRequest,
+};
 use sokobanitron_gameplay::{GameplayController, GameplayTapEffect, GameplayTapOutcome};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PresentMode {
+    Full,
+    FastPartial,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FrameRequest {
+    Gameplay {
+        screen: GameplayScreenRequest,
+        present_mode: PresentMode,
+    },
+    GameplayMenu {
+        screen: GameplayMenuScreenRequest,
+    },
+    LevelSelect {
+        screen: LevelSelectScreenRequest,
+        present_mode: PresentMode,
+    },
+    Editor {
+        screen: EditorScreenRequest,
+    },
+    EditorMenu {
+        screen: EditorMenuScreenRequest,
+    },
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PresentationStep {
@@ -67,10 +96,9 @@ fn gameplay_render_step(
 
 #[cfg(test)]
 mod tests {
-    use super::{PresentationStep, build_presentation_plan};
-    use crate::GameplayScreenRequest;
-    use crate::app_state::AppState;
-    use crate::presentation_profile::PresentMode;
+    use super::{PresentMode, PresentationStep, build_presentation_plan};
+    use crate::app::{AppState, FrameRequest};
+    use presentation::screen_requests::GameplayScreenRequest;
     use sokobanitron_gameplay::GameplayController;
     use sokobanitron_gameplay::{GameplayControllerChanges, GameplayTapEffect, GameplayTapOutcome};
 
@@ -111,17 +139,15 @@ mod tests {
 
         assert_eq!(
             plan.steps,
-            vec![PresentationStep::Render(
-                crate::frame::FrameRequest::Gameplay {
-                    screen: GameplayScreenRequest {
-                        can_undo: false,
-                        can_restart: false,
-                        level_number: 1,
-                        show_solved_overlay: false,
-                    },
-                    present_mode: PresentMode::Full,
-                }
-            )]
+            vec![PresentationStep::Render(FrameRequest::Gameplay {
+                screen: GameplayScreenRequest {
+                    can_undo: false,
+                    can_restart: false,
+                    level_number: 1,
+                    show_solved_overlay: false,
+                },
+                present_mode: PresentMode::Full,
+            })]
         );
     }
 
@@ -136,17 +162,15 @@ mod tests {
 
         assert_eq!(
             plan.steps,
-            vec![PresentationStep::Render(
-                crate::frame::FrameRequest::Gameplay {
-                    screen: GameplayScreenRequest {
-                        can_undo: false,
-                        can_restart: false,
-                        level_number: 1,
-                        show_solved_overlay: false,
-                    },
-                    present_mode: PresentMode::Full,
-                }
-            )]
+            vec![PresentationStep::Render(FrameRequest::Gameplay {
+                screen: GameplayScreenRequest {
+                    can_undo: false,
+                    can_restart: false,
+                    level_number: 1,
+                    show_solved_overlay: false,
+                },
+                present_mode: PresentMode::Full,
+            })]
         );
     }
 
@@ -161,17 +185,15 @@ mod tests {
 
         assert_eq!(
             plan.steps,
-            vec![PresentationStep::Render(
-                crate::frame::FrameRequest::Gameplay {
-                    screen: GameplayScreenRequest {
-                        can_undo: false,
-                        can_restart: false,
-                        level_number: 1,
-                        show_solved_overlay: true,
-                    },
-                    present_mode: PresentMode::Full,
-                }
-            )]
+            vec![PresentationStep::Render(FrameRequest::Gameplay {
+                screen: GameplayScreenRequest {
+                    can_undo: false,
+                    can_restart: false,
+                    level_number: 1,
+                    show_solved_overlay: true,
+                },
+                present_mode: PresentMode::Full,
+            })]
         );
     }
 

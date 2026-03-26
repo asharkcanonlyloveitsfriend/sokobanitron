@@ -4,12 +4,10 @@
 //! overlay/screen changes. It does not own editor-domain mutation semantics and it does
 //! not own rendering.
 
-use crate::AppState;
-use crate::overlay::is_editor_menu_open;
-use crate::pointer::{
+use crate::app::state::{AppOverlay, AppScreen, AppState};
+use crate::shared::{
     MOUSE_POINTER_ID, PointerContact, PointerEvent, PointerGesture, PointerId, PointerPhase,
 };
-use crate::ui_state::{AppOverlay, AppScreen};
 use presentation::hit_test::{
     ControlsButtonAction, overlay_primary_action_button_contains, top_menu_toggle_button_contains,
 };
@@ -138,7 +136,7 @@ fn handle_editor_gesture(
     match gesture {
         PointerGesture::Started(contact) => {
             let target = classify_editor_hit_target(app_state, editor, contact);
-            if is_editor_menu_open(app_state) {
+            if app_state.is_editor_menu_open() {
                 handle_editor_menu_target(app_state, target);
                 return;
             }
