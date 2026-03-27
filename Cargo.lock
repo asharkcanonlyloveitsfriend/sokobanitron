@@ -2141,6 +2141,8 @@ dependencies = [
 name = "sokobanitron-app"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "sokobanitron-gameplay",
  "sokobanitron-level-editor",
  "sokobanitron-presentation",
@@ -2167,8 +2169,6 @@ dependencies = [
 name = "sokobanitron-gameplay"
 version = "0.1.0"
 dependencies = [
- "serde",
- "serde_json",
  "sokobanitron-core",
 ]
 

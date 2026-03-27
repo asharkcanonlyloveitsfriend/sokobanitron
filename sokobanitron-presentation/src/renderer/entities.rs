@@ -59,11 +59,12 @@ impl Renderer {
         frame_height: u32,
         board: &BoardView,
         viewport: &BoardViewport,
+        sleeping: bool,
     ) {
         let Some((player_x, player_y, icon_size)) = self.player_sprite_rect(board, viewport) else {
             return;
         };
-        let icon = self.player_bitmap(icon_size);
+        let icon = self.player_bitmap(icon_size, sleeping);
         blit_rgba(
             frame,
             frame_width,
@@ -143,29 +144,61 @@ impl Renderer {
         rasterize_svg(&svg, size)
     }
 
-    fn player_bitmap(&mut self, size: u32) -> &[u8] {
-        self.player_bitmap_cache.entry(size).or_insert_with(|| {
-            let body = rgb_hex(self.theme.player_body);
-            let highlight = rgb_hex(self.theme.player_highlight);
-            let eye = rgb_hex(self.theme.player_eye);
-            let limb = rgb_hex(self.theme.player_limb);
-            let svg = format!(
-                "<svg xmlns='http://www.w3.org/2000/svg' width='{s}' height='{s}' viewBox='0 0 100 100'>\
-                 <path d='M32,18L68,18A20,20 0,0 1,88 38L88,50A20,20 0,0 1,68 70L32,70A20,20 0,0 1,12 50L12,38A20,20 0,0 1,32 18z' fill='{body}'/>\
-                 <path d='M28,22L34,22A6,5.5 0,0 1,40 27.5L40,27.5A6,5.5 0,0 1,34 33L28,33A6,5.5 0,0 1,22 27.5L22,27.5A6,5.5 0,0 1,28 22z' fill='{highlight}'/>\
-                 <path d='M33,37h10v10h-10z' fill='{eye}'/>\
-                 <path d='M57,37h10v10h-10z' fill='{eye}'/>\
-                 <path d='M34,69L34,69A8,8 0,0 1,42 77L42,87A8,8 0,0 1,34 95L34,95A8,8 0,0 1,26 87L26,77A8,8 0,0 1,34 69z' fill='{limb}'/>\
-                 <path d='M66,69L66,69A8,8 0,0 1,74 77L74,87A8,8 0,0 1,66 95L66,95A8,8 0,0 1,58 87L58,77A8,8 0,0 1,66 69z' fill='{limb}'/>\
-                 </svg>",
-                s = size,
-                body = body,
-                highlight = highlight,
-                eye = eye,
-                limb = limb,
-            );
-
-            rasterize_svg(&svg, size)
+    fn player_bitmap(&mut self, size: u32, sleeping: bool) -> &[u8] {
+        let body = self.theme.player_body;
+        let highlight = self.theme.player_highlight;
+        let eye = self.theme.player_eye;
+        let limb = self.theme.player_limb;
+        let cache = if sleeping {
+            &mut self.sleeping_player_bitmap_cache
+        } else {
+            &mut self.player_bitmap_cache
+        };
+        cache.entry(size).or_insert_with(|| {
+            Self::rasterize_player_bitmap(size, body, highlight, eye, limb, sleeping)
         })
+    }
+
+    fn rasterize_player_bitmap(
+        size: u32,
+        body: [u8; 4],
+        highlight: [u8; 4],
+        eye: [u8; 4],
+        limb: [u8; 4],
+        sleeping: bool,
+    ) -> Vec<u8> {
+        let body = rgb_hex(body);
+        let highlight = rgb_hex(highlight);
+        let eye = rgb_hex(eye);
+        let limb = rgb_hex(limb);
+        let eyes = if sleeping {
+            format!(
+                "<path d='M32,41h12v3H32z' fill='{eye}'/>\
+                 <path d='M56,41h12v3H56z' fill='{eye}'/>",
+                eye = eye,
+            )
+        } else {
+            format!(
+                "<path d='M33,37h10v10h-10z' fill='{eye}'/>\
+                 <path d='M57,37h10v10h-10z' fill='{eye}'/>",
+                eye = eye,
+            )
+        };
+        let svg = format!(
+            "<svg xmlns='http://www.w3.org/2000/svg' width='{s}' height='{s}' viewBox='0 0 100 100'>\
+             <path d='M32,18L68,18A20,20 0,0 1,88 38L88,50A20,20 0,0 1,68 70L32,70A20,20 0,0 1,12 50L12,38A20,20 0,0 1,32 18z' fill='{body}'/>\
+             <path d='M28,22L34,22A6,5.5 0,0 1,40 27.5L40,27.5A6,5.5 0,0 1,34 33L28,33A6,5.5 0,0 1,22 27.5L22,27.5A6,5.5 0,0 1,28 22z' fill='{highlight}'/>\
+             {eyes}\
+             <path d='M34,69L34,69A8,8 0,0 1,42 77L42,87A8,8 0,0 1,34 95L34,95A8,8 0,0 1,26 87L26,77A8,8 0,0 1,34 69z' fill='{limb}'/>\
+             <path d='M66,69L66,69A8,8 0,0 1,74 77L74,87A8,8 0,0 1,66 95L66,95A8,8 0,0 1,58 87L58,77A8,8 0,0 1,66 69z' fill='{limb}'/>\
+             </svg>",
+            s = size,
+            body = body,
+            highlight = highlight,
+            eyes = eyes,
+            limb = limb,
+        );
+
+        rasterize_svg(&svg, size)
     }
 }

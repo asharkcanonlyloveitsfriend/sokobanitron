@@ -44,5 +44,5 @@ pub use renderer::{
 };
 pub use screen_requests::{
     EditorCountOverlay, EditorHintOverlay, EditorMenuScreenRequest, EditorScreenRequest,
-    GameplayMenuScreenRequest, GameplayScreenRequest, LevelSelectScreenRequest,
+    GameplayMenuScreenRequest, GameplayScreenMode, GameplayScreenRequest, LevelSelectScreenRequest,
 };

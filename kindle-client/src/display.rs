@@ -6,7 +6,7 @@ use presentation::renderer::{
 };
 use sokobanitron_app::{
     app::{FrameRequest, FrameSink, PresentMode},
-    gameplay::build_current_frame_request,
+    gameplay::{build_current_frame_request, build_sleep_gameplay_frame_request},
 };
 use std::io::Result;
 
@@ -116,6 +116,11 @@ impl KindleApp {
                 display.present_rgba(rgba)
             }
         }
+    }
+
+    pub(crate) fn render_sleep_screen(&mut self) -> Result<()> {
+        let request = build_sleep_gameplay_frame_request(&self.controller, &self.app_state);
+        self.render_request(&request)
     }
 }
 

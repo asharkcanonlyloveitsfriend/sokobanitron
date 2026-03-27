@@ -1,6 +1,7 @@
 use pixels::{Pixels, SurfaceTexture};
 use presentation::{GameplayPresentationState, Renderer};
 use sokobanitron_app::{
+    AppPreferences,
     app::{
         AppAction, AppDriverContext, AppInput, AppState, apply_action_in_context, interpret_input,
         render_presentation_plan,
@@ -16,9 +17,7 @@ use sokobanitron_app::{
     level_bootstrap::load_initial_levels_for_app,
     shared::PointerPhase,
 };
-use sokobanitron_gameplay::{
-    BoardView, GameplayController, GameplayControllerChanges, GameplayPreferences,
-};
+use sokobanitron_gameplay::{BoardView, GameplayController, GameplayControllerChanges};
 use sokobanitron_level_editor::LevelEditor;
 use std::sync::Arc;
 use winit::{
@@ -42,7 +41,7 @@ pub struct App {
     pub(crate) preview_boards: Vec<BoardView>,
     pub(crate) controller: GameplayController,
     pub(crate) app_state: AppState,
-    preferences: GameplayPreferences,
+    preferences: AppPreferences,
     cursor_position: Option<(f64, f64)>,
     pub(crate) surface_width: u32,
     pub(crate) surface_height: u32,
@@ -51,7 +50,7 @@ pub struct App {
 
 impl App {
     pub fn new() -> Self {
-        let preferences = GameplayPreferences::load(PREFERENCES_PATH);
+        let preferences = AppPreferences::load(PREFERENCES_PATH);
         let initial_levels = load_initial_levels_for_app();
         let levels = initial_levels.levels;
         let preview_boards = initial_levels.preview_boards;

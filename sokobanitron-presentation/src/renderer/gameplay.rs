@@ -4,8 +4,8 @@
 //! gameplay composition order in one place while delegating low-level drawing primitives to the
 //! rest of the renderer.
 
-use crate::layout::ControlsUiMode;
-use crate::screen_requests::GameplayScreenRequest;
+use crate::layout::{ControlsUiMode, ScreenRect, UI_BUTTON_MARGIN, UI_BUTTON_SIZE};
+use crate::screen_requests::{GameplayScreenMode, GameplayScreenRequest};
 
 use super::{Renderer, chrome};
 
@@ -18,15 +18,20 @@ impl Renderer {
         request: &GameplayScreenRequest,
     ) {
         self.draw_gameplay_board_scene(frame, width, height, request);
-        chrome::draw_controls_ui(
-            frame,
-            width,
-            height,
-            ControlsUiMode::Gameplay,
-            request.can_undo,
-            request.can_restart,
-        );
-        chrome::draw_top_left_level_button(frame, width, height, request.level_number);
+        match request.mode {
+            GameplayScreenMode::Normal => {
+                chrome::draw_controls_ui(
+                    frame,
+                    width,
+                    height,
+                    ControlsUiMode::Gameplay,
+                    request.can_undo,
+                    request.can_restart,
+                );
+                chrome::draw_top_left_level_button(frame, width, height, request.level_number);
+            }
+            GameplayScreenMode::Sleep => self.draw_gameplay_sleep_chrome(frame, width, height),
+        }
     }
 
     fn draw_gameplay_board_scene(
@@ -45,6 +50,18 @@ impl Renderer {
             &request.viewport,
             true,
             request.show_solved_overlay,
+            matches!(request.mode, GameplayScreenMode::Sleep),
         );
+    }
+
+    fn draw_gameplay_sleep_chrome(&mut self, frame: &mut [u8], width: u32, height: u32) {
+        let rect = ScreenRect {
+            x: 0,
+            y: 0,
+            w: width,
+            h: UI_BUTTON_MARGIN + UI_BUTTON_SIZE,
+        };
+        self.restore_background_rect(frame, width, height, rect);
+        chrome::draw_sleep_label(frame, width, height, rect);
     }
 }

@@ -13,7 +13,7 @@ use crate::app::presentation::{FrameRequest, PresentMode};
 use crate::app::state::AppState;
 use presentation::assets::UiIcon;
 use presentation::screen_requests::{
-    GameplayMenuScreenRequest, GameplayScreenRequest, LevelSelectScreenRequest,
+    GameplayMenuScreenRequest, GameplayScreenMode, GameplayScreenRequest, LevelSelectScreenRequest,
 };
 use sokobanitron_gameplay::GameplayController;
 
@@ -23,8 +23,18 @@ pub fn build_gameplay_frame_request(
     present_mode: PresentMode,
 ) -> FrameRequest {
     FrameRequest::Gameplay {
-        screen: build_gameplay_screen_request(controller, app_state),
+        screen: build_gameplay_screen_request(controller, app_state, GameplayScreenMode::Normal),
         present_mode,
+    }
+}
+
+pub fn build_sleep_gameplay_frame_request(
+    controller: &GameplayController,
+    app_state: &AppState,
+) -> FrameRequest {
+    FrameRequest::Gameplay {
+        screen: build_gameplay_screen_request(controller, app_state, GameplayScreenMode::Sleep),
+        present_mode: PresentMode::Full,
     }
 }
 
@@ -62,9 +72,10 @@ pub fn build_current_frame_request(
     }
 }
 
-pub(crate) fn build_gameplay_screen_request(
+fn build_gameplay_screen_request(
     controller: &GameplayController,
     app_state: &AppState,
+    mode: GameplayScreenMode,
 ) -> GameplayScreenRequest {
     let board = controller.board();
     GameplayScreenRequest {
@@ -74,6 +85,7 @@ pub(crate) fn build_gameplay_screen_request(
         can_restart: controller.can_restart(),
         level_number: controller.current_level() + 1,
         show_solved_overlay: board.is_solved(),
+        mode,
     }
 }
 

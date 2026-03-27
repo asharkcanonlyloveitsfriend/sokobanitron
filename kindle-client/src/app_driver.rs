@@ -1,6 +1,7 @@
 use crate::{config, platform};
 use presentation::{GameplayPresentationState, Renderer};
 use sokobanitron_app::{
+    AppPreferences,
     app::{
         AppAction, AppDriverContext, AppInput, AppState, apply_action_in_context, interpret_input,
         render_presentation_plan,
@@ -11,19 +12,18 @@ use sokobanitron_app::{
     },
     level_bootstrap::load_initial_levels_for_app,
 };
-use sokobanitron_gameplay::{
-    BoardView, GameplayController, GameplayControllerChanges, GameplayPreferences,
-};
+use sokobanitron_gameplay::{BoardView, GameplayController, GameplayControllerChanges};
 use std::io::Result;
 
 pub struct KindleApp {
     pub(crate) renderer: Renderer,
     pub(crate) gameplay_presentation: GameplayPresentationState,
     pub(crate) rgba_frame: Vec<u8>,
+    pub(crate) sleep_screen_active: bool,
     pub(crate) preview_boards: Vec<BoardView>,
     pub(crate) controller: GameplayController,
     pub(crate) app_state: AppState,
-    preferences: GameplayPreferences,
+    preferences: AppPreferences,
     pub(crate) display: platform::Display,
 }
 
@@ -32,7 +32,11 @@ impl KindleApp {
         let initial_levels = load_initial_levels_for_app();
         let levels = initial_levels.levels;
         let preview_boards = initial_levels.preview_boards;
-        let preferences = GameplayPreferences::load(config::PREFERENCES_PATH);
+        let preferences =
+            AppPreferences::load_and_sync(config::PREFERENCES_PATH).unwrap_or_else(|err| {
+                eprintln!("warning: failed to sync preferences: {err}");
+                AppPreferences::load(config::PREFERENCES_PATH)
+            });
         let last_attempted_level = preferences.level_index(levels.len());
         let controller = GameplayController::new(levels.clone(), last_attempted_level);
         let mut app_state = AppState::default();
@@ -45,6 +49,7 @@ impl KindleApp {
             renderer: Self::build_renderer(),
             gameplay_presentation: GameplayPresentationState::new(),
             rgba_frame: vec![0; config::WIDTH * config::HEIGHT * 4],
+            sleep_screen_active: false,
             preview_boards,
             controller,
             app_state,
@@ -58,11 +63,26 @@ impl KindleApp {
 
         let mut touch = platform::TouchReader::new()?;
         loop {
-            match touch.next_input_event()? {
+            let event = touch.next_input_event(
+                self.preferences
+                    .use_app_sleep_screen
+                    .then_some(config::SLEEP_STATE_POLL_TIMEOUT_MS),
+            )?;
+            let woke_from_sleep = self.sync_sleep_state()?;
+
+            match event {
+                platform::AppInputEvent::IdleTick => {}
                 platform::AppInputEvent::Tap(raw_x, raw_y) => self.on_tap(raw_x, raw_y)?,
                 platform::AppInputEvent::PowerShortPress => {
-                    self.display.force_full_refresh_next();
-                    self.render()?;
+                    if woke_from_sleep {
+                        continue;
+                    }
+
+                    if self.sleep_screen_active {
+                        self.exit_sleep_screen()?;
+                    } else {
+                        self.enter_sleep_screen()?;
+                    }
                 }
                 platform::AppInputEvent::PowerLongPress => {
                     if let Err(err) = platform::start_lab126_gui() {
@@ -72,6 +92,63 @@ impl KindleApp {
                 }
             }
         }
+    }
+
+    fn sync_sleep_state(&mut self) -> Result<bool> {
+        if !self.sleep_screen_active && !self.preferences.use_app_sleep_screen {
+            return Ok(false);
+        }
+
+        match platform::read_powerd_state()? {
+            platform::PowerdScreensaverState::Active => {
+                if !self.sleep_screen_active {
+                    return Ok(false);
+                }
+                self.restore_active_screen()?;
+                Ok(true)
+            }
+            platform::PowerdScreensaverState::ScreenSaver => {
+                if self.sleep_screen_active || !self.preferences.use_app_sleep_screen {
+                    return Ok(false);
+                }
+                self.render_sleep_screen()?;
+                self.sleep_screen_active = true;
+                Ok(false)
+            }
+            platform::PowerdScreensaverState::Other => Ok(false),
+        }
+    }
+
+    fn enter_sleep_screen(&mut self) -> Result<()> {
+        let enter_sleep = if self.preferences.use_app_sleep_screen {
+            self.render_sleep_screen()?;
+            platform::enter_powerd_screensaver
+        } else {
+            platform::enter_system_screensaver
+        };
+        match enter_sleep() {
+            Ok(()) => {
+                self.sleep_screen_active = true;
+            }
+            Err(err) => {
+                eprintln!("warning: failed to enter sleep: {err}");
+                self.restore_active_screen()?;
+            }
+        }
+        Ok(())
+    }
+
+    fn exit_sleep_screen(&mut self) -> Result<()> {
+        if let Err(err) = platform::exit_powerd_screensaver() {
+            eprintln!("warning: failed to exit powerd screensaver: {err}");
+        }
+        self.restore_active_screen()
+    }
+
+    fn restore_active_screen(&mut self) -> Result<()> {
+        self.sleep_screen_active = false;
+        self.display.force_full_refresh_next();
+        self.render()
     }
 
     fn handle_gameplay_changes(&mut self, changes: GameplayControllerChanges) {

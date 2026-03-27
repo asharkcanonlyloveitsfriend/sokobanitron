@@ -20,7 +20,7 @@ use image::RgbaImage;
 use sokobanitron_gameplay::BoardView;
 use std::collections::HashMap;
 
-use crate::layout::BoardViewport;
+use crate::layout::{BoardViewport, ScreenRect};
 
 pub use chrome::{
     draw_controls_ui, draw_overlay_primary_action_button, draw_top_left_level_button,
@@ -161,6 +161,7 @@ pub struct Renderer {
     pub(crate) box_bitmap_cache: HashMap<u32, Vec<u8>>,
     pub(crate) selected_box_bitmap_cache: HashMap<u32, Vec<u8>>,
     pub(crate) player_bitmap_cache: HashMap<u32, Vec<u8>>,
+    pub(crate) sleeping_player_bitmap_cache: HashMap<u32, Vec<u8>>,
 }
 
 impl Renderer {
@@ -186,6 +187,7 @@ impl Renderer {
             box_bitmap_cache: HashMap::new(),
             selected_box_bitmap_cache: HashMap::new(),
             player_bitmap_cache: HashMap::new(),
+            sleeping_player_bitmap_cache: HashMap::new(),
         }
     }
 
@@ -198,7 +200,7 @@ impl Renderer {
         viewport: &BoardViewport,
     ) {
         self.draw_background_only(frame, width, height);
-        self.draw_board_on_frame(frame, width, height, board, viewport, true, true);
+        self.draw_board_on_frame(frame, width, height, board, viewport, true, true, false);
     }
 
     pub fn draw_background_only(&mut self, frame: &mut [u8], width: u32, height: u32) {
@@ -219,6 +221,7 @@ impl Renderer {
         viewport: &BoardViewport,
         draw_player: bool,
         draw_win_overlay: bool,
+        sleeping_player: bool,
     ) {
         if width == 0 || height == 0 {
             return;
@@ -226,16 +229,63 @@ impl Renderer {
         self.draw_floor_tiles(frame, width, height, board, viewport);
         self.draw_boxes(frame, width, height, board, viewport);
         if draw_player {
-            self.draw_player(frame, width, height, board, viewport);
+            self.draw_player(frame, width, height, board, viewport, sleeping_player);
         }
         if draw_win_overlay && board.is_solved() {
             self.draw_win_overlay(frame, width, height);
         }
+    }
+
+    pub(crate) fn restore_background_rect(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        rect: ScreenRect,
+    ) {
+        if width == 0 || height == 0 || rect.w == 0 || rect.h == 0 {
+            return;
+        }
+        self.ensure_cached_background(width, height);
+        copy_rect_rgba(
+            frame,
+            width,
+            height,
+            &self.cached_background,
+            self.cached_width,
+            rect,
+        );
     }
 }
 
 impl Default for Renderer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn copy_rect_rgba(
+    dst: &mut [u8],
+    dst_width: u32,
+    dst_height: u32,
+    src: &[u8],
+    src_width: u32,
+    rect: ScreenRect,
+) {
+    let start_x = rect.x.min(dst_width) as usize;
+    let end_x = rect.x.saturating_add(rect.w).min(dst_width) as usize;
+    let start_y = rect.y.min(dst_height) as usize;
+    let end_y = rect.y.saturating_add(rect.h).min(dst_height) as usize;
+    if start_x >= end_x || start_y >= end_y {
+        return;
+    }
+
+    let row_bytes = (end_x - start_x) * 4;
+    for y in start_y..end_y {
+        let dst_row_start = ((y * dst_width as usize) + start_x) * 4;
+        let src_row_start = ((y * src_width as usize) + start_x) * 4;
+        let dst_row_end = dst_row_start + row_bytes;
+        let src_row_end = src_row_start + row_bytes;
+        dst[dst_row_start..dst_row_end].copy_from_slice(&src[src_row_start..src_row_end]);
     }
 }

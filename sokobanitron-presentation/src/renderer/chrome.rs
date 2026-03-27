@@ -8,6 +8,7 @@ use super::pixel_ui::draw_centered_text_in_rect;
 
 const BUTTON_TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
 const UI_MENU_TEXT_SCALE: usize = 4;
+const SLEEP_LABEL_SPACING: usize = 2;
 
 pub fn draw_top_left_level_button(frame: &mut [u8], width: u32, height: u32, level_number: usize) {
     draw_button(
@@ -82,6 +83,19 @@ pub fn draw_overlay_primary_action_button(
 ) {
     let rect = overlay_primary_action_button_rect(width, height);
     draw_ui_icon_in_rect(frame, width, height, rect, icon, color);
+}
+
+pub(crate) fn draw_sleep_label(frame: &mut [u8], width: u32, height: u32, rect: ScreenRect) {
+    draw_centered_text_in_rect(
+        frame,
+        width,
+        height,
+        rect,
+        "SLEEP",
+        UI_MENU_TEXT_SCALE,
+        SLEEP_LABEL_SPACING,
+        BUTTON_TEXT_COLOR,
+    );
 }
 
 fn draw_button(frame: &mut [u8], width: u32, height: u32, rect: ScreenRect, label: &str) {

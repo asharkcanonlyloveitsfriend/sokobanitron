@@ -3,6 +3,13 @@ use crate::layout::{BoardViewport, ScreenRect};
 use sokobanitron_gameplay::BoardView;
 use sokobanitron_level_editor::PullHintStatus;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GameplayScreenMode {
+    #[default]
+    Normal,
+    Sleep,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameplayScreenRequest {
     pub board: BoardView,
@@ -11,6 +18,7 @@ pub struct GameplayScreenRequest {
     pub can_restart: bool,
     pub level_number: usize,
     pub show_solved_overlay: bool,
+    pub mode: GameplayScreenMode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

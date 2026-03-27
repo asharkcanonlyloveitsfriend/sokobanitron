@@ -37,7 +37,7 @@ mod tests {
     use super::GameplayPresentationState;
     use crate::layout::fit_board_viewport_for_controls;
     use crate::renderer::Renderer;
-    use crate::screen_requests::GameplayScreenRequest;
+    use crate::screen_requests::{GameplayScreenMode, GameplayScreenRequest};
     use sokobanitron_gameplay::{BoardView, TileKind};
 
     fn gameplay_scene(level_number: usize) -> GameplayScreenRequest {
@@ -67,6 +67,7 @@ mod tests {
             can_restart: false,
             level_number,
             show_solved_overlay: false,
+            mode: GameplayScreenMode::Normal,
         }
     }
 

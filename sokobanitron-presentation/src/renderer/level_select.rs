@@ -43,7 +43,7 @@ impl Renderer {
             );
             viewport.origin_x += sx + pad as i32;
             viewport.origin_y += sy + pad as i32;
-            self.draw_board_on_frame(frame, width, height, board, &viewport, true, false);
+            self.draw_board_on_frame(frame, width, height, board, &viewport, true, false, false);
             if level_idx == current_level {
                 draw_selection_brackets(frame, width, height, sx, sy, sw, sh);
             }

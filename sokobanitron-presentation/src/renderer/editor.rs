@@ -31,6 +31,7 @@ impl Renderer {
             &request.viewport,
             true,
             false,
+            false,
         );
         for count in &request.move_counts {
             draw_count_label(

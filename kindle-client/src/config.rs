@@ -14,6 +14,7 @@ pub const TOUCH_MIN_Y: i32 = 0;
 pub const TOUCH_MAX_Y: i32 = HEIGHT as i32 - 1;
 
 pub const POWER_LONG_PRESS_MS: u64 = 1000;
+pub const SLEEP_STATE_POLL_TIMEOUT_MS: i32 = 1000;
 
 pub const KINDLE_SELECTED_BOX_PRIMARY: [u8; 4] = [28, 28, 28, 255];
 pub const KINDLE_SELECTED_BOX_HIGHLIGHT: [u8; 4] = [64, 64, 64, 255];

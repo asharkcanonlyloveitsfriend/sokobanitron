@@ -30,6 +30,16 @@ const WAVEFORM_MODE_AUTO: u32 = 257;
 const UPDATE_MODE_PARTIAL: u32 = 0;
 const UPDATE_MODE_FULL: u32 = 1;
 const TEMP_USE_AMBIENT: i32 = 0x1000;
+const LIPC_GET_PROP: &str = "/usr/bin/lipc-get-prop";
+const LIPC_SET_PROP: &str = "/usr/bin/lipc-set-prop";
+const LIPC_SEND_EVENT: &str = "/usr/bin/lipc-send-event";
+const POWERD_SERVICE: &str = "com.lab126.powerd";
+const POWERD_DEBUG_SERVICE: &str = "com.lab126.powerd.debug";
+const BLANKET_SERVICE: &str = "com.lab126.blanket";
+const BLANKET_SCREENSAVER_MODULE: &str = "screensaver";
+const POWERD_STATE_PROPERTY: &str = "state";
+const POWERD_EVENT_MAG_SENSOR_CLOSED: &str = "dbg_mag_sensor_closed";
+const POWERD_EVENT_MAG_SENSOR_OPENED: &str = "dbg_mag_sensor_opened";
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -341,6 +351,14 @@ pub enum AppInputEvent {
     Tap(i32, i32),
     PowerShortPress,
     PowerLongPress,
+    IdleTick,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PowerdScreensaverState {
+    Active,
+    ScreenSaver,
+    Other,
 }
 
 impl TouchReader {
@@ -368,9 +386,11 @@ impl TouchReader {
         })
     }
 
-    pub fn next_input_event(&mut self) -> Result<AppInputEvent> {
+    pub fn next_input_event(&mut self, timeout_ms: Option<i32>) -> Result<AppInputEvent> {
         loop {
-            self.wait_for_input()?;
+            if !self.wait_for_input(timeout_ms)? {
+                return Ok(AppInputEvent::IdleTick);
+            }
 
             if self.read_touch_event()? {
                 if self.touching && self.pending_tap {
@@ -389,7 +409,7 @@ impl TouchReader {
         }
     }
 
-    fn wait_for_input(&self) -> Result<()> {
+    fn wait_for_input(&self, timeout_ms: Option<i32>) -> Result<bool> {
         let mut fds = [PollFd {
             fd: self.touch.as_raw_fd(),
             events: POLLIN,
@@ -406,11 +426,11 @@ impl TouchReader {
         }
 
         // SAFETY: pointers and nfds are valid for the stack-allocated array.
-        let rc = unsafe { poll(fds.as_mut_ptr(), nfds, -1) };
+        let rc = unsafe { poll(fds.as_mut_ptr(), nfds, timeout_ms.unwrap_or(-1)) };
         if rc < 0 {
             return Err(io::Error::last_os_error());
         }
-        Ok(())
+        Ok(rc > 0)
     }
 
     fn read_touch_event(&mut self) -> Result<bool> {
@@ -504,6 +524,7 @@ impl TouchReader {
 }
 
 pub fn start_lab126_gui() -> io::Result<()> {
+    let _ = set_blanket_module("load", BLANKET_SCREENSAVER_MODULE);
     let status = Command::new("/sbin/initctl")
         .arg("start")
         .arg("lab126_gui")
@@ -513,6 +534,70 @@ pub fn start_lab126_gui() -> io::Result<()> {
     } else {
         Err(io::Error::other(format!(
             "initctl start lab126_gui failed with status {status}"
+        )))
+    }
+}
+
+pub fn read_powerd_state() -> io::Result<PowerdScreensaverState> {
+    let output = Command::new(LIPC_GET_PROP)
+        .arg(POWERD_SERVICE)
+        .arg(POWERD_STATE_PROPERTY)
+        .output()?;
+    if !output.status.success() {
+        return Err(io::Error::other(format!(
+            "lipc-get-prop {} {} failed with status {}",
+            POWERD_SERVICE, POWERD_STATE_PROPERTY, output.status
+        )));
+    }
+
+    let state = String::from_utf8_lossy(&output.stdout);
+    Ok(match state.trim() {
+        "active" => PowerdScreensaverState::Active,
+        "screenSaver" => PowerdScreensaverState::ScreenSaver,
+        _ => PowerdScreensaverState::Other,
+    })
+}
+
+pub fn enter_powerd_screensaver() -> io::Result<()> {
+    set_blanket_module("unload", BLANKET_SCREENSAVER_MODULE)?;
+    send_powerd_debug_event(POWERD_EVENT_MAG_SENSOR_CLOSED)
+}
+
+pub fn enter_system_screensaver() -> io::Result<()> {
+    send_powerd_debug_event(POWERD_EVENT_MAG_SENSOR_CLOSED)
+}
+
+pub fn exit_powerd_screensaver() -> io::Result<()> {
+    send_powerd_debug_event(POWERD_EVENT_MAG_SENSOR_OPENED)
+}
+
+fn send_powerd_debug_event(event: &str) -> io::Result<()> {
+    let status = Command::new(LIPC_SEND_EVENT)
+        .arg(POWERD_DEBUG_SERVICE)
+        .arg(event)
+        .status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "lipc-send-event {} {} failed with status {}",
+            POWERD_DEBUG_SERVICE, event, status
+        )))
+    }
+}
+
+fn set_blanket_module(action: &str, module: &str) -> io::Result<()> {
+    let status = Command::new(LIPC_SET_PROP)
+        .arg(BLANKET_SERVICE)
+        .arg(action)
+        .arg(module)
+        .status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "lipc-set-prop {} {} {} failed with status {}",
+            BLANKET_SERVICE, action, module, status
         )))
     }
 }
