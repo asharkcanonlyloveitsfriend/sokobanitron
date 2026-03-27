@@ -7,7 +7,7 @@ KINDLE_HOST=kindle
 KINDLE_PATH=/mnt/us/$BIN
 KINDLE_LOG=/mnt/us/$BIN.log
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SLC_SOURCE="$(find "$REPO_ROOT" -maxdepth 1 -type f \( -iname '*.slc' \) | LC_ALL=C sort | head -n 1 || true)"
 
 docker run --rm \
