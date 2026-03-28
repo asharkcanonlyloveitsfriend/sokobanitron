@@ -244,6 +244,7 @@ mod tests {
     };
     use crate::app::input::AppInput;
     use crate::app::state::{AppOverlay, AppState};
+    use crate::gameplay::set_gameplay_touch_slop;
     use crate::shared::PointerPhase;
     use presentation::hit_test::{
         GameplaySurfaceLayer, GameplaySurfaceModel, gameplay_surface_target_at,
@@ -355,6 +356,56 @@ mod tests {
                 392.0,
             ),
             AppInput::LevelSelectNavigate { page_start: 8 }
+        );
+    }
+
+    #[test]
+    fn kindle_tap_slop_keeps_noisy_board_touch_as_tap() {
+        let controller = test_controller();
+        let app_state = test_app_state();
+        let mut gameplay = app_state.gameplay.clone();
+        set_gameplay_touch_slop(&mut gameplay, 24);
+        let surface = test_surface(&controller, &app_state);
+        let policy = test_policy(&controller, &app_state);
+        let (x, y, w, h) = surface.board_viewport.cell_to_screen_rect(1, 1);
+        let tap_x = (x + (w / 2) as i32) as f64;
+        let tap_y = (y + (h / 2) as i32) as f64;
+
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Started,
+                tap_x,
+                tap_y,
+            ),
+            AppInput::NoOp
+        );
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Moved,
+                tap_x + 18.0,
+                tap_y + 2.0,
+            ),
+            AppInput::NoOp
+        );
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Ended,
+                tap_x + 18.0,
+                tap_y + 2.0,
+            ),
+            AppInput::BoardTap { x: 1, y: 1 }
         );
     }
 

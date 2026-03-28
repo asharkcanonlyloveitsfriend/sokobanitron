@@ -345,10 +345,13 @@ pub struct TouchReader {
     touching: bool,
     pending_touch_phase: Option<PointerPhase>,
     position_dirty: bool,
+    x_dirty: bool,
+    y_dirty: bool,
     power_down_at: Option<Instant>,
     power_long_emitted: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AppInputEvent {
     Pointer {
         phase: PointerPhase,
@@ -388,6 +391,8 @@ impl TouchReader {
             touching: false,
             pending_touch_phase: None,
             position_dirty: false,
+            x_dirty: false,
+            y_dirty: false,
             power_down_at: None,
             power_long_emitted: false,
         })
@@ -450,19 +455,35 @@ impl TouchReader {
 
         self.touch.read_exact(&mut self.packet)?;
         let event = parse_input_event(&self.packet);
+        self.apply_touch_packet(event);
+        if event.type_ == EV_SYN && event.code == SYN_REPORT {
+            return Ok(self.finish_touch_report());
+        }
+        Ok(None)
+    }
+
+    fn apply_touch_packet(&mut self, event: InputEvent) {
         match (event.type_, event.code) {
             (EV_ABS, ABS_X) | (EV_ABS, ABS_MT_POSITION_X) => {
                 self.latest_x = Some(event.value);
                 self.position_dirty = true;
+                self.x_dirty = true;
             }
             (EV_ABS, ABS_Y) | (EV_ABS, ABS_MT_POSITION_Y) => {
                 self.latest_y = Some(event.value);
                 self.position_dirty = true;
+                self.y_dirty = true;
             }
             (EV_KEY, BTN_TOUCH) => {
                 if event.value != 0 {
                     self.touching = true;
                     self.pending_touch_phase = Some(PointerPhase::Started);
+                    if !self.x_dirty {
+                        self.latest_x = None;
+                    }
+                    if !self.y_dirty {
+                        self.latest_y = None;
+                    }
                 } else {
                     self.touching = false;
                     self.pending_touch_phase = Some(PointerPhase::Ended);
@@ -470,33 +491,46 @@ impl TouchReader {
             }
             _ => {}
         }
-        if event.type_ == EV_SYN && event.code == SYN_REPORT {
-            return Ok(self.finish_touch_report());
-        }
-        Ok(None)
     }
 
     fn finish_touch_report(&mut self) -> Option<AppInputEvent> {
         let phase = match self.pending_touch_phase {
-            Some(phase) => phase,
-            None if self.touching && self.position_dirty => PointerPhase::Moved,
-            None => {
-                self.position_dirty = false;
-                return None;
+            Some(phase) => Some(phase),
+            None if self.touching && self.position_dirty => Some(PointerPhase::Moved),
+            None => None,
+        };
+        let event = match phase {
+            Some(PointerPhase::Started) if !(self.x_dirty && self.y_dirty) => {
+                eprintln!(
+                    "warning: dropping touch start report: pending_phase={:?} touching={} latest_x={:?} latest_y={:?} x_dirty={} y_dirty={}",
+                    self.pending_touch_phase,
+                    self.touching,
+                    self.latest_x,
+                    self.latest_y,
+                    self.x_dirty,
+                    self.y_dirty,
+                );
+                None
             }
+            Some(phase) => match (self.latest_x, self.latest_y) {
+                (Some(raw_x), Some(raw_y)) => Some(AppInputEvent::Pointer {
+                    phase,
+                    raw_x,
+                    raw_y,
+                }),
+                _ => None,
+            },
+            None => None,
         };
+        self.clear_touch_report_state();
+        event
+    }
 
-        let (raw_x, raw_y) = match (self.latest_x, self.latest_y) {
-            (Some(raw_x), Some(raw_y)) => (raw_x, raw_y),
-            _ => return None,
-        };
+    fn clear_touch_report_state(&mut self) {
         self.pending_touch_phase = None;
         self.position_dirty = false;
-        Some(AppInputEvent::Pointer {
-            phase,
-            raw_x,
-            raw_y,
-        })
+        self.x_dirty = false;
+        self.y_dirty = false;
     }
 
     fn read_power_event(&mut self) -> Result<Option<AppInputEvent>> {
@@ -919,4 +953,117 @@ fn write_sysfs_refresh(command: &str) -> io::Result<()> {
         .write(true)
         .open(config::REFRESH_DEVICE)?;
     f.write_all(command.as_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AppInputEvent, BTN_TOUCH, EV_KEY, InputEvent, TouchReader};
+    use sokobanitron_app::shared::PointerPhase;
+    use std::fs::File;
+
+    fn test_touch_reader() -> TouchReader {
+        TouchReader {
+            touch: File::open("/dev/null").expect("open /dev/null for touch"),
+            power: None,
+            packet: [0u8; std::mem::size_of::<super::InputEvent>()],
+            power_packet: [0u8; std::mem::size_of::<super::InputEvent>()],
+            latest_x: None,
+            latest_y: None,
+            touching: false,
+            pending_touch_phase: None,
+            position_dirty: false,
+            x_dirty: false,
+            y_dirty: false,
+            power_down_at: None,
+            power_long_emitted: false,
+        }
+    }
+
+    #[test]
+    fn missing_coordinates_do_not_leak_started_into_next_report() {
+        let mut state = test_touch_reader();
+
+        state.touching = true;
+        state.pending_touch_phase = Some(PointerPhase::Started);
+        assert_eq!(state.finish_touch_report(), None);
+
+        state.latest_x = Some(120);
+        state.latest_y = Some(240);
+        state.position_dirty = true;
+        state.x_dirty = true;
+        state.y_dirty = true;
+        assert_eq!(
+            state.finish_touch_report(),
+            Some(AppInputEvent::Pointer {
+                phase: PointerPhase::Moved,
+                raw_x: 120,
+                raw_y: 240,
+            })
+        );
+    }
+
+    #[test]
+    fn new_touch_start_cannot_reuse_previous_touch_coordinates() {
+        let mut state = test_touch_reader();
+
+        state.latest_x = Some(12);
+        state.latest_y = Some(34);
+        state.position_dirty = true;
+        state.x_dirty = true;
+        state.y_dirty = true;
+        state.touching = true;
+        state.pending_touch_phase = Some(PointerPhase::Started);
+        assert_eq!(
+            state.finish_touch_report(),
+            Some(AppInputEvent::Pointer {
+                phase: PointerPhase::Started,
+                raw_x: 12,
+                raw_y: 34,
+            })
+        );
+
+        state.touching = false;
+        state.pending_touch_phase = Some(PointerPhase::Ended);
+        assert_eq!(
+            state.finish_touch_report(),
+            Some(AppInputEvent::Pointer {
+                phase: PointerPhase::Ended,
+                raw_x: 12,
+                raw_y: 34,
+            })
+        );
+
+        state.apply_touch_packet(InputEvent {
+            type_: EV_KEY,
+            code: BTN_TOUCH,
+            value: 1,
+            ..InputEvent::default()
+        });
+
+        assert_eq!(state.latest_x, None);
+        assert_eq!(state.latest_y, None);
+        assert_eq!(state.finish_touch_report(), None);
+    }
+
+    #[test]
+    fn fresh_coordinates_and_touch_down_emit_started() {
+        let mut state = test_touch_reader();
+
+        state.latest_x = Some(120);
+        state.latest_y = Some(240);
+        state.position_dirty = true;
+        state.x_dirty = true;
+        state.y_dirty = true;
+        state.touching = true;
+        state.pending_touch_phase = Some(PointerPhase::Started);
+
+        assert_eq!(
+            state.finish_touch_report(),
+            Some(AppInputEvent::Pointer {
+                phase: PointerPhase::Started,
+                raw_x: 120,
+                raw_y: 240,
+            })
+        );
+    }
 }
