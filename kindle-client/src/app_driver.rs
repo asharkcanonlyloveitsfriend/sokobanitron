@@ -19,11 +19,24 @@ use std::path::Path;
 const TOUCH_POINTER_ID: u64 = 1;
 const KINDLE_GAMEPLAY_TAP_SLOP_PX: i32 = 24;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AppSleepState {
+    Awake,
+    AppSleepScreenVisible,
+    SystemScreensaverActive,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SleepSyncOutcome {
+    NoChange,
+    WokeAndRestored,
+}
+
 pub struct KindleApp {
     pub(crate) renderer: Renderer,
     pub(crate) gameplay_presentation: GameplayPresentationState,
     pub(crate) rgba_frame: Vec<u8>,
-    pub(crate) sleep_screen_active: bool,
+    sleep_state: AppSleepState,
     pub(crate) preview_boards: Vec<BoardView>,
     pub(crate) controller: GameplayController,
     pub(crate) app_state: AppState,
@@ -36,10 +49,10 @@ impl KindleApp {
         let initial_levels = load_initial_levels_for_app();
         let levels = initial_levels.levels;
         let preview_boards = initial_levels.preview_boards;
-        let preferences =
-            AppPreferences::load_and_sync(config::PREFERENCES_PATH).unwrap_or_else(|err| {
-                eprintln!("warning: failed to sync preferences: {err}");
-                AppPreferences::load(config::PREFERENCES_PATH)
+        let preferences = AppPreferences::load_and_save_normalized(config::PREFERENCES_PATH)
+            .unwrap_or_else(|err| {
+                eprintln!("warning: failed to load or normalize preferences: {err}");
+                AppPreferences::default()
             });
         let last_attempted_level = preferences.level_index(levels.len());
         let controller = GameplayController::new(levels.clone(), last_attempted_level);
@@ -54,7 +67,7 @@ impl KindleApp {
             renderer: Self::build_renderer(),
             gameplay_presentation: GameplayPresentationState::new(),
             rgba_frame: vec![0; config::WIDTH * config::HEIGHT * 4],
-            sleep_screen_active: false,
+            sleep_state: AppSleepState::Awake,
             preview_boards,
             controller,
             app_state,
@@ -70,10 +83,11 @@ impl KindleApp {
         loop {
             let event = touch.next_input_event(
                 self.preferences
+                    .kindle
                     .use_app_sleep_screen
                     .then_some(config::SLEEP_STATE_POLL_TIMEOUT_MS),
             )?;
-            let woke_from_sleep = self.sync_sleep_state()?;
+            let sync = self.sync_sleep_state()?;
 
             match event {
                 platform::AppInputEvent::IdleTick => {}
@@ -82,17 +96,7 @@ impl KindleApp {
                     raw_x,
                     raw_y,
                 } => self.on_pointer(phase, raw_x, raw_y)?,
-                platform::AppInputEvent::PowerShortPress => {
-                    if woke_from_sleep {
-                        continue;
-                    }
-
-                    if self.sleep_screen_active {
-                        self.exit_sleep_screen()?;
-                    } else {
-                        self.enter_sleep_screen()?;
-                    }
-                }
+                platform::AppInputEvent::PowerShortPress => self.handle_power_short_press(sync)?,
                 platform::AppInputEvent::PowerLongPress => {
                     if let Err(err) = platform::start_lab126_gui() {
                         eprintln!("warning: failed to restart lab126_gui: {err}");
@@ -103,45 +107,57 @@ impl KindleApp {
         }
     }
 
-    fn sync_sleep_state(&mut self) -> Result<bool> {
-        if !self.sleep_screen_active && !self.preferences.use_app_sleep_screen {
-            return Ok(false);
+    fn sync_sleep_state(&mut self) -> Result<SleepSyncOutcome> {
+        if self.sleep_state == AppSleepState::Awake && !self.preferences.kindle.use_app_sleep_screen
+        {
+            return Ok(SleepSyncOutcome::NoChange);
         }
 
         match platform::read_powerd_state()? {
             platform::PowerdScreensaverState::Active => {
-                if !self.sleep_screen_active {
-                    return Ok(false);
+                if self.sleep_state == AppSleepState::Awake {
+                    return Ok(SleepSyncOutcome::NoChange);
                 }
                 self.restore_active_screen()?;
-                Ok(true)
+                Ok(SleepSyncOutcome::WokeAndRestored)
             }
             platform::PowerdScreensaverState::ScreenSaver => {
-                if self.sleep_screen_active || !self.preferences.use_app_sleep_screen {
-                    return Ok(false);
+                if self.sleep_state != AppSleepState::Awake {
+                    return Ok(SleepSyncOutcome::NoChange);
                 }
-                self.render_sleep_screen()?;
-                self.sleep_screen_active = true;
-                Ok(false)
+                if self.preferences.kindle.use_app_sleep_screen {
+                    self.render_sleep_screen()?;
+                    self.sleep_state = AppSleepState::AppSleepScreenVisible;
+                } else {
+                    self.sleep_state = AppSleepState::SystemScreensaverActive;
+                }
+                Ok(SleepSyncOutcome::NoChange)
             }
-            platform::PowerdScreensaverState::Other => Ok(false),
+            platform::PowerdScreensaverState::Other => Ok(SleepSyncOutcome::NoChange),
         }
     }
 
     fn enter_sleep_screen(&mut self) -> Result<()> {
-        let enter_sleep = if self.preferences.use_app_sleep_screen {
+        if self.preferences.kindle.use_app_sleep_screen {
             self.render_sleep_screen()?;
-            platform::enter_powerd_screensaver
-        } else {
-            platform::enter_system_screensaver
-        };
-        match enter_sleep() {
-            Ok(()) => {
-                self.sleep_screen_active = true;
+            match platform::enter_powerd_screensaver() {
+                Ok(()) => {
+                    self.sleep_state = AppSleepState::AppSleepScreenVisible;
+                }
+                Err(err) => {
+                    eprintln!("warning: failed to enter sleep: {err}");
+                    self.restore_active_screen()?;
+                }
             }
-            Err(err) => {
-                eprintln!("warning: failed to enter sleep: {err}");
-                self.restore_active_screen()?;
+        } else {
+            match platform::enter_system_screensaver() {
+                Ok(()) => {
+                    self.sleep_state = AppSleepState::SystemScreensaverActive;
+                }
+                Err(err) => {
+                    eprintln!("warning: failed to enter sleep: {err}");
+                    self.restore_active_screen()?;
+                }
             }
         }
         Ok(())
@@ -155,9 +171,25 @@ impl KindleApp {
     }
 
     fn restore_active_screen(&mut self) -> Result<()> {
-        self.sleep_screen_active = false;
+        self.sleep_state = AppSleepState::Awake;
         self.display.force_full_refresh_next();
         self.render()
+    }
+
+    fn handle_power_short_press(&mut self, sync: SleepSyncOutcome) -> Result<()> {
+        // The same physical power press can both wake powerd and still surface here as a
+        // short-press input event. Once wake has already been observed and the active screen
+        // restored, ignore that trailing press so we do not immediately re-enter sleep.
+        if sync == SleepSyncOutcome::WokeAndRestored {
+            return Ok(());
+        }
+
+        match self.sleep_state {
+            AppSleepState::Awake => self.enter_sleep_screen(),
+            AppSleepState::AppSleepScreenVisible | AppSleepState::SystemScreensaverActive => {
+                self.exit_sleep_screen()
+            }
+        }
     }
 
     fn apply_app_input(&mut self, input: AppInput) -> Result<()> {

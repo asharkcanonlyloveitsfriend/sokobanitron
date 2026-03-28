@@ -30,7 +30,7 @@ pub trait AppPreferencesStore {
         };
         let path: PathBuf = self.app_preferences_path().to_path_buf();
         let preferences = self.app_preferences();
-        preferences.last_started_level = Some(index + 1);
+        preferences.set_last_started_level(index);
         if let Err(err) = preferences.save(&path) {
             eprintln!("warning: failed to persist preferences: {err}");
         }
@@ -184,7 +184,7 @@ mod tests {
             apply_action_and_render_in_context(&mut context, AppAction::AdvanceAfterSolved)
                 .unwrap();
 
-        assert_eq!(context.preferences.last_started_level, Some(2));
+        assert_eq!(context.preferences.progress.last_started_level, Some(2));
         assert!(applied.presentation_plan.is_none());
     }
 
@@ -195,7 +195,7 @@ mod tests {
         let applied =
             apply_input_and_render_in_context(&mut context, AppInput::SolvedAdvance).unwrap();
 
-        assert_eq!(context.preferences.last_started_level, Some(2));
+        assert_eq!(context.preferences.progress.last_started_level, Some(2));
         assert!(applied.presentation_plan.is_none());
     }
 

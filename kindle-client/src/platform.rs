@@ -360,6 +360,8 @@ pub enum AppInputEvent {
     },
     PowerShortPress,
     PowerLongPress,
+    /// Synthetic wakeup used so the outer loop can poll `powerd` and perform housekeeping even
+    /// when no touch or power input arrives.
     IdleTick,
 }
 
@@ -398,6 +400,8 @@ impl TouchReader {
         })
     }
 
+    /// Returns real touch/power events, or `IdleTick` when the caller requested a timeout so the
+    /// app loop can resynchronize Kindle sleep state.
     pub fn next_input_event(&mut self, timeout_ms: Option<i32>) -> Result<AppInputEvent> {
         loop {
             if !self.wait_for_input(timeout_ms)? {
@@ -590,6 +594,8 @@ impl TouchReader {
 }
 
 pub fn start_lab126_gui() -> io::Result<()> {
+    // When we hand control back to the stock Kindle UI, reload Blanket's screensaver module so
+    // lab126_gui can use the normal system screensaver path again.
     let _ = set_blanket_module("load", BLANKET_SCREENSAVER_MODULE);
     let status = Command::new("/sbin/initctl")
         .arg("start")
@@ -620,11 +626,16 @@ pub fn read_powerd_state() -> io::Result<PowerdScreensaverState> {
     Ok(match state.trim() {
         "active" => PowerdScreensaverState::Active,
         "screenSaver" => PowerdScreensaverState::ScreenSaver,
-        _ => PowerdScreensaverState::Other,
+        other => {
+            eprintln!("warning: unexpected powerd state: {other}");
+            PowerdScreensaverState::Other
+        }
     })
 }
 
 pub fn enter_powerd_screensaver() -> io::Result<()> {
+    // Our app draws the sleep image itself before handing off to powerd, so Blanket's own
+    // screensaver module must be unloaded to avoid stacking the stock sleep overlay on top.
     set_blanket_module("unload", BLANKET_SCREENSAVER_MODULE)?;
     send_powerd_debug_event(POWERD_EVENT_MAG_SENSOR_CLOSED)
 }

@@ -241,15 +241,17 @@ mod tests {
             &app_state,
         );
 
-        let [PresentationStep::Render(FrameRequest::Gameplay {
-            screen:
-                GameplayScreenRequest {
-                    level_number,
-                    show_solved_overlay,
-                    ..
-                },
-            present_mode,
-        })] = plan.steps.as_slice()
+        let [
+            PresentationStep::Render(FrameRequest::Gameplay {
+                screen:
+                    GameplayScreenRequest {
+                        level_number,
+                        show_solved_overlay,
+                        ..
+                    },
+                present_mode,
+            }),
+        ] = plan.steps.as_slice()
         else {
             panic!("expected one gameplay render step");
         };

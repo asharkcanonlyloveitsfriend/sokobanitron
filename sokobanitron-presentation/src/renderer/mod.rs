@@ -236,6 +236,8 @@ impl Renderer {
         }
     }
 
+    // Internal composition helper used by chrome overlays that need to reveal the cached
+    // background art without redrawing the full scene underneath.
     pub(crate) fn restore_background_rect(
         &mut self,
         frame: &mut [u8],

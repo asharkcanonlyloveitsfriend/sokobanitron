@@ -50,7 +50,11 @@ pub struct App {
 
 impl App {
     pub fn new() -> Self {
-        let preferences = AppPreferences::load(PREFERENCES_PATH);
+        let preferences = AppPreferences::load_and_save_normalized(PREFERENCES_PATH)
+            .unwrap_or_else(|err| {
+                eprintln!("warning: failed to load or normalize preferences: {err}");
+                AppPreferences::default()
+            });
         let initial_levels = load_initial_levels_for_app();
         let levels = initial_levels.levels;
         let preview_boards = initial_levels.preview_boards;
