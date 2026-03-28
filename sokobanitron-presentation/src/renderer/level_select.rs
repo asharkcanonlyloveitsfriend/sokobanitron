@@ -3,6 +3,7 @@ use sokobanitron_gameplay::BoardView;
 use crate::layout::{
     BoardViewport, BoardViewportOptions, UI_BUTTON_MARGIN, level_select_menu_clamp_start,
     level_select_menu_indices, level_select_menu_slot_rects, level_select_menu_start_index,
+    level_select_scrollbar::ScrollbarState,
 };
 
 use super::{Renderer, level_select_scrollbar, pixels::fill_rect};
@@ -53,10 +54,12 @@ impl Renderer {
             frame,
             width,
             height,
-            preview_boards.len(),
-            crate::layout::menu_slots_per_page(),
-            page_start,
-            level_select_menu_start_index(preview_boards.len(), current_level),
+            ScrollbarState {
+                level_count: preview_boards.len(),
+                visible_count: crate::layout::menu_slots_per_page(),
+                page_start,
+                return_start: level_select_menu_start_index(preview_boards.len(), current_level),
+            },
         );
     }
 }

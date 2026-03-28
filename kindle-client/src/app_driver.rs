@@ -7,13 +7,16 @@ use sokobanitron_app::{
         render_presentation_plan,
     },
     gameplay::{
-        build_gameplay_policy_context, build_gameplay_surface_model, gameplay_pointer_tap,
-        resize_gameplay_surface,
+        interpret_gameplay_pointer_event, resize_gameplay_surface, set_gameplay_touch_slop,
     },
     level_bootstrap::load_initial_levels_for_app,
+    shared::PointerPhase,
 };
 use sokobanitron_gameplay::{BoardView, GameplayController, GameplayControllerChanges};
 use std::io::Result;
+
+const TOUCH_POINTER_ID: u64 = 1;
+const KINDLE_GAMEPLAY_TAP_SLOP_PX: i32 = 24;
 
 pub struct KindleApp {
     pub(crate) renderer: Renderer,
@@ -45,6 +48,7 @@ impl KindleApp {
             config::WIDTH as u32,
             config::HEIGHT as u32,
         );
+        set_gameplay_touch_slop(&mut app_state.gameplay, KINDLE_GAMEPLAY_TAP_SLOP_PX);
         Ok(Self {
             renderer: Self::build_renderer(),
             gameplay_presentation: GameplayPresentationState::new(),
@@ -72,7 +76,11 @@ impl KindleApp {
 
             match event {
                 platform::AppInputEvent::IdleTick => {}
-                platform::AppInputEvent::Tap(raw_x, raw_y) => self.on_tap(raw_x, raw_y)?,
+                platform::AppInputEvent::Pointer {
+                    phase,
+                    raw_x,
+                    raw_y,
+                } => self.on_pointer(phase, raw_x, raw_y)?,
                 platform::AppInputEvent::PowerShortPress => {
                     if woke_from_sleep {
                         continue;
@@ -174,17 +182,7 @@ impl KindleApp {
         self.apply_app_action(action)
     }
 
-    fn on_gameplay_tap(&mut self, screen_x: f64, screen_y: f64) -> Result<()> {
-        let surface = build_gameplay_surface_model(&self.app_state, &self.controller);
-        let policy = build_gameplay_policy_context(&self.app_state, &self.controller);
-        let input = gameplay_pointer_tap(
-            &mut self.app_state.gameplay,
-            &surface,
-            policy,
-            screen_x,
-            screen_y,
-        );
-
+    fn handle_gameplay_input(&mut self, input: AppInput) -> Result<()> {
         match input {
             AppInput::NoOp => Ok(()),
             AppInput::BoardTap { .. } => self.apply_app_input(input),
@@ -195,9 +193,26 @@ impl KindleApp {
         }
     }
 
-    fn on_tap(&mut self, raw_x: i32, raw_y: i32) -> Result<()> {
+    fn on_gameplay_pointer_event(
+        &mut self,
+        phase: PointerPhase,
+        screen_x: f64,
+        screen_y: f64,
+    ) -> Result<()> {
+        let input = interpret_gameplay_pointer_event(
+            &mut self.app_state,
+            &self.controller,
+            TOUCH_POINTER_ID,
+            phase,
+            screen_x,
+            screen_y,
+        );
+        self.handle_gameplay_input(input)
+    }
+
+    fn on_pointer(&mut self, phase: PointerPhase, raw_x: i32, raw_y: i32) -> Result<()> {
         let (screen_x, screen_y) = platform::map_touch_to_screen(raw_x, raw_y)?;
-        self.on_gameplay_tap(screen_x as f64, screen_y as f64)
+        self.on_gameplay_pointer_event(phase, screen_x as f64, screen_y as f64)
     }
 }
 

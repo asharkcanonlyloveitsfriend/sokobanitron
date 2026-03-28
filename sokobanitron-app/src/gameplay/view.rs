@@ -37,6 +37,10 @@ pub fn resize_gameplay_surface(gameplay: &mut GameplayUiState, width: u32, heigh
     gameplay.surface_height = height.max(1);
 }
 
+pub fn set_gameplay_touch_slop(gameplay: &mut GameplayUiState, tap_slop_px: i32) {
+    gameplay.interaction.pointer.set_tap_slop(tap_slop_px);
+}
+
 pub fn build_gameplay_viewport(gameplay: &GameplayUiState, board: &BoardView) -> BoardViewport {
     fit_board_viewport_for_controls(gameplay.surface_width, gameplay.surface_height, board)
 }

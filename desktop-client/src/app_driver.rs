@@ -11,8 +11,7 @@ use sokobanitron_app::{
         reset_editor_interaction_state, resize_editor_surface,
     },
     gameplay::{
-        build_gameplay_policy_context, build_gameplay_surface_model, gameplay_pointer_event,
-        gameplay_pointer_tap, resize_gameplay_surface,
+        interpret_gameplay_pointer_event, interpret_gameplay_pointer_tap, resize_gameplay_surface,
     },
     level_bootstrap::load_initial_levels_for_app,
     shared::PointerPhase,
@@ -119,19 +118,14 @@ impl App {
     }
 
     fn on_gameplay_tap(&mut self, x: f64, y: f64) {
-        let surface = build_gameplay_surface_model(&self.app_state, &self.controller);
-        let policy = build_gameplay_policy_context(&self.app_state, &self.controller);
-        let input = gameplay_pointer_tap(&mut self.app_state.gameplay, &surface, policy, x, y);
+        let input = interpret_gameplay_pointer_tap(&mut self.app_state, &self.controller, x, y);
         self.handle_gameplay_input(input);
     }
 
     fn on_gameplay_pointer_event(&mut self, id: u64, phase: PointerPhase, x: f64, y: f64) {
-        let surface = build_gameplay_surface_model(&self.app_state, &self.controller);
-        let policy = build_gameplay_policy_context(&self.app_state, &self.controller);
-        let input = gameplay_pointer_event(
-            &mut self.app_state.gameplay,
-            &surface,
-            policy,
+        let input = interpret_gameplay_pointer_event(
+            &mut self.app_state,
+            &self.controller,
             id,
             phase,
             x,

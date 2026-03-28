@@ -1,4 +1,5 @@
 use crate::config;
+use sokobanitron_app::shared::PointerPhase;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Result, Write};
 use std::os::fd::AsRawFd;
@@ -342,13 +343,18 @@ pub struct TouchReader {
     latest_x: Option<i32>,
     latest_y: Option<i32>,
     touching: bool,
-    pending_tap: bool,
+    pending_touch_phase: Option<PointerPhase>,
+    position_dirty: bool,
     power_down_at: Option<Instant>,
     power_long_emitted: bool,
 }
 
 pub enum AppInputEvent {
-    Tap(i32, i32),
+    Pointer {
+        phase: PointerPhase,
+        raw_x: i32,
+        raw_y: i32,
+    },
     PowerShortPress,
     PowerLongPress,
     IdleTick,
@@ -380,7 +386,8 @@ impl TouchReader {
             latest_x: None,
             latest_y: None,
             touching: false,
-            pending_tap: false,
+            pending_touch_phase: None,
+            position_dirty: false,
             power_down_at: None,
             power_long_emitted: false,
         })
@@ -392,15 +399,8 @@ impl TouchReader {
                 return Ok(AppInputEvent::IdleTick);
             }
 
-            if self.read_touch_event()? {
-                if self.touching && self.pending_tap {
-                    if let (Some(raw_x), Some(raw_y)) = (self.latest_x, self.latest_y) {
-                        self.pending_tap = false;
-                        return Ok(AppInputEvent::Tap(raw_x, raw_y));
-                    }
-                } else if !self.touching {
-                    self.pending_tap = false;
-                }
+            if let Some(event) = self.read_touch_event()? {
+                return Ok(event);
             }
 
             if let Some(power_event) = self.read_power_event()? {
@@ -433,7 +433,7 @@ impl TouchReader {
         Ok(rc > 0)
     }
 
-    fn read_touch_event(&mut self) -> Result<bool> {
+    fn read_touch_event(&mut self) -> Result<Option<AppInputEvent>> {
         let mut fds = [PollFd {
             fd: self.touch.as_raw_fd(),
             events: POLLIN,
@@ -445,26 +445,58 @@ impl TouchReader {
             return Err(io::Error::last_os_error());
         }
         if rc == 0 || (fds[0].revents & POLLIN) == 0 {
-            return Ok(false);
+            return Ok(None);
         }
 
         self.touch.read_exact(&mut self.packet)?;
         let event = parse_input_event(&self.packet);
         match (event.type_, event.code) {
-            (EV_ABS, ABS_X) | (EV_ABS, ABS_MT_POSITION_X) => self.latest_x = Some(event.value),
-            (EV_ABS, ABS_Y) | (EV_ABS, ABS_MT_POSITION_Y) => self.latest_y = Some(event.value),
+            (EV_ABS, ABS_X) | (EV_ABS, ABS_MT_POSITION_X) => {
+                self.latest_x = Some(event.value);
+                self.position_dirty = true;
+            }
+            (EV_ABS, ABS_Y) | (EV_ABS, ABS_MT_POSITION_Y) => {
+                self.latest_y = Some(event.value);
+                self.position_dirty = true;
+            }
             (EV_KEY, BTN_TOUCH) => {
                 if event.value != 0 {
                     self.touching = true;
-                    self.pending_tap = true;
+                    self.pending_touch_phase = Some(PointerPhase::Started);
                 } else {
                     self.touching = false;
-                    self.pending_tap = false;
+                    self.pending_touch_phase = Some(PointerPhase::Ended);
                 }
             }
             _ => {}
         }
-        Ok(event.type_ == EV_SYN && event.code == SYN_REPORT)
+        if event.type_ == EV_SYN && event.code == SYN_REPORT {
+            return Ok(self.finish_touch_report());
+        }
+        Ok(None)
+    }
+
+    fn finish_touch_report(&mut self) -> Option<AppInputEvent> {
+        let phase = match self.pending_touch_phase {
+            Some(phase) => phase,
+            None if self.touching && self.position_dirty => PointerPhase::Moved,
+            None => {
+                self.position_dirty = false;
+                return None;
+            }
+        };
+
+        let (raw_x, raw_y) = match (self.latest_x, self.latest_y) {
+            (Some(raw_x), Some(raw_y)) => (raw_x, raw_y),
+            _ => return None,
+        };
+        self.pending_touch_phase = None;
+        self.position_dirty = false;
+        Some(AppInputEvent::Pointer {
+            phase,
+            raw_x,
+            raw_y,
+        })
     }
 
     fn read_power_event(&mut self) -> Result<Option<AppInputEvent>> {

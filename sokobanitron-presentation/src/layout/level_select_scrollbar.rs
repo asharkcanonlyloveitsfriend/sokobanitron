@@ -11,6 +11,14 @@ pub(crate) enum ScrollbarTapTarget {
     Last,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ScrollbarState {
+    pub(crate) level_count: usize,
+    pub(crate) visible_count: usize,
+    pub(crate) page_start: usize,
+    pub(crate) return_start: usize,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ScrollbarBase {
     pub(crate) rail_x: i32,
@@ -45,29 +53,18 @@ pub(crate) fn right_rail_width(width: u32) -> u32 {
         .max(UI_BUTTON_SIZE / 2)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn tap_target_at(
     px: f64,
     py: f64,
     width: u32,
     height: u32,
-    level_count: usize,
-    visible_count: usize,
-    page_start: usize,
-    return_start: usize,
+    state: ScrollbarState,
 ) -> Option<ScrollbarTapTarget> {
     if px < 0.0 || py < 0.0 {
         return None;
     }
 
-    let layout = layout(
-        width,
-        height,
-        level_count,
-        visible_count,
-        page_start,
-        return_start,
-    )?;
+    let layout = layout(width, height, state)?;
 
     let x = px as i32;
     let y = py as i32;
@@ -166,14 +163,13 @@ fn map_start_to_track_y(start: usize, max_start: usize, track_top: i32, track_bo
     track_top + ((start as i64 * track_span) / max_start as i64) as i32
 }
 
-pub(crate) fn layout(
-    width: u32,
-    height: u32,
-    level_count: usize,
-    visible_count: usize,
-    page_start: usize,
-    return_start: usize,
-) -> Option<ScrollbarLayout> {
+pub(crate) fn layout(width: u32, height: u32, state: ScrollbarState) -> Option<ScrollbarLayout> {
+    let ScrollbarState {
+        level_count,
+        visible_count,
+        page_start,
+        return_start,
+    } = state;
     if level_count == 0 {
         return None;
     }
@@ -219,32 +215,17 @@ mod tests {
     fn tap_target_top_jump_zone_returns_first() {
         let width = 900;
         let height = 1200;
-        let level_count = 50;
-        let visible_count = 4;
-        let page_start = 20;
-        let return_start = 20;
-        let info = layout(
-            width,
-            height,
-            level_count,
-            visible_count,
-            page_start,
-            return_start,
-        )
-        .expect("layout");
+        let state = ScrollbarState {
+            level_count: 50,
+            visible_count: 4,
+            page_start: 20,
+            return_start: 20,
+        };
+        let info = layout(width, height, state).expect("layout");
         let x = (info.base.rail_x + (info.base.rail_w as i32 / 2)) as f64;
         let y = (info.base.track_top - 1) as f64;
         assert_eq!(
-            tap_target_at(
-                x,
-                y,
-                width,
-                height,
-                level_count,
-                visible_count,
-                page_start,
-                return_start,
-            ),
+            tap_target_at(x, y, width, height, state),
             Some(ScrollbarTapTarget::First)
         );
     }
@@ -253,32 +234,17 @@ mod tests {
     fn tap_target_above_thumb_returns_page_up() {
         let width = 900;
         let height = 1200;
-        let level_count = 50;
-        let visible_count = 4;
-        let page_start = 30;
-        let return_start = 0;
-        let info = layout(
-            width,
-            height,
-            level_count,
-            visible_count,
-            page_start,
-            return_start,
-        )
-        .expect("layout");
+        let state = ScrollbarState {
+            level_count: 50,
+            visible_count: 4,
+            page_start: 30,
+            return_start: 0,
+        };
+        let info = layout(width, height, state).expect("layout");
         let x = (info.base.rail_x + (info.base.rail_w as i32 / 2)) as f64;
         let y = ((info.base.track_top + info.thumb_top) / 2) as f64;
         assert_eq!(
-            tap_target_at(
-                x,
-                y,
-                width,
-                height,
-                level_count,
-                visible_count,
-                page_start,
-                return_start,
-            ),
+            tap_target_at(x, y, width, height, state),
             Some(ScrollbarTapTarget::PageUp)
         );
     }
@@ -287,32 +253,17 @@ mod tests {
     fn tap_target_current_band_returns_current() {
         let width = 900;
         let height = 1200;
-        let level_count = 50;
-        let visible_count = 4;
-        let page_start = 8;
-        let return_start = 16;
-        let info = layout(
-            width,
-            height,
-            level_count,
-            visible_count,
-            page_start,
-            return_start,
-        )
-        .expect("layout");
+        let state = ScrollbarState {
+            level_count: 50,
+            visible_count: 4,
+            page_start: 8,
+            return_start: 16,
+        };
+        let info = layout(width, height, state).expect("layout");
         let x = (info.base.rail_x + (info.base.rail_w as i32 / 2)) as f64;
         let y = info.current_y as f64;
         assert_eq!(
-            tap_target_at(
-                x,
-                y,
-                width,
-                height,
-                level_count,
-                visible_count,
-                page_start,
-                return_start,
-            ),
+            tap_target_at(x, y, width, height, state),
             Some(ScrollbarTapTarget::Current)
         );
     }
@@ -321,32 +272,17 @@ mod tests {
     fn tap_target_below_thumb_returns_page_down() {
         let width = 900;
         let height = 1200;
-        let level_count = 50;
-        let visible_count = 4;
-        let page_start = 0;
-        let return_start = 0;
-        let info = layout(
-            width,
-            height,
-            level_count,
-            visible_count,
-            page_start,
-            return_start,
-        )
-        .expect("layout");
+        let state = ScrollbarState {
+            level_count: 50,
+            visible_count: 4,
+            page_start: 0,
+            return_start: 0,
+        };
+        let info = layout(width, height, state).expect("layout");
         let x = (info.base.rail_x + (info.base.rail_w as i32 / 2)) as f64;
         let y = ((info.thumb_bottom + info.base.track_bottom - 1) / 2) as f64;
         assert_eq!(
-            tap_target_at(
-                x,
-                y,
-                width,
-                height,
-                level_count,
-                visible_count,
-                page_start,
-                return_start,
-            ),
+            tap_target_at(x, y, width, height, state),
             Some(ScrollbarTapTarget::PageDown)
         );
     }
@@ -355,32 +291,17 @@ mod tests {
     fn tap_target_bottom_jump_zone_returns_last() {
         let width = 900;
         let height = 1200;
-        let level_count = 50;
-        let visible_count = 4;
-        let page_start = 20;
-        let return_start = 20;
-        let info = layout(
-            width,
-            height,
-            level_count,
-            visible_count,
-            page_start,
-            return_start,
-        )
-        .expect("layout");
+        let state = ScrollbarState {
+            level_count: 50,
+            visible_count: 4,
+            page_start: 20,
+            return_start: 20,
+        };
+        let info = layout(width, height, state).expect("layout");
         let x = (info.base.rail_x + (info.base.rail_w as i32 / 2)) as f64;
         let y = info.base.track_bottom as f64;
         assert_eq!(
-            tap_target_at(
-                x,
-                y,
-                width,
-                height,
-                level_count,
-                visible_count,
-                page_start,
-                return_start,
-            ),
+            tap_target_at(x, y, width, height, state),
             Some(ScrollbarTapTarget::Last)
         );
     }
@@ -389,34 +310,16 @@ mod tests {
     fn tap_target_on_thumb_returns_none_when_not_on_current_indicator() {
         let width = 900;
         let height = 1200;
-        let level_count = 50;
-        let visible_count = 4;
-        let page_start = 20;
-        let return_start = 0;
-        let info = layout(
-            width,
-            height,
-            level_count,
-            visible_count,
-            page_start,
-            return_start,
-        )
-        .expect("layout");
+        let state = ScrollbarState {
+            level_count: 50,
+            visible_count: 4,
+            page_start: 20,
+            return_start: 0,
+        };
+        let info = layout(width, height, state).expect("layout");
         let x = (info.base.rail_x + (info.base.rail_w as i32 / 2)) as f64;
         let y = ((info.thumb_top + info.thumb_bottom - 1) / 2) as f64;
         assert!(y < info.current_band_top as f64 || y >= info.current_band_bottom as f64);
-        assert_eq!(
-            tap_target_at(
-                x,
-                y,
-                width,
-                height,
-                level_count,
-                visible_count,
-                page_start,
-                return_start,
-            ),
-            None
-        );
+        assert_eq!(tap_target_at(x, y, width, height, state), None);
     }
 }

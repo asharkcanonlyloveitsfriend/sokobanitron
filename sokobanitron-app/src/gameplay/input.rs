@@ -1,10 +1,11 @@
 use super::view::{GameplayUiState, build_gameplay_viewport};
 use crate::app::input::AppInput;
 use crate::app::state::{AppOverlay, AppState};
-use crate::shared::{MOUSE_POINTER_ID, PointerEvent, PointerGesture, PointerPhase};
+use crate::shared::{MOUSE_POINTER_ID, PointerEvent, PointerGesture, PointerPhase, ScreenPoint};
 use presentation::hit_test::{
     ControlsButtonAction, GameplaySurfaceLayer, GameplaySurfaceModel, GameplaySurfaceTarget,
-    LevelSelectSurfaceTarget, gameplay_surface_target_at, level_select_menu_start_for_nav,
+    LevelSelectSurfaceTarget, gameplay_surface_target_at, level_select_menu_nav_action_for_swipe,
+    level_select_menu_start_for_nav,
 };
 use sokobanitron_gameplay::GameplayController;
 use std::time::Instant;
@@ -55,7 +56,31 @@ pub fn build_gameplay_policy_context(
     }
 }
 
-pub fn gameplay_pointer_tap(
+pub fn interpret_gameplay_pointer_tap(
+    app_state: &mut AppState,
+    controller: &GameplayController,
+    x: f64,
+    y: f64,
+) -> AppInput {
+    let surface = build_gameplay_surface_model(app_state, controller);
+    let policy = build_gameplay_policy_context(app_state, controller);
+    gameplay_pointer_tap(&mut app_state.gameplay, &surface, policy, x, y)
+}
+
+pub fn interpret_gameplay_pointer_event(
+    app_state: &mut AppState,
+    controller: &GameplayController,
+    id: u64,
+    phase: PointerPhase,
+    x: f64,
+    y: f64,
+) -> AppInput {
+    let surface = build_gameplay_surface_model(app_state, controller);
+    let policy = build_gameplay_policy_context(app_state, controller);
+    gameplay_pointer_event(&mut app_state.gameplay, &surface, policy, id, phase, x, y)
+}
+
+pub(crate) fn gameplay_pointer_tap(
     gameplay: &mut GameplayUiState,
     surface: &GameplaySurfaceModel<'_>,
     policy: GameplayPolicyContext,
@@ -66,10 +91,10 @@ pub fn gameplay_pointer_tap(
         .interaction
         .pointer
         .synthetic_tap(MOUSE_POINTER_ID, x, y, Instant::now());
-    interpret_gameplay_gesture(surface, policy, PointerGesture::Tap(tap))
+    interpret_gameplay_gesture(surface, policy, PointerGesture::Tap(tap), None)
 }
 
-pub fn gameplay_pointer_event(
+pub(crate) fn gameplay_pointer_event(
     gameplay: &mut GameplayUiState,
     surface: &GameplaySurfaceModel<'_>,
     policy: GameplayPolicyContext,
@@ -78,6 +103,12 @@ pub fn gameplay_pointer_event(
     x: f64,
     y: f64,
 ) -> AppInput {
+    let drag_start = match phase {
+        PointerPhase::Ended | PointerPhase::Cancelled => {
+            gameplay.interaction.pointer.active_start_position()
+        }
+        PointerPhase::Started | PointerPhase::Moved => None,
+    };
     let Some(gesture) = gameplay.interaction.pointer.handle_event(PointerEvent::new(
         id,
         phase,
@@ -87,20 +118,52 @@ pub fn gameplay_pointer_event(
     )) else {
         return AppInput::NoOp;
     };
-    interpret_gameplay_gesture(surface, policy, gesture)
+    interpret_gameplay_gesture(surface, policy, gesture, drag_start)
 }
 
 fn interpret_gameplay_gesture(
     surface: &GameplaySurfaceModel<'_>,
     policy: GameplayPolicyContext,
     gesture: PointerGesture,
+    drag_start: Option<ScreenPoint>,
 ) -> AppInput {
-    let PointerGesture::Tap(tap) = gesture else {
+    match gesture {
+        PointerGesture::Tap(tap) => {
+            let (tap_x, tap_y) = tap.position.as_f64();
+            let target = gameplay_surface_target_at(surface, tap_x, tap_y);
+            interpret_gameplay_surface_target(surface, policy, target)
+        }
+        PointerGesture::Ended(contact) => {
+            interpret_level_select_swipe(surface, contact.position, drag_start)
+        }
+        PointerGesture::Started(_)
+        | PointerGesture::DragStarted(_)
+        | PointerGesture::DragMoved(_)
+        | PointerGesture::Cancelled(_) => AppInput::NoOp,
+    }
+}
+
+fn interpret_level_select_swipe(
+    surface: &GameplaySurfaceModel<'_>,
+    end: ScreenPoint,
+    drag_start: Option<ScreenPoint>,
+) -> AppInput {
+    let Some(page_start) = surface.layer.level_select_page_start() else {
         return AppInput::NoOp;
     };
-    let (tap_x, tap_y) = tap.position.as_f64();
-    let target = gameplay_surface_target_at(surface, tap_x, tap_y);
-    interpret_gameplay_surface_target(surface, policy, target)
+    let Some(start) = drag_start else {
+        return AppInput::NoOp;
+    };
+    let Some(nav) = level_select_menu_nav_action_for_swipe(end.x - start.x, end.y - start.y) else {
+        return AppInput::NoOp;
+    };
+    let page_start = level_select_menu_start_for_nav(
+        surface.level_count,
+        surface.current_level,
+        page_start,
+        nav,
+    );
+    AppInput::LevelSelectNavigate { page_start }
 }
 
 fn interpret_gameplay_surface_target(
@@ -177,10 +240,11 @@ fn interpret_gameplay_surface_target(
 mod tests {
     use super::{
         GameplayPolicyContext, build_gameplay_policy_context, build_gameplay_surface_model,
-        gameplay_pointer_tap,
+        gameplay_pointer_event, gameplay_pointer_tap,
     };
     use crate::app::input::AppInput;
     use crate::app::state::{AppOverlay, AppState};
+    use crate::shared::PointerPhase;
     use presentation::hit_test::{
         GameplaySurfaceLayer, GameplaySurfaceModel, gameplay_surface_target_at,
     };
@@ -189,6 +253,11 @@ mod tests {
     fn test_controller() -> GameplayController {
         let level = "#######\n#@ $. #\n#######".to_string();
         GameplayController::new(vec![level], Some(0))
+    }
+
+    fn test_controller_with_levels(count: usize) -> GameplayController {
+        let level = "#######\n#@ $. #\n#######".to_string();
+        GameplayController::new(vec![level; count], Some(0))
     }
 
     fn test_app_state() -> AppState {
@@ -239,6 +308,54 @@ mod tests {
         let input = gameplay_pointer_tap(&mut gameplay, &surface, policy, 12.0, 120.0);
 
         assert!(matches!(input, AppInput::LevelSelectSelect(_)));
+    }
+
+    #[test]
+    fn vertical_swipe_pages_level_select() {
+        let controller = test_controller_with_levels(12);
+        let mut app_state = test_app_state();
+        app_state.ui.overlay = Some(AppOverlay::LevelSelect { page_start: 4 });
+        let mut gameplay = app_state.gameplay.clone();
+        let surface = test_surface(&controller, &app_state);
+        let policy = test_policy(&controller, &app_state);
+
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Started,
+                120.0,
+                480.0,
+            ),
+            AppInput::NoOp
+        );
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Moved,
+                124.0,
+                392.0,
+            ),
+            AppInput::NoOp
+        );
+
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Ended,
+                124.0,
+                392.0,
+            ),
+            AppInput::LevelSelectNavigate { page_start: 8 }
+        );
     }
 
     #[test]

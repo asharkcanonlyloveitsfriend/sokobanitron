@@ -22,7 +22,8 @@ pub use gameplay_presentation::GameplayPresentationState;
 pub use hit_test::{
     ControlsButtonAction, GameplaySurfaceLayer, GameplaySurfaceModel, GameplaySurfaceTarget,
     LevelSelectSurfaceTarget, MenuNavAction, controls_button_action_at, gameplay_surface_target_at,
-    level_select_menu_nav_action_at, level_select_menu_start_for_nav, level_select_menu_target_at,
+    level_select_menu_nav_action_at, level_select_menu_nav_action_for_swipe,
+    level_select_menu_start_for_nav, level_select_menu_target_at,
     overlay_primary_action_button_contains, top_menu_toggle_button_contains,
 };
 pub use layout::{

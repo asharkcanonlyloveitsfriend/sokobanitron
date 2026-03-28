@@ -1,24 +1,9 @@
-use crate::layout::level_select_scrollbar::layout;
+use crate::layout::level_select_scrollbar::{ScrollbarState, layout};
 
 use super::pixels::fill_rect;
 
-pub(crate) fn draw(
-    frame: &mut [u8],
-    frame_width: u32,
-    frame_height: u32,
-    level_count: usize,
-    visible_count: usize,
-    page_start: usize,
-    return_start: usize,
-) {
-    let Some(layout) = layout(
-        frame_width,
-        frame_height,
-        level_count,
-        visible_count,
-        page_start,
-        return_start,
-    ) else {
+pub(crate) fn draw(frame: &mut [u8], frame_width: u32, frame_height: u32, state: ScrollbarState) {
+    let Some(layout) = layout(frame_width, frame_height, state) else {
         return;
     };
 

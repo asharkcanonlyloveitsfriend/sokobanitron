@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 pub type PointerId = u64;
 pub const MOUSE_POINTER_ID: PointerId = u64::MAX;
 
-const TAP_SLOP_PX: i32 = 8;
+const DEFAULT_TAP_SLOP_PX: i32 = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PointerPhase {
@@ -78,9 +78,10 @@ pub enum PointerGesture {
 /// Tracks one active pointer at a time.
 ///
 /// Additional concurrent contacts are ignored until the active pointer ends or is cancelled.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SinglePointerGestureState {
     active: Option<ActivePointer>,
+    tap_slop_px: i32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +92,17 @@ struct ActivePointer {
 }
 
 impl SinglePointerGestureState {
+    pub fn with_tap_slop(tap_slop_px: i32) -> Self {
+        Self {
+            active: None,
+            tap_slop_px: tap_slop_px.max(0),
+        }
+    }
+
+    pub fn set_tap_slop(&mut self, tap_slop_px: i32) {
+        self.tap_slop_px = tap_slop_px.max(0);
+    }
+
     pub fn handle_event(&mut self, event: PointerEvent) -> Option<PointerGesture> {
         match event.phase {
             PointerPhase::Started => {
@@ -113,17 +125,18 @@ impl SinglePointerGestureState {
                 if active.id != event.id {
                     return None;
                 }
-                let was_dragging = exceeds_tap_slop(active.start, active.current);
+                let was_dragging = exceeds_tap_slop(active.start, active.current, self.tap_slop_px);
                 active.current = event.position;
                 let contact = PointerContact {
                     id: event.id,
                     position: event.position,
                     at: event.at,
                 };
-                if !was_dragging && exceeds_tap_slop(active.start, active.current) {
+                if !was_dragging && exceeds_tap_slop(active.start, active.current, self.tap_slop_px)
+                {
                     return Some(PointerGesture::DragStarted(contact));
                 }
-                if exceeds_tap_slop(active.start, active.current) {
+                if exceeds_tap_slop(active.start, active.current, self.tap_slop_px) {
                     return Some(PointerGesture::DragMoved(contact));
                 }
                 None
@@ -134,7 +147,7 @@ impl SinglePointerGestureState {
                     return None;
                 }
                 self.active = None;
-                if exceeds_tap_slop(active.start, event.position) {
+                if exceeds_tap_slop(active.start, event.position, self.tap_slop_px) {
                     Some(PointerGesture::Ended(PointerContact {
                         id: event.id,
                         position: event.position,
@@ -181,8 +194,18 @@ impl SinglePointerGestureState {
         self.active.map(|active| active.current)
     }
 
+    pub fn active_start_position(&self) -> Option<ScreenPoint> {
+        self.active.map(|active| active.start)
+    }
+
     pub fn reset(&mut self) {
         self.active = None;
+    }
+}
+
+impl Default for SinglePointerGestureState {
+    fn default() -> Self {
+        Self::with_tap_slop(DEFAULT_TAP_SLOP_PX)
     }
 }
 
@@ -220,10 +243,10 @@ where
     }
 }
 
-fn exceeds_tap_slop(start: ScreenPoint, current: ScreenPoint) -> bool {
+fn exceeds_tap_slop(start: ScreenPoint, current: ScreenPoint, tap_slop_px: i32) -> bool {
     let dx = (current.x - start.x).abs();
     let dy = (current.y - start.y).abs();
-    dx.max(dy) > TAP_SLOP_PX
+    dx.max(dy) > tap_slop_px
 }
 
 #[cfg(test)]
@@ -277,6 +300,21 @@ mod tests {
         assert!(matches!(
             state.handle_event(PointerEvent::new(1, PointerPhase::Ended, 30.0, 10.0, at)),
             Some(PointerGesture::Ended(_))
+        ));
+    }
+
+    #[test]
+    fn larger_tap_slop_keeps_noisy_touch_as_tap() {
+        let at = Instant::now();
+        let mut state = SinglePointerGestureState::with_tap_slop(24);
+        let _ = state.handle_event(PointerEvent::new(1, PointerPhase::Started, 10.0, 10.0, at));
+        assert_eq!(
+            state.handle_event(PointerEvent::new(1, PointerPhase::Moved, 28.0, 12.0, at)),
+            None
+        );
+        assert!(matches!(
+            state.handle_event(PointerEvent::new(1, PointerPhase::Ended, 28.0, 12.0, at)),
+            Some(PointerGesture::Tap(_))
         ));
     }
 

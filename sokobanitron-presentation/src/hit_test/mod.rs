@@ -13,7 +13,7 @@ pub use gameplay::{
     gameplay_surface_target_at,
 };
 pub use level_select::{
-    MenuNavAction, level_select_menu_nav_action_at, level_select_menu_start_for_nav,
-    level_select_menu_target_at,
+    MenuNavAction, level_select_menu_nav_action_at, level_select_menu_nav_action_for_swipe,
+    level_select_menu_start_for_nav, level_select_menu_target_at,
 };
 pub use overlay::overlay_primary_action_button_contains;
