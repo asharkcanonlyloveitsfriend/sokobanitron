@@ -79,7 +79,7 @@ pub fn build_presentation_plan(
     app_state: &AppState,
 ) -> PresentationPlan {
     match outcome.effect {
-        GameplayTapEffect::None | GameplayTapEffect::MoveRejected => PresentationPlan::default(),
+        GameplayTapEffect::None => PresentationPlan::default(),
         _ => PresentationPlan {
             steps: vec![gameplay_render_step(
                 controller,
@@ -233,14 +233,30 @@ mod tests {
     }
 
     #[test]
-    fn move_rejected_has_no_presentation_steps() {
+    fn move_rejected_renders_once() {
         let (controller, app_state) = controller_and_state();
         let plan = build_presentation_plan(
             &outcome(GameplayTapEffect::MoveRejected, false),
             &controller,
             &app_state,
         );
-        assert!(plan.steps.is_empty());
+
+        let [PresentationStep::Render(FrameRequest::Gameplay {
+            screen:
+                GameplayScreenRequest {
+                    level_number,
+                    show_solved_overlay,
+                    ..
+                },
+            present_mode,
+        })] = plan.steps.as_slice()
+        else {
+            panic!("expected one gameplay render step");
+        };
+
+        assert_eq!(*present_mode, PresentMode::Full);
+        assert_eq!(*level_number, 1);
+        assert!(!show_solved_overlay);
     }
 
     #[derive(Default)]
