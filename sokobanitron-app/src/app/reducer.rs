@@ -32,17 +32,11 @@ pub fn apply_action(
             if app_state.ui.overlay.is_some() {
                 app_state.ui.overlay = None;
             } else {
-                app_state.ui.overlay = Some(match app_state.ui.screen {
-                    AppScreen::Gameplay => AppOverlay::GameplayMenu,
-                    AppScreen::Editor => AppOverlay::EditorMenu,
-                });
+                app_state.ui.overlay = Some(app_state.ui.screen.default_overlay());
             }
         }
         AppAction::OpenOverlay => {
-            app_state.ui.overlay = Some(match app_state.ui.screen {
-                AppScreen::Gameplay => AppOverlay::GameplayMenu,
-                AppScreen::Editor => AppOverlay::EditorMenu,
-            });
+            app_state.ui.overlay = Some(app_state.ui.screen.default_overlay());
         }
         AppAction::CloseOverlay => {
             app_state.ui.overlay = None;

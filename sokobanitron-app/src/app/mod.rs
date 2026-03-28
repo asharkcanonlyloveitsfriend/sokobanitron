@@ -22,4 +22,4 @@ pub use presentation::{
     render_presentation_plan,
 };
 pub use reducer::{AppUpdate, apply_action};
-pub use state::{AppOverlay, AppScreen, AppState, UiState};
+pub use state::{AppInteractionMode, AppOverlay, AppScreen, AppState, UiState};

@@ -3,8 +3,8 @@ use presentation::{GameplayPresentationState, Renderer};
 use sokobanitron_app::{
     AppPreferences,
     app::{
-        AppAction, AppDriverContext, AppInput, AppState, apply_action_in_context, interpret_input,
-        render_presentation_plan,
+        AppAction, AppDriverContext, AppInput, AppInteractionMode, AppState,
+        apply_action_in_context, interpret_input, render_presentation_plan,
     },
     gameplay::{
         interpret_gameplay_pointer_event, resize_gameplay_surface, set_gameplay_touch_slop,
@@ -212,7 +212,20 @@ impl KindleApp {
 
     fn on_pointer(&mut self, phase: PointerPhase, raw_x: i32, raw_y: i32) -> Result<()> {
         let (screen_x, screen_y) = platform::map_touch_to_screen(raw_x, raw_y)?;
-        self.on_gameplay_pointer_event(phase, screen_x as f64, screen_y as f64)
+        match self.app_state.interaction_mode() {
+            AppInteractionMode::Gameplay => {
+                self.on_gameplay_pointer_event(phase, screen_x as f64, screen_y as f64)
+            }
+            AppInteractionMode::Overlay(overlay)
+                if matches!(
+                    overlay.owning_screen(),
+                    sokobanitron_app::app::AppScreen::Gameplay
+                ) =>
+            {
+                self.on_gameplay_pointer_event(phase, screen_x as f64, screen_y as f64)
+            }
+            AppInteractionMode::Overlay(_) | AppInteractionMode::Editor => Ok(()),
+        }
     }
 }
 

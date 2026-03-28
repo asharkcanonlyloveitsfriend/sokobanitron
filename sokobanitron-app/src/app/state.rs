@@ -7,11 +7,46 @@ pub enum AppScreen {
     Editor,
 }
 
+impl AppScreen {
+    pub fn default_overlay(self) -> AppOverlay {
+        match self {
+            Self::Gameplay => AppOverlay::GameplayMenu,
+            Self::Editor => AppOverlay::EditorMenu,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppOverlay {
     GameplayMenu,
     LevelSelect { page_start: usize },
     EditorMenu,
+}
+
+impl AppOverlay {
+    pub fn owning_screen(self) -> AppScreen {
+        match self {
+            Self::GameplayMenu | Self::LevelSelect { .. } => AppScreen::Gameplay,
+            Self::EditorMenu => AppScreen::Editor,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppInteractionMode {
+    Gameplay,
+    Editor,
+    Overlay(AppOverlay),
+}
+
+impl AppInteractionMode {
+    pub fn screen(self) -> AppScreen {
+        match self {
+            Self::Gameplay => AppScreen::Gameplay,
+            Self::Editor => AppScreen::Editor,
+            Self::Overlay(overlay) => overlay.owning_screen(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,6 +75,16 @@ pub struct AppState {
 impl AppState {
     pub fn active_screen(&self) -> AppScreen {
         self.ui.screen
+    }
+
+    pub fn interaction_mode(&self) -> AppInteractionMode {
+        match self.ui.overlay {
+            Some(overlay) => AppInteractionMode::Overlay(overlay),
+            None => match self.ui.screen {
+                AppScreen::Gameplay => AppInteractionMode::Gameplay,
+                AppScreen::Editor => AppInteractionMode::Editor,
+            },
+        }
     }
 
     pub fn is_overlay_open(&self) -> bool {
@@ -76,7 +121,7 @@ impl AppState {
 
 #[cfg(test)]
 mod tests {
-    use super::{AppOverlay, AppScreen, AppState};
+    use super::{AppInteractionMode, AppOverlay, AppScreen, AppState};
 
     #[test]
     fn overlay_helpers_for_default_state() {
@@ -86,6 +131,7 @@ mod tests {
         assert!(!app_state.is_editor_screen());
         assert_eq!(app_state.level_select_page_start(), None);
         assert_eq!(app_state.active_screen(), AppScreen::Gameplay);
+        assert_eq!(app_state.interaction_mode(), AppInteractionMode::Gameplay);
     }
 
     #[test]
@@ -97,6 +143,10 @@ mod tests {
         assert!(!app_state.is_editor_menu_open());
         assert!(app_state.is_level_select_open());
         assert_eq!(app_state.level_select_page_start(), Some(7));
+        assert_eq!(
+            app_state.interaction_mode(),
+            AppInteractionMode::Overlay(AppOverlay::LevelSelect { page_start: 7 })
+        );
     }
 
     #[test]
@@ -108,6 +158,10 @@ mod tests {
         assert!(!app_state.is_editor_menu_open());
         assert!(!app_state.is_level_select_open());
         assert_eq!(app_state.level_select_page_start(), None);
+        assert_eq!(
+            app_state.interaction_mode(),
+            AppInteractionMode::Overlay(AppOverlay::GameplayMenu)
+        );
     }
 
     #[test]
@@ -123,5 +177,31 @@ mod tests {
         assert!(app_state.is_editor_screen());
         assert_eq!(app_state.level_select_page_start(), None);
         assert_eq!(app_state.active_screen(), AppScreen::Editor);
+        assert_eq!(
+            app_state.interaction_mode(),
+            AppInteractionMode::Overlay(AppOverlay::EditorMenu)
+        );
+    }
+
+    #[test]
+    fn overlay_owns_expected_screen() {
+        assert_eq!(
+            AppOverlay::GameplayMenu.owning_screen(),
+            AppScreen::Gameplay
+        );
+        assert_eq!(
+            AppOverlay::LevelSelect { page_start: 3 }.owning_screen(),
+            AppScreen::Gameplay
+        );
+        assert_eq!(AppOverlay::EditorMenu.owning_screen(), AppScreen::Editor);
+    }
+
+    #[test]
+    fn screen_knows_default_overlay() {
+        assert_eq!(
+            AppScreen::Gameplay.default_overlay(),
+            AppOverlay::GameplayMenu
+        );
+        assert_eq!(AppScreen::Editor.default_overlay(), AppOverlay::EditorMenu);
     }
 }
