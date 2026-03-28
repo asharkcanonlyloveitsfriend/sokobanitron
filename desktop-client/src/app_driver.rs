@@ -3,8 +3,8 @@ use presentation::{GameplayPresentationState, Renderer};
 use sokobanitron_app::{
     AppPreferences,
     app::{
-        AppAction, AppDriverContext, AppInput, AppInteractionMode, AppScreen, AppState,
-        apply_action_in_context, interpret_input, render_presentation_plan,
+        AppDriverContext, AppInput, AppInteractionMode, AppPreferencesStore, AppScreen, AppState,
+        apply_input_and_render_in_context,
     },
     editor::{
         editor_cursor_moved, editor_mouse_pressed, editor_mouse_released, editor_touch,
@@ -16,8 +16,9 @@ use sokobanitron_app::{
     level_bootstrap::load_initial_levels_for_app,
     shared::PointerPhase,
 };
-use sokobanitron_gameplay::{BoardView, GameplayController, GameplayControllerChanges};
+use sokobanitron_gameplay::{BoardView, GameplayController};
 use sokobanitron_level_editor::LevelEditor;
+use std::path::Path;
 use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
@@ -74,27 +75,8 @@ impl App {
         }
     }
 
-    fn handle_gameplay_changes(&mut self, changes: GameplayControllerChanges) {
-        if let Some(index) = changes.last_attempted_level_changed {
-            self.preferences.last_started_level = Some(index + 1);
-            if let Err(err) = self.preferences.save(PREFERENCES_PATH) {
-                eprintln!("warning: failed to persist preferences: {err}");
-            }
-        }
-    }
-
-    fn apply_app_action(&mut self, action: AppAction) {
-        if let Ok(applied) = apply_action_in_context(self, action) {
-            self.handle_gameplay_changes(applied.changes);
-            if let Some(plan) = applied.presentation_plan {
-                let _ = render_presentation_plan(self, &plan);
-            }
-        }
-    }
-
     fn apply_app_input(&mut self, input: AppInput) {
-        let action = interpret_input(&self.app_state, input);
-        self.apply_app_action(action);
+        let _ = apply_input_and_render_in_context(self, input);
     }
 
     fn enter_editor_mode(&mut self) {
@@ -170,6 +152,16 @@ impl AppDriverContext for App {
 
     fn controller_and_app_state_mut(&mut self) -> (&mut GameplayController, &mut AppState) {
         (&mut self.controller, &mut self.app_state)
+    }
+}
+
+impl AppPreferencesStore for App {
+    fn app_preferences(&mut self) -> &mut AppPreferences {
+        &mut self.preferences
+    }
+
+    fn app_preferences_path(&self) -> &Path {
+        Path::new(PREFERENCES_PATH)
     }
 }
 

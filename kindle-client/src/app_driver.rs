@@ -3,8 +3,8 @@ use presentation::{GameplayPresentationState, Renderer};
 use sokobanitron_app::{
     AppPreferences,
     app::{
-        AppAction, AppDriverContext, AppInput, AppInteractionMode, AppState,
-        apply_action_in_context, interpret_input, render_presentation_plan,
+        AppDriverContext, AppInput, AppInteractionMode, AppPreferencesStore, AppState,
+        apply_input_and_render_in_context,
     },
     gameplay::{
         interpret_gameplay_pointer_event, resize_gameplay_surface, set_gameplay_touch_slop,
@@ -12,8 +12,9 @@ use sokobanitron_app::{
     level_bootstrap::load_initial_levels_for_app,
     shared::PointerPhase,
 };
-use sokobanitron_gameplay::{BoardView, GameplayController, GameplayControllerChanges};
+use sokobanitron_gameplay::{BoardView, GameplayController};
 use std::io::Result;
+use std::path::Path;
 
 const TOUCH_POINTER_ID: u64 = 1;
 const KINDLE_GAMEPLAY_TAP_SLOP_PX: i32 = 24;
@@ -159,27 +160,8 @@ impl KindleApp {
         self.render()
     }
 
-    fn handle_gameplay_changes(&mut self, changes: GameplayControllerChanges) {
-        if let Some(index) = changes.last_attempted_level_changed {
-            self.preferences.last_started_level = Some(index + 1);
-            if let Err(err) = self.preferences.save(config::PREFERENCES_PATH) {
-                eprintln!("warning: failed to persist preferences: {err}");
-            }
-        }
-    }
-
-    fn apply_app_action(&mut self, action: AppAction) -> Result<()> {
-        let applied = apply_action_in_context(self, action)?;
-        self.handle_gameplay_changes(applied.changes);
-        if let Some(plan) = applied.presentation_plan {
-            render_presentation_plan(self, &plan)?;
-        }
-        Ok(())
-    }
-
     fn apply_app_input(&mut self, input: AppInput) -> Result<()> {
-        let action = interpret_input(&self.app_state, input);
-        self.apply_app_action(action)
+        apply_input_and_render_in_context(self, input).map(|_| ())
     }
 
     fn handle_gameplay_input(&mut self, input: AppInput) -> Result<()> {
@@ -234,5 +216,15 @@ impl AppDriverContext for KindleApp {
 
     fn controller_and_app_state_mut(&mut self) -> (&mut GameplayController, &mut AppState) {
         (&mut self.controller, &mut self.app_state)
+    }
+}
+
+impl AppPreferencesStore for KindleApp {
+    fn app_preferences(&mut self) -> &mut AppPreferences {
+        &mut self.preferences
+    }
+
+    fn app_preferences_path(&self) -> &Path {
+        Path::new(config::PREFERENCES_PATH)
     }
 }

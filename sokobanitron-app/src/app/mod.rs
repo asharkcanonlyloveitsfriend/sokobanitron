@@ -15,7 +15,10 @@ pub mod reducer;
 pub mod state;
 
 pub use action::AppAction;
-pub use driver::{AppDriverContext, AppliedUpdate, apply_action_in_context};
+pub use driver::{
+    AppDriverContext, AppPreferencesStore, AppliedUpdate, apply_action_and_render_in_context,
+    apply_action_in_context, apply_input_and_render_in_context,
+};
 pub use input::{AppInput, interpret_input};
 pub use presentation::{
     FrameRequest, FrameSink, PresentMode, PresentationPlan, build_presentation_plan,
