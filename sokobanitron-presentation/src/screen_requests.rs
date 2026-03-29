@@ -24,11 +24,27 @@ pub struct GameplayScreenRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameplayMenuScreenRequest {
     pub primary_action_icon: Option<UiIcon>,
+    pub show_change_level_set: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LevelSelectScreenRequest {
     pub page_start: usize,
+    pub resume_level: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LevelSetSelectScreenRequest {
+    pub page_start: usize,
+    pub active_level_set: usize,
+    pub entries: Vec<LevelSetListEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LevelSetListEntry {
+    pub title: String,
+    pub completed_puzzle_count: usize,
+    pub total_puzzle_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

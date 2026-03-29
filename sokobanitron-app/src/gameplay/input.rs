@@ -4,8 +4,9 @@ use crate::app::state::{AppOverlay, AppState};
 use crate::shared::{MOUSE_POINTER_ID, PointerEvent, PointerGesture, PointerPhase, ScreenPoint};
 use presentation::hit_test::{
     ControlsButtonAction, GameplaySurfaceLayer, GameplaySurfaceModel, GameplaySurfaceTarget,
-    LevelSelectSurfaceTarget, gameplay_surface_target_at, level_select_menu_nav_action_for_swipe,
-    level_select_menu_start_for_nav,
+    LevelSelectSurfaceTarget, LevelSetSelectSurfaceTarget, gameplay_surface_target_at,
+    level_select_menu_nav_action_for_swipe, level_select_menu_start_for_nav,
+    level_set_select_start_for_nav,
 };
 use sokobanitron_gameplay::GameplayController;
 use std::time::Instant;
@@ -27,7 +28,10 @@ pub fn build_gameplay_surface_model<'a>(
         surface_width: app_state.gameplay.surface_width,
         surface_height: app_state.gameplay.surface_height,
         level_count: controller.level_count(),
-        current_level: controller.current_level(),
+        resume_level: controller.resume_level(),
+        level_set_count: app_state.gameplay.level_sets.len(),
+        active_level_set: app_state.gameplay.active_level_set,
+        can_change_level_set: app_state.gameplay.level_sets.len() > 1,
         can_undo: controller.can_undo(),
         can_restart: controller.can_restart(),
         board_viewport: build_gameplay_viewport(&app_state.gameplay, board),
@@ -40,6 +44,9 @@ fn gameplay_surface_layer_from_app_state(app_state: &AppState) -> GameplaySurfac
         Some(AppOverlay::GameplayMenu) => GameplaySurfaceLayer::Menu,
         Some(AppOverlay::LevelSelect { page_start }) => {
             GameplaySurfaceLayer::LevelSelect { page_start }
+        }
+        Some(AppOverlay::LevelSetSelect { page_start }) => {
+            GameplaySurfaceLayer::LevelSetSelect { page_start }
         }
         _ => GameplaySurfaceLayer::Board,
     }
@@ -134,7 +141,7 @@ fn interpret_gameplay_gesture(
             interpret_gameplay_surface_target(surface, policy, target)
         }
         PointerGesture::Ended(contact) => {
-            interpret_level_select_swipe(surface, contact.position, drag_start)
+            interpret_overlay_swipe(surface, contact.position, drag_start)
         }
         PointerGesture::Started(_)
         | PointerGesture::DragStarted(_)
@@ -143,27 +150,39 @@ fn interpret_gameplay_gesture(
     }
 }
 
-fn interpret_level_select_swipe(
+fn interpret_overlay_swipe(
     surface: &GameplaySurfaceModel<'_>,
     end: ScreenPoint,
     drag_start: Option<ScreenPoint>,
 ) -> AppInput {
-    let Some(page_start) = surface.layer.level_select_page_start() else {
-        return AppInput::NoOp;
-    };
     let Some(start) = drag_start else {
         return AppInput::NoOp;
     };
     let Some(nav) = level_select_menu_nav_action_for_swipe(end.x - start.x, end.y - start.y) else {
         return AppInput::NoOp;
     };
-    let page_start = level_select_menu_start_for_nav(
-        surface.level_count,
-        surface.current_level,
-        page_start,
-        nav,
-    );
-    AppInput::LevelSelectNavigate { page_start }
+
+    if let Some(page_start) = surface.layer.level_select_page_start() {
+        let page_start = level_select_menu_start_for_nav(
+            surface.level_count,
+            surface.resume_level,
+            page_start,
+            nav,
+        );
+        return AppInput::LevelSelectNavigate { page_start };
+    }
+
+    if let Some(page_start) = surface.layer.level_set_select_page_start() {
+        let page_start = level_set_select_start_for_nav(
+            surface.level_set_count,
+            surface.active_level_set,
+            page_start,
+            nav,
+        );
+        return AppInput::LevelSetSelectNavigate { page_start };
+    }
+
+    AppInput::NoOp
 }
 
 fn interpret_gameplay_surface_target(
@@ -187,6 +206,11 @@ fn interpret_gameplay_surface_target(
     match target {
         Some(GameplaySurfaceTarget::LevelButton) if !layer.is_overlay_open() => {
             return AppInput::OpenLevelSelect;
+        }
+        Some(GameplaySurfaceTarget::LevelSetButton)
+            if matches!(layer, GameplaySurfaceLayer::Menu) =>
+        {
+            return AppInput::OpenLevelSetSelect;
         }
         Some(GameplaySurfaceTarget::Control(ControlsButtonAction::Restart))
             if !layer.is_overlay_open() =>
@@ -213,7 +237,7 @@ fn interpret_gameplay_surface_target(
             Some(GameplaySurfaceTarget::LevelSelect(LevelSelectSurfaceTarget::Navigate(nav))) => {
                 let page_start = level_select_menu_start_for_nav(
                     surface.level_count,
-                    surface.current_level,
+                    surface.resume_level,
                     page_start,
                     nav,
                 );
@@ -222,6 +246,26 @@ fn interpret_gameplay_surface_target(
             Some(GameplaySurfaceTarget::LevelSelect(LevelSelectSurfaceTarget::Level(level))) => {
                 AppInput::LevelSelectSelect(level)
             }
+            _ => AppInput::NoOp,
+        };
+    }
+
+    if let Some(page_start) = layer.level_set_select_page_start() {
+        return match target {
+            Some(GameplaySurfaceTarget::LevelSetSelect(LevelSetSelectSurfaceTarget::Navigate(
+                nav,
+            ))) => {
+                let page_start = level_set_select_start_for_nav(
+                    surface.level_set_count,
+                    surface.active_level_set,
+                    page_start,
+                    nav,
+                );
+                AppInput::LevelSetSelectNavigate { page_start }
+            }
+            Some(GameplaySurfaceTarget::LevelSetSelect(LevelSetSelectSurfaceTarget::LevelSet(
+                level_set,
+            ))) => AppInput::LevelSetSelectSelect(level_set),
             _ => AppInput::NoOp,
         };
     }

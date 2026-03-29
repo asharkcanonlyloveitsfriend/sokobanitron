@@ -15,13 +15,13 @@ impl Renderer {
         width: u32,
         height: u32,
         preview_boards: &[BoardView],
-        current_level: usize,
+        resume_level: usize,
         page_start: usize,
     ) {
         if preview_boards.is_empty() {
             return;
         }
-        let current_level = current_level.min(preview_boards.len().saturating_sub(1));
+        let resume_level = resume_level.min(preview_boards.len().saturating_sub(1));
         let slots = level_select_menu_slot_rects(width, height);
         let page_start = level_select_menu_clamp_start(preview_boards.len(), page_start);
         let indices = level_select_menu_indices(preview_boards.len(), page_start);
@@ -45,7 +45,7 @@ impl Renderer {
             viewport.origin_x += sx + pad as i32;
             viewport.origin_y += sy + pad as i32;
             self.draw_board_on_frame(frame, width, height, board, &viewport, true, false, false);
-            if level_idx == current_level {
+            if level_idx == resume_level {
                 draw_selection_brackets(frame, width, height, sx, sy, sw, sh);
             }
         }
@@ -58,7 +58,7 @@ impl Renderer {
                 level_count: preview_boards.len(),
                 visible_count: crate::layout::menu_slots_per_page(),
                 page_start,
-                return_start: level_select_menu_start_index(preview_boards.len(), current_level),
+                return_start: level_select_menu_start_index(preview_boards.len(), resume_level),
             },
         );
     }

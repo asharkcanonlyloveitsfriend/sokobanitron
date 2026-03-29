@@ -15,7 +15,7 @@ use super::state::AppState;
 use crate::gameplay::build_gameplay_frame_request;
 use presentation::screen_requests::{
     EditorMenuScreenRequest, EditorScreenRequest, GameplayMenuScreenRequest, GameplayScreenRequest,
-    LevelSelectScreenRequest,
+    LevelSelectScreenRequest, LevelSetSelectScreenRequest,
 };
 use sokobanitron_gameplay::{GameplayController, GameplayTapEffect, GameplayTapOutcome};
 
@@ -36,6 +36,10 @@ pub enum FrameRequest {
     },
     LevelSelect {
         screen: LevelSelectScreenRequest,
+        present_mode: PresentMode,
+    },
+    LevelSetSelect {
+        screen: LevelSetSelectScreenRequest,
         present_mode: PresentMode,
     },
     Editor {
@@ -282,10 +286,14 @@ mod tests {
                 PresentationStep::Render(FrameRequest::GameplayMenu {
                     screen: GameplayMenuScreenRequest {
                         primary_action_icon: None,
+                        show_change_level_set: false,
                     },
                 }),
                 PresentationStep::Render(FrameRequest::LevelSelect {
-                    screen: LevelSelectScreenRequest { page_start: 3 },
+                    screen: LevelSelectScreenRequest {
+                        page_start: 3,
+                        resume_level: 0,
+                    },
                     present_mode: PresentMode::Full,
                 }),
             ],
@@ -300,10 +308,14 @@ mod tests {
                 FrameRequest::GameplayMenu {
                     screen: GameplayMenuScreenRequest {
                         primary_action_icon: None,
+                        show_change_level_set: false,
                     },
                 },
                 FrameRequest::LevelSelect {
-                    screen: LevelSelectScreenRequest { page_start: 3 },
+                    screen: LevelSelectScreenRequest {
+                        page_start: 3,
+                        resume_level: 0,
+                    },
                     present_mode: PresentMode::Full,
                 },
             ]

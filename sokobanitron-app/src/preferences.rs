@@ -6,14 +6,7 @@ use std::path::Path;
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct AppPreferences {
-    pub progress: ProgressPreferences,
     pub kindle: KindlePreferences,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(default)]
-pub struct ProgressPreferences {
-    pub last_started_level: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -46,22 +39,15 @@ impl AppPreferences {
     }
 
     pub fn save(&self, path: impl AsRef<Path>) -> io::Result<()> {
+        let path = path.as_ref();
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            fs::create_dir_all(parent)?;
+        }
         let raw = serde_json::to_string_pretty(self)
             .map_err(|err| io::Error::other(format!("serialize preferences: {err}")))?;
         fs::write(path, raw)
-    }
-
-    pub fn level_index(&self, level_count: usize) -> Option<usize> {
-        let one_based = self.progress.last_started_level?;
-        if one_based == 0 {
-            return None;
-        }
-        let idx = one_based - 1;
-        if idx < level_count { Some(idx) } else { None }
-    }
-
-    pub fn set_last_started_level(&mut self, zero_based_index: usize) {
-        self.progress.last_started_level = Some(zero_based_index + 1);
     }
 }
 
@@ -87,12 +73,9 @@ mod tests {
         let preferences =
             AppPreferences::load_and_save_normalized(&path).expect("normalize preferences");
 
-        assert_eq!(preferences.progress.last_started_level, None);
         assert!(!preferences.kindle.use_app_sleep_screen);
 
         let saved = fs::read_to_string(&path).expect("read saved preferences");
-        assert!(saved.contains("\"progress\""));
-        assert!(saved.contains("\"last_started_level\": null"));
         assert!(saved.contains("\"kindle\""));
         assert!(saved.contains("\"use_app_sleep_screen\": false"));
 
@@ -105,7 +88,6 @@ mod tests {
         fs::write(
             &path,
             r#"{
-  "progress": { "last_started_level": 3 },
   "kindle": { "use_app_sleep_screen": true },
   "stale_preference": 123
 }"#,
@@ -115,12 +97,9 @@ mod tests {
         let preferences =
             AppPreferences::load_and_save_normalized(&path).expect("normalize preferences");
 
-        assert_eq!(preferences.progress.last_started_level, Some(3));
         assert!(preferences.kindle.use_app_sleep_screen);
 
         let saved = fs::read_to_string(&path).expect("read saved preferences");
-        assert!(saved.contains("\"progress\""));
-        assert!(saved.contains("\"last_started_level\": 3"));
         assert!(saved.contains("\"kindle\""));
         assert!(saved.contains("\"use_app_sleep_screen\": true"));
         assert!(!saved.contains("stale_preference"));
@@ -151,7 +130,7 @@ mod tests {
     }
 
     #[test]
-    fn load_defaults_missing_nested_sections_in_partial_current_schema() {
+    fn load_ignores_removed_progress_section_from_older_schema() {
         let path = temp_preferences_path("partial-current-schema");
         fs::write(
             &path,
@@ -163,9 +142,28 @@ mod tests {
 
         let preferences = AppPreferences::load(&path).expect("load partial current-schema");
 
-        assert_eq!(preferences.progress.last_started_level, Some(3));
         assert!(!preferences.kindle.use_app_sleep_screen);
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn save_creates_missing_parent_directories() {
+        let base = std::env::temp_dir().join(format!(
+            "sokobanitron-pref-dir-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock before epoch")
+                .as_nanos()
+        ));
+        let path = base.join("nested").join("preferences.json");
+
+        AppPreferences::default()
+            .save(&path)
+            .expect("save nested preferences");
+
+        assert!(path.exists());
+
+        let _ = fs::remove_dir_all(base);
     }
 }

@@ -14,6 +14,7 @@ use crate::app::state::AppState;
 use presentation::assets::UiIcon;
 use presentation::screen_requests::{
     GameplayMenuScreenRequest, GameplayScreenMode, GameplayScreenRequest, LevelSelectScreenRequest,
+    LevelSetListEntry, LevelSetSelectScreenRequest,
 };
 use sokobanitron_gameplay::GameplayController;
 
@@ -40,10 +41,38 @@ pub fn build_sleep_gameplay_frame_request(
 
 pub fn build_level_select_frame_request(
     page_start: usize,
+    resume_level: usize,
     present_mode: PresentMode,
 ) -> FrameRequest {
     FrameRequest::LevelSelect {
-        screen: LevelSelectScreenRequest { page_start },
+        screen: LevelSelectScreenRequest {
+            page_start,
+            resume_level,
+        },
+        present_mode,
+    }
+}
+
+pub fn build_level_set_select_frame_request(
+    page_start: usize,
+    app_state: &AppState,
+    present_mode: PresentMode,
+) -> FrameRequest {
+    FrameRequest::LevelSetSelect {
+        screen: LevelSetSelectScreenRequest {
+            page_start,
+            active_level_set: app_state.gameplay.active_level_set,
+            entries: app_state
+                .gameplay
+                .level_sets
+                .iter()
+                .map(|entry| LevelSetListEntry {
+                    title: entry.title.clone(),
+                    completed_puzzle_count: entry.completed_puzzle_count,
+                    total_puzzle_count: entry.total_puzzle_count,
+                })
+                .collect(),
+        },
         present_mode,
     }
 }
@@ -59,12 +88,15 @@ pub fn build_current_frame_request(
     controller: &GameplayController,
     app_state: &AppState,
 ) -> FrameRequest {
-    if let Some(page_start) = app_state.level_select_page_start() {
-        build_level_select_frame_request(page_start, PresentMode::Full)
+    if let Some(page_start) = app_state.level_set_select_page_start() {
+        build_level_set_select_frame_request(page_start, app_state, PresentMode::Full)
+    } else if let Some(page_start) = app_state.level_select_page_start() {
+        build_level_select_frame_request(page_start, controller.resume_level(), PresentMode::Full)
     } else if app_state.is_gameplay_menu_open() {
         FrameRequest::GameplayMenu {
             screen: GameplayMenuScreenRequest {
                 primary_action_icon: app_state.editor_available.then_some(UiIcon::Draw),
+                show_change_level_set: app_state.gameplay.level_sets.len() > 1,
             },
         }
     } else {
@@ -110,8 +142,24 @@ mod tests {
 
         assert_eq!(
             build_current_frame_request(&controller, &app_state),
-            build_level_select_frame_request(12, PresentMode::Full),
+            build_level_select_frame_request(12, controller.resume_level(), PresentMode::Full),
         );
+    }
+
+    #[test]
+    fn current_frame_request_uses_resume_level_for_level_select_indicator() {
+        let level = "    ###   \n $$     #@\n $ #...   \n   #######".to_string();
+        let controller = GameplayController::new_at_level(vec![level.clone(), level], 0, Some(1));
+        let mut app_state = AppState::default();
+        app_state.ui.overlay = Some(AppOverlay::LevelSelect { page_start: 0 });
+
+        let FrameRequest::LevelSelect { screen, .. } =
+            build_current_frame_request(&controller, &app_state)
+        else {
+            panic!("expected level select request");
+        };
+
+        assert_eq!(screen.resume_level, 1);
     }
 
     #[test]
@@ -125,6 +173,7 @@ mod tests {
             FrameRequest::GameplayMenu {
                 screen: GameplayMenuScreenRequest {
                     primary_action_icon: None,
+                    show_change_level_set: false,
                 },
             },
         );

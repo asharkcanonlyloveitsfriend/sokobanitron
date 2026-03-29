@@ -2,13 +2,14 @@
 set -euo pipefail
 
 TARGET=armv7-unknown-linux-gnueabi
-BIN=kindle-client
+LOCAL_BIN=kindle-client
+DEVICE_BIN=sokobanitron
 KINDLE_HOST=kindle
-KINDLE_PATH=/mnt/us/$BIN
-KINDLE_LOG=/mnt/us/$BIN.log
+KINDLE_APP_ROOT=/mnt/us/sokobanitron
+KINDLE_PATH=$KINDLE_APP_ROOT/$DEVICE_BIN
+KINDLE_LOG=$KINDLE_APP_ROOT/$DEVICE_BIN.log
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-SLC_SOURCE="$(find "$REPO_ROOT" -maxdepth 1 -type f \( -iname '*.slc' \) | LC_ALL=C sort | head -n 1 || true)"
 
 docker run --rm \
   -v "$REPO_ROOT":/src \
@@ -17,18 +18,20 @@ docker run --rm \
   bash -lc 'export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_LINKER=/home/builder/x-tools/arm-unknown-linux-gnueabi/bin/arm-unknown-linux-gnueabi-gcc; cargo build -p kindle-client --target "$0"' "$TARGET"
 
 ssh "$KINDLE_HOST" <<'EOF'
+pkill sokobanitron 2>/dev/null || true
 pkill kindle-client 2>/dev/null || true
 for _ in $(seq 1 5); do
-  pgrep kindle-client >/dev/null 2>&1 || break
+  if ! pgrep sokobanitron >/dev/null 2>&1 && ! pgrep kindle-client >/dev/null 2>&1; then
+    break
+  fi
   sleep 1
 done
+pkill -9 sokobanitron 2>/dev/null || true
 pkill -9 kindle-client 2>/dev/null || true
+mkdir -p /mnt/us/sokobanitron
 EOF
 
-scp "$REPO_ROOT/target/$TARGET/debug/$BIN" "$KINDLE_HOST:$KINDLE_PATH"
-if [[ -n "$SLC_SOURCE" ]]; then
-  scp "$SLC_SOURCE" "$KINDLE_HOST:/mnt/us/$(basename "$SLC_SOURCE")"
-fi
+scp "$REPO_ROOT/target/$TARGET/debug/$LOCAL_BIN" "$KINDLE_HOST:$KINDLE_PATH"
 
 ssh "$KINDLE_HOST" <<EOF
 /sbin/initctl stop lab126_gui || true

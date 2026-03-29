@@ -1,13 +1,15 @@
 use crate::assets::{UiIcon, draw_ui_icon_in_rect};
 use crate::layout::{
     ControlsUiMode, ScreenRect, bottom_left_corner_button_rect, bottom_right_corner_button_rect,
-    overlay_primary_action_button_rect, top_left_level_button_rect, top_menu_toggle_button_rect,
+    gameplay_menu_level_set_button_rect, overlay_primary_action_button_rect,
+    top_left_level_button_rect, top_menu_toggle_button_rect,
 };
 
 use super::pixel_ui::draw_centered_text_in_rect;
 
 const BUTTON_TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
 const UI_MENU_TEXT_SCALE: usize = 4;
+const UI_MENU_TEXT_SPACING: usize = 1;
 const SLEEP_LABEL_SPACING: usize = 2;
 
 pub fn draw_top_left_level_button(frame: &mut [u8], width: u32, height: u32, level_number: usize) {
@@ -85,6 +87,19 @@ pub fn draw_overlay_primary_action_button(
     draw_ui_icon_in_rect(frame, width, height, rect, icon, color);
 }
 
+pub fn draw_gameplay_menu_level_set_button(frame: &mut [u8], width: u32, height: u32) {
+    draw_centered_text_in_rect(
+        frame,
+        width,
+        height,
+        gameplay_menu_level_set_button_rect(width, height),
+        "CHANGE SET",
+        UI_MENU_TEXT_SCALE,
+        UI_MENU_TEXT_SPACING,
+        BUTTON_TEXT_COLOR,
+    );
+}
+
 pub(crate) fn draw_sleep_label(frame: &mut [u8], width: u32, height: u32, rect: ScreenRect) {
     draw_centered_text_in_rect(
         frame,
@@ -117,7 +132,7 @@ fn draw_button_scaled(
         rect,
         label,
         scale,
-        0,
+        UI_MENU_TEXT_SPACING,
         BUTTON_TEXT_COLOR,
     );
 }

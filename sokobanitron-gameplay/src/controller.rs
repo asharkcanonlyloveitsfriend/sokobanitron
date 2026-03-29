@@ -4,7 +4,7 @@ use crate::session::{GameplayEvent, GameplayKey, GameplaySession};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct GameplayControllerChanges {
     pub level_changed: Option<usize>,
-    pub last_attempted_level_changed: Option<usize>,
+    pub resume_level_changed: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,21 +29,36 @@ pub struct GameplayTapOutcome {
 pub struct GameplayController {
     levels: Vec<String>,
     current_level: usize,
-    last_attempted_level: Option<usize>,
+    resume_level: usize,
+    resume_level_persisted: bool,
     session: GameplaySession,
 }
 
 impl GameplayController {
-    pub fn new(levels: Vec<String>, last_attempted_level: Option<usize>) -> Self {
+    pub fn new(levels: Vec<String>, resume_level: Option<usize>) -> Self {
+        let start_level = resume_level.unwrap_or(0);
+        Self::new_at_level(levels, start_level, resume_level)
+    }
+
+    pub fn new_at_level(
+        levels: Vec<String>,
+        start_level: usize,
+        persisted_resume_level: Option<usize>,
+    ) -> Self {
         assert!(!levels.is_empty(), "levels must not be empty");
-        let current_level = last_attempted_level
+        let current_level = Some(start_level)
             .filter(|idx| *idx < levels.len())
             .unwrap_or(0);
+        let resume_level_persisted = persisted_resume_level.is_some();
+        let resume_level = persisted_resume_level
+            .filter(|idx| *idx < levels.len())
+            .unwrap_or(current_level);
         let session = GameplaySession::from_level_ascii(levels[current_level].clone());
         Self {
             levels,
             current_level,
-            last_attempted_level,
+            resume_level,
+            resume_level_persisted,
             session,
         }
     }
@@ -54,6 +69,10 @@ impl GameplayController {
 
     pub fn current_level(&self) -> usize {
         self.current_level
+    }
+
+    pub fn resume_level(&self) -> usize {
+        self.resume_level
     }
 
     pub fn level_count(&self) -> usize {
@@ -86,14 +105,14 @@ impl GameplayController {
         self.session = GameplaySession::from_level_ascii(self.levels[self.current_level].clone());
         GameplayControllerChanges {
             level_changed: Some(self.current_level),
-            last_attempted_level_changed: None,
+            resume_level_changed: None,
         }
     }
 
     pub fn advance_after_win(&mut self, target_level: usize) -> GameplayControllerChanges {
         let mut changes = self.jump_to_level(target_level);
-        if let Some(index) = self.set_last_attempted_to_current_if_needed() {
-            changes.last_attempted_level_changed = Some(index);
+        if let Some(index) = self.set_resume_level_to_current_if_needed() {
+            changes.resume_level_changed = Some(index);
         }
         changes
     }
@@ -109,8 +128,8 @@ impl GameplayController {
         let dirty_solution = became_solved && !self.session.is_clean_solution();
 
         let mut changes = GameplayControllerChanges::default();
-        if started_now && let Some(index) = self.set_last_attempted_to_current_if_needed() {
-            changes.last_attempted_level_changed = Some(index);
+        if started_now && let Some(index) = self.set_resume_level_to_current_if_needed() {
+            changes.resume_level_changed = Some(index);
         }
 
         GameplayTapOutcome {
@@ -135,11 +154,16 @@ impl GameplayController {
         self.on_key_with_changes(GameplayKey::Backspace)
     }
 
-    fn set_last_attempted_to_current_if_needed(&mut self) -> Option<usize> {
-        if self.last_attempted_level == Some(self.current_level) {
+    pub fn solution_history(&self) -> Vec<Vec<(usize, usize)>> {
+        self.session.box_move_history()
+    }
+
+    fn set_resume_level_to_current_if_needed(&mut self) -> Option<usize> {
+        if self.resume_level_persisted && self.resume_level == self.current_level {
             return None;
         }
-        self.last_attempted_level = Some(self.current_level);
+        self.resume_level = self.current_level;
+        self.resume_level_persisted = true;
         Some(self.current_level)
     }
 }

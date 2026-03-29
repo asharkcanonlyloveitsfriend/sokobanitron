@@ -4,6 +4,7 @@ mod controls;
 mod editor;
 mod level_select;
 pub(crate) mod level_select_scrollbar;
+mod level_set_select;
 mod overlay;
 mod viewport;
 
@@ -23,7 +24,12 @@ pub use level_select::{
     level_select_menu_clamp_start, level_select_menu_indices, level_select_menu_slot_rects,
     level_select_menu_start_index, level_select_menu_step_start,
 };
-pub use overlay::overlay_primary_action_button_rect;
+pub(crate) use level_set_select::level_set_rows_per_page;
+pub use level_set_select::{
+    level_set_select_clamp_start, level_set_select_indices, level_set_select_row_rects,
+    level_set_select_start_index, level_set_select_step_start,
+};
+pub use overlay::{gameplay_menu_level_set_button_rect, overlay_primary_action_button_rect};
 pub use viewport::{BoardViewport, BoardViewportOptions};
 
 pub fn fit_board_viewport_for_controls(

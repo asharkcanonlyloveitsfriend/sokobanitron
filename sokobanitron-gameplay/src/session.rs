@@ -76,6 +76,14 @@ impl GameplaySession {
         self.engine.is_clean_solution()
     }
 
+    pub fn box_move_history(&self) -> Vec<Vec<(usize, usize)>> {
+        self.engine
+            .box_move_history()
+            .iter()
+            .map(|path| path.iter().map(|pos| (pos.row, pos.col)).collect())
+            .collect()
+    }
+
     pub fn click_cell_with_events(&mut self, x: u32, y: u32) -> Vec<GameplayEvent> {
         let mut events = Vec::new();
         if self.board.is_solved() {

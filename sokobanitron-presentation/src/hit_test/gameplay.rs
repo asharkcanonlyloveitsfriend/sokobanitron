@@ -1,8 +1,10 @@
-use crate::layout::{BoardViewport, top_left_level_button_rect};
+use crate::layout::{
+    BoardViewport, gameplay_menu_level_set_button_rect, top_left_level_button_rect,
+};
 use crate::{
     ControlsButtonAction, MenuNavAction, controls_button_action_at,
-    level_select_menu_nav_action_at, level_select_menu_target_at,
-    overlay_primary_action_button_contains,
+    level_select_menu_nav_action_at, level_select_menu_target_at, level_set_select_nav_action_at,
+    level_set_select_target_at, overlay_primary_action_button_contains,
 };
 use sokobanitron_gameplay::BoardView;
 
@@ -11,6 +13,7 @@ pub enum GameplaySurfaceLayer {
     Board,
     Menu,
     LevelSelect { page_start: usize },
+    LevelSetSelect { page_start: usize },
 }
 
 impl GameplaySurfaceLayer {
@@ -21,7 +24,14 @@ impl GameplaySurfaceLayer {
     pub fn level_select_page_start(self) -> Option<usize> {
         match self {
             Self::LevelSelect { page_start } => Some(page_start),
-            Self::Board | Self::Menu => None,
+            Self::Board | Self::Menu | Self::LevelSetSelect { .. } => None,
+        }
+    }
+
+    pub fn level_set_select_page_start(self) -> Option<usize> {
+        match self {
+            Self::LevelSetSelect { page_start } => Some(page_start),
+            Self::Board | Self::Menu | Self::LevelSelect { .. } => None,
         }
     }
 }
@@ -32,7 +42,10 @@ pub struct GameplaySurfaceModel<'a> {
     pub surface_width: u32,
     pub surface_height: u32,
     pub level_count: usize,
-    pub current_level: usize,
+    pub resume_level: usize,
+    pub level_set_count: usize,
+    pub active_level_set: usize,
+    pub can_change_level_set: bool,
     pub can_undo: bool,
     pub can_restart: bool,
     pub board_viewport: BoardViewport,
@@ -46,11 +59,19 @@ pub enum LevelSelectSurfaceTarget {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LevelSetSelectSurfaceTarget {
+    Navigate(MenuNavAction),
+    LevelSet(usize),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameplaySurfaceTarget {
     OverlayPrimaryAction,
     LevelButton,
+    LevelSetButton,
     Control(ControlsButtonAction),
     LevelSelect(LevelSelectSurfaceTarget),
+    LevelSetSelect(LevelSetSelectSurfaceTarget),
     BoardCell { x: u32, y: u32 },
 }
 
@@ -70,6 +91,13 @@ pub fn gameplay_surface_target_at(
     if top_left_level_button_rect().contains(tap_x, tap_y) {
         return Some(GameplaySurfaceTarget::LevelButton);
     }
+    if surface.can_change_level_set
+        && matches!(surface.layer, GameplaySurfaceLayer::Menu)
+        && gameplay_menu_level_set_button_rect(surface.surface_width, surface.surface_height)
+            .contains(tap_x, tap_y)
+    {
+        return Some(GameplaySurfaceTarget::LevelSetButton);
+    }
     if let Some(action) = controls_button_action_at(
         tap_x,
         tap_y,
@@ -87,7 +115,7 @@ pub fn gameplay_surface_target_at(
             surface.surface_width,
             surface.surface_height,
             surface.level_count,
-            surface.current_level,
+            surface.resume_level,
             page_start,
         ) {
             return Some(GameplaySurfaceTarget::LevelSelect(
@@ -104,6 +132,33 @@ pub fn gameplay_surface_target_at(
         ) {
             return Some(GameplaySurfaceTarget::LevelSelect(
                 LevelSelectSurfaceTarget::Level(level),
+            ));
+        }
+    }
+    if let Some(page_start) = surface.layer.level_set_select_page_start() {
+        if let Some(nav_action) = level_set_select_nav_action_at(
+            tap_x,
+            tap_y,
+            surface.surface_width,
+            surface.surface_height,
+            surface.level_set_count,
+            surface.active_level_set,
+            page_start,
+        ) {
+            return Some(GameplaySurfaceTarget::LevelSetSelect(
+                LevelSetSelectSurfaceTarget::Navigate(nav_action),
+            ));
+        }
+        if let Some(level_set) = level_set_select_target_at(
+            tap_x,
+            tap_y,
+            surface.surface_width,
+            surface.surface_height,
+            surface.level_set_count,
+            page_start,
+        ) {
+            return Some(GameplaySurfaceTarget::LevelSetSelect(
+                LevelSetSelectSurfaceTarget::LevelSet(level_set),
             ));
         }
     }
@@ -140,7 +195,10 @@ mod tests {
             surface_width: 670,
             surface_height: 891,
             level_count: controller.level_count(),
-            current_level: controller.current_level(),
+            resume_level: controller.resume_level(),
+            level_set_count: 0,
+            active_level_set: 0,
+            can_change_level_set: false,
             can_undo: controller.can_undo(),
             can_restart: controller.can_restart(),
             board_viewport: fit_board_viewport_for_controls(670, 891, board),

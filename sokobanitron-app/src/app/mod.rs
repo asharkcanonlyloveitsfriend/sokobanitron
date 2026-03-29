@@ -10,13 +10,14 @@
 pub mod action;
 pub mod driver;
 pub mod input;
+pub mod persistence;
 pub mod presentation;
 pub mod reducer;
 pub mod state;
 
 pub use action::AppAction;
 pub use driver::{
-    AppDriverContext, AppPreferencesStore, AppliedUpdate, apply_action_and_render_in_context,
+    AppDriverContext, AppRuntimeMut, AppliedUpdate, apply_action_and_render_in_context,
     apply_action_in_context, apply_input_and_render_in_context,
 };
 pub use input::{AppInput, interpret_input};
@@ -24,5 +25,5 @@ pub use presentation::{
     FrameRequest, FrameSink, PresentMode, PresentationPlan, build_presentation_plan,
     render_presentation_plan,
 };
-pub use reducer::{AppUpdate, apply_action};
+pub use reducer::{AppUpdate, PersistenceUpdate, apply_action};
 pub use state::{AppInteractionMode, AppOverlay, AppScreen, AppState, UiState};

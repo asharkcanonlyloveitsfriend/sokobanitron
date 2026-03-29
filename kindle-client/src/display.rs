@@ -1,8 +1,8 @@
 use crate::{app_driver::KindleApp, config};
 use presentation::layout::ControlsUiMode;
 use presentation::renderer::{
-    Renderer, RendererOverrides, draw_controls_ui, draw_overlay_primary_action_button,
-    draw_top_menu_toggle,
+    Renderer, RendererOverrides, draw_controls_ui, draw_gameplay_menu_level_set_button,
+    draw_overlay_primary_action_button, draw_top_menu_toggle,
 };
 use sokobanitron_app::{
     app::{FrameRequest, FrameSink, PresentMode},
@@ -62,6 +62,13 @@ impl KindleApp {
                     (&mut self.renderer, &mut self.rgba_frame, &mut self.display);
                 renderer.draw_background_only(rgba, config::WIDTH as u32, config::HEIGHT as u32);
                 draw_top_menu_toggle(rgba, config::WIDTH as u32, config::HEIGHT as u32, true);
+                if screen.show_change_level_set {
+                    draw_gameplay_menu_level_set_button(
+                        rgba,
+                        config::WIDTH as u32,
+                        config::HEIGHT as u32,
+                    );
+                }
                 if let Some(icon) = screen.primary_action_icon {
                     draw_overlay_primary_action_button(
                         rgba,
@@ -77,12 +84,11 @@ impl KindleApp {
                 screen,
                 present_mode,
             } => {
-                let (renderer, rgba, display, preview_boards, controller) = (
+                let (renderer, rgba, display, preview_boards) = (
                     &mut self.renderer,
                     &mut self.rgba_frame,
                     &mut self.display,
                     &self.preview_boards,
-                    &self.controller,
                 );
                 renderer.draw_background_only(rgba, config::WIDTH as u32, config::HEIGHT as u32);
                 renderer.draw_level_select_menu_contents(
@@ -90,8 +96,35 @@ impl KindleApp {
                     config::WIDTH as u32,
                     config::HEIGHT as u32,
                     preview_boards,
-                    controller.current_level(),
+                    screen.resume_level,
                     screen.page_start,
+                );
+                draw_controls_ui(
+                    rgba,
+                    config::WIDTH as u32,
+                    config::HEIGHT as u32,
+                    ControlsUiMode::MenuOpen,
+                    false,
+                    false,
+                );
+                if matches!(present_mode, PresentMode::FastPartial) {
+                    display.present_rgba_fast_partial(rgba)
+                } else {
+                    display.present_rgba(rgba)
+                }
+            }
+            FrameRequest::LevelSetSelect {
+                screen,
+                present_mode,
+            } => {
+                let (renderer, rgba, display) =
+                    (&mut self.renderer, &mut self.rgba_frame, &mut self.display);
+                renderer.draw_background_only(rgba, config::WIDTH as u32, config::HEIGHT as u32);
+                renderer.draw_level_set_select_menu_contents(
+                    rgba,
+                    config::WIDTH as u32,
+                    config::HEIGHT as u32,
+                    screen,
                 );
                 draw_controls_ui(
                     rgba,

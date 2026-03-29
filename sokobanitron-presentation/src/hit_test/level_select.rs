@@ -17,14 +17,14 @@ pub enum MenuNavAction {
 
 pub fn level_select_menu_start_for_nav(
     level_count: usize,
-    current_level: usize,
+    resume_level: usize,
     current_start: usize,
     action: MenuNavAction,
 ) -> usize {
     match action {
         MenuNavAction::First => 0,
         MenuNavAction::PageUp => level_select_menu_step_start(level_count, current_start, -1),
-        MenuNavAction::Current => level_select_menu_start_index(level_count, current_level),
+        MenuNavAction::Current => level_select_menu_start_index(level_count, resume_level),
         MenuNavAction::PageDown => level_select_menu_step_start(level_count, current_start, 1),
         MenuNavAction::Last => level_select_menu_clamp_start(level_count, usize::MAX),
     }
@@ -48,7 +48,7 @@ pub fn level_select_menu_nav_action_at(
     width: u32,
     height: u32,
     level_count: usize,
-    current_level: usize,
+    resume_level: usize,
     current_start: usize,
 ) -> Option<MenuNavAction> {
     tap_target_at(
@@ -56,7 +56,7 @@ pub fn level_select_menu_nav_action_at(
         py,
         width,
         height,
-        scrollbar_state(level_count, current_level, current_start),
+        scrollbar_state(level_count, resume_level, current_start),
     )
     .map(|target| match target {
         ScrollbarTapTarget::First => MenuNavAction::First,
@@ -67,12 +67,12 @@ pub fn level_select_menu_nav_action_at(
     })
 }
 
-fn scrollbar_state(level_count: usize, current_level: usize, page_start: usize) -> ScrollbarState {
+fn scrollbar_state(level_count: usize, resume_level: usize, page_start: usize) -> ScrollbarState {
     ScrollbarState {
         level_count,
         visible_count: crate::layout::menu_slots_per_page().min(level_count).max(1),
         page_start,
-        return_start: level_select_menu_start_index(level_count, current_level),
+        return_start: level_select_menu_start_index(level_count, resume_level),
     }
 }
 

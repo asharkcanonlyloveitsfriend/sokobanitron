@@ -20,13 +20,16 @@ impl AppScreen {
 pub enum AppOverlay {
     GameplayMenu,
     LevelSelect { page_start: usize },
+    LevelSetSelect { page_start: usize },
     EditorMenu,
 }
 
 impl AppOverlay {
     pub fn owning_screen(self) -> AppScreen {
         match self {
-            Self::GameplayMenu | Self::LevelSelect { .. } => AppScreen::Gameplay,
+            Self::GameplayMenu | Self::LevelSelect { .. } | Self::LevelSetSelect { .. } => {
+                AppScreen::Gameplay
+            }
             Self::EditorMenu => AppScreen::Editor,
         }
     }
@@ -111,9 +114,20 @@ impl AppState {
         matches!(self.ui.overlay, Some(AppOverlay::LevelSelect { .. }))
     }
 
+    pub fn is_level_set_select_open(&self) -> bool {
+        matches!(self.ui.overlay, Some(AppOverlay::LevelSetSelect { .. }))
+    }
+
     pub fn level_select_page_start(&self) -> Option<usize> {
         match self.ui.overlay {
             Some(AppOverlay::LevelSelect { page_start }) => Some(page_start),
+            _ => None,
+        }
+    }
+
+    pub fn level_set_select_page_start(&self) -> Option<usize> {
+        match self.ui.overlay {
+            Some(AppOverlay::LevelSetSelect { page_start }) => Some(page_start),
             _ => None,
         }
     }
@@ -142,6 +156,7 @@ mod tests {
         assert!(!app_state.is_gameplay_menu_open());
         assert!(!app_state.is_editor_menu_open());
         assert!(app_state.is_level_select_open());
+        assert!(!app_state.is_level_set_select_open());
         assert_eq!(app_state.level_select_page_start(), Some(7));
         assert_eq!(
             app_state.interaction_mode(),
@@ -157,6 +172,7 @@ mod tests {
         assert!(app_state.is_gameplay_menu_open());
         assert!(!app_state.is_editor_menu_open());
         assert!(!app_state.is_level_select_open());
+        assert!(!app_state.is_level_set_select_open());
         assert_eq!(app_state.level_select_page_start(), None);
         assert_eq!(
             app_state.interaction_mode(),
@@ -173,6 +189,7 @@ mod tests {
         assert!(!app_state.is_gameplay_menu_open());
         assert!(app_state.is_editor_menu_open());
         assert!(!app_state.is_level_select_open());
+        assert!(!app_state.is_level_set_select_open());
         assert!(!app_state.is_gameplay_screen());
         assert!(app_state.is_editor_screen());
         assert_eq!(app_state.level_select_page_start(), None);
@@ -191,6 +208,10 @@ mod tests {
         );
         assert_eq!(
             AppOverlay::LevelSelect { page_start: 3 }.owning_screen(),
+            AppScreen::Gameplay
+        );
+        assert_eq!(
+            AppOverlay::LevelSetSelect { page_start: 2 }.owning_screen(),
             AppScreen::Gameplay
         );
         assert_eq!(AppOverlay::EditorMenu.owning_screen(), AppScreen::Editor);

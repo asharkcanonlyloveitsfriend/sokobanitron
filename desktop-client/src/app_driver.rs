@@ -1,10 +1,9 @@
 use pixels::{Pixels, SurfaceTexture};
 use presentation::{GameplayPresentationState, Renderer};
 use sokobanitron_app::{
-    AppPreferences,
     app::{
-        AppDriverContext, AppInput, AppInteractionMode, AppPreferencesStore, AppScreen, AppState,
-        apply_input_and_render_in_context,
+        AppDriverContext, AppInput, AppInteractionMode, AppRuntimeMut, AppScreen, AppState,
+        AppliedUpdate, apply_input_and_render_in_context,
     },
     editor::{
         editor_cursor_moved, editor_mouse_pressed, editor_mouse_released, editor_touch,
@@ -12,13 +11,14 @@ use sokobanitron_app::{
     },
     gameplay::{
         interpret_gameplay_pointer_event, interpret_gameplay_pointer_tap, resize_gameplay_surface,
+        set_gameplay_level_sets,
     },
     level_bootstrap::load_initial_levels_for_app,
+    persistence::LevelPersistence,
     shared::PointerPhase,
 };
 use sokobanitron_gameplay::{BoardView, GameplayController};
 use sokobanitron_level_editor::LevelEditor;
-use std::path::Path;
 use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
@@ -31,7 +31,7 @@ use winit::{
 
 const INITIAL_WIDTH: u32 = 670;
 const INITIAL_HEIGHT: u32 = 891;
-const PREFERENCES_PATH: &str = "desktop-client-preferences.json";
+const LEVEL_SETS_ROOT: &str = "tmp/level_sets";
 
 pub struct App {
     window: Option<Arc<Window>>,
@@ -41,7 +41,7 @@ pub struct App {
     pub(crate) preview_boards: Vec<BoardView>,
     pub(crate) controller: GameplayController,
     pub(crate) app_state: AppState,
-    preferences: AppPreferences,
+    level_persistence: LevelPersistence,
     cursor_position: Option<(f64, f64)>,
     pub(crate) surface_width: u32,
     pub(crate) surface_height: u32,
@@ -50,21 +50,24 @@ pub struct App {
 
 impl App {
     pub fn new() -> Self {
-        let preferences = AppPreferences::load_and_save_normalized(PREFERENCES_PATH)
-            .unwrap_or_else(|err| {
-                eprintln!("warning: failed to load or normalize preferences: {err}");
-                AppPreferences::default()
-            });
-        let initial_levels = load_initial_levels_for_app();
+        let initial_levels = load_initial_levels_for_app(std::path::Path::new(LEVEL_SETS_ROOT));
         let levels = initial_levels.levels;
         let preview_boards = initial_levels.preview_boards;
-        let controller =
-            GameplayController::new(levels.clone(), preferences.level_index(levels.len()));
+        let controller = GameplayController::new_at_level(
+            levels.clone(),
+            initial_levels.initial_level_index,
+            initial_levels.persisted_resume_level_index,
+        );
         let mut app_state = AppState {
             editor_available: true,
             ..AppState::default()
         };
         resize_gameplay_surface(&mut app_state.gameplay, INITIAL_WIDTH, INITIAL_HEIGHT);
+        set_gameplay_level_sets(
+            &mut app_state.gameplay,
+            initial_levels.level_set_catalog.clone(),
+            initial_levels.active_level_set_index,
+        );
         Self {
             window: None,
             pixels: None,
@@ -73,7 +76,7 @@ impl App {
             preview_boards,
             controller,
             app_state,
-            preferences,
+            level_persistence: initial_levels.persistence,
             cursor_position: None,
             surface_width: INITIAL_WIDTH,
             surface_height: INITIAL_HEIGHT,
@@ -81,12 +84,12 @@ impl App {
         }
     }
 
-    fn apply_app_input(&mut self, input: AppInput) {
-        let _ = apply_input_and_render_in_context(self, input);
+    fn apply_app_input(&mut self, input: AppInput) -> Option<AppliedUpdate> {
+        apply_input_and_render_in_context(self, input).ok()
     }
 
     fn enter_editor_mode(&mut self) {
-        self.apply_app_input(AppInput::EnterEditorMode);
+        let _ = self.apply_app_input(AppInput::EnterEditorMode);
         reset_editor_interaction_state(&mut self.app_state);
     }
 
@@ -97,10 +100,16 @@ impl App {
                 self.enter_editor_mode();
                 self.render_current();
             }
-            AppInput::BoardTap { .. } => self.apply_app_input(input),
+            AppInput::BoardTap { .. } => {
+                let _ = self.apply_app_input(input);
+            }
             _ => {
-                self.apply_app_input(input);
-                self.render_active_gameplay_screen();
+                let Some(applied) = self.apply_app_input(input) else {
+                    return;
+                };
+                if !applied.rendered_frame {
+                    self.render_active_gameplay_screen();
+                }
             }
         }
     }
@@ -156,18 +165,13 @@ impl App {
 impl AppDriverContext for App {
     type Error = ();
 
-    fn controller_and_app_state_mut(&mut self) -> (&mut GameplayController, &mut AppState) {
-        (&mut self.controller, &mut self.app_state)
-    }
-}
-
-impl AppPreferencesStore for App {
-    fn app_preferences(&mut self) -> &mut AppPreferences {
-        &mut self.preferences
-    }
-
-    fn app_preferences_path(&self) -> &Path {
-        Path::new(PREFERENCES_PATH)
+    fn app_runtime_mut(&mut self) -> AppRuntimeMut<'_> {
+        AppRuntimeMut {
+            controller: &mut self.controller,
+            app_state: &mut self.app_state,
+            level_persistence: &mut self.level_persistence,
+            preview_boards: &mut self.preview_boards,
+        }
     }
 }
 
@@ -327,8 +331,12 @@ impl ApplicationHandler for App {
                     return;
                 }
                 match event.logical_key {
-                    Key::Named(NamedKey::Escape) => self.apply_app_input(AppInput::KeyRestart),
-                    Key::Named(NamedKey::Backspace) => self.apply_app_input(AppInput::KeyUndo),
+                    Key::Named(NamedKey::Escape) => {
+                        let _ = self.apply_app_input(AppInput::KeyRestart);
+                    }
+                    Key::Named(NamedKey::Backspace) => {
+                        let _ = self.apply_app_input(AppInput::KeyUndo);
+                    }
                     _ => {}
                 }
             }

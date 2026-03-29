@@ -3,18 +3,19 @@ use presentation::{GameplayPresentationState, Renderer};
 use sokobanitron_app::{
     AppPreferences,
     app::{
-        AppDriverContext, AppInput, AppInteractionMode, AppPreferencesStore, AppState,
+        AppDriverContext, AppInput, AppInteractionMode, AppRuntimeMut, AppState, AppliedUpdate,
         apply_input_and_render_in_context,
     },
     gameplay::{
-        interpret_gameplay_pointer_event, resize_gameplay_surface, set_gameplay_touch_slop,
+        interpret_gameplay_pointer_event, resize_gameplay_surface, set_gameplay_level_sets,
+        set_gameplay_touch_slop,
     },
     level_bootstrap::load_initial_levels_for_app,
+    persistence::LevelPersistence,
     shared::PointerPhase,
 };
 use sokobanitron_gameplay::{BoardView, GameplayController};
 use std::io::Result;
-use std::path::Path;
 
 const TOUCH_POINTER_ID: u64 = 1;
 const KINDLE_GAMEPLAY_TAP_SLOP_PX: i32 = 24;
@@ -41,12 +42,14 @@ pub struct KindleApp {
     pub(crate) controller: GameplayController,
     pub(crate) app_state: AppState,
     preferences: AppPreferences,
+    level_persistence: LevelPersistence,
     pub(crate) display: platform::Display,
 }
 
 impl KindleApp {
     pub fn new() -> Result<Self> {
-        let initial_levels = load_initial_levels_for_app();
+        let initial_levels =
+            load_initial_levels_for_app(std::path::Path::new(config::LEVEL_SETS_ROOT));
         let levels = initial_levels.levels;
         let preview_boards = initial_levels.preview_boards;
         let preferences = AppPreferences::load_and_save_normalized(config::PREFERENCES_PATH)
@@ -54,8 +57,11 @@ impl KindleApp {
                 eprintln!("warning: failed to load or normalize preferences: {err}");
                 AppPreferences::default()
             });
-        let last_attempted_level = preferences.level_index(levels.len());
-        let controller = GameplayController::new(levels.clone(), last_attempted_level);
+        let controller = GameplayController::new_at_level(
+            levels.clone(),
+            initial_levels.initial_level_index,
+            initial_levels.persisted_resume_level_index,
+        );
         let mut app_state = AppState::default();
         resize_gameplay_surface(
             &mut app_state.gameplay,
@@ -63,6 +69,11 @@ impl KindleApp {
             config::HEIGHT as u32,
         );
         set_gameplay_touch_slop(&mut app_state.gameplay, KINDLE_GAMEPLAY_TAP_SLOP_PX);
+        set_gameplay_level_sets(
+            &mut app_state.gameplay,
+            initial_levels.level_set_catalog.clone(),
+            initial_levels.active_level_set_index,
+        );
         Ok(Self {
             renderer: Self::build_renderer(),
             gameplay_presentation: GameplayPresentationState::new(),
@@ -72,6 +83,7 @@ impl KindleApp {
             controller,
             app_state,
             preferences,
+            level_persistence: initial_levels.persistence,
             display: platform::Display::new()?,
         })
     }
@@ -192,17 +204,23 @@ impl KindleApp {
         }
     }
 
-    fn apply_app_input(&mut self, input: AppInput) -> Result<()> {
-        apply_input_and_render_in_context(self, input).map(|_| ())
+    fn apply_app_input(&mut self, input: AppInput) -> Result<AppliedUpdate> {
+        apply_input_and_render_in_context(self, input)
     }
 
     fn handle_gameplay_input(&mut self, input: AppInput) -> Result<()> {
         match input {
             AppInput::NoOp => Ok(()),
-            AppInput::BoardTap { .. } => self.apply_app_input(input),
+            AppInput::BoardTap { .. } => {
+                let _ = self.apply_app_input(input)?;
+                Ok(())
+            }
             _ => {
-                self.apply_app_input(input)?;
-                self.render()
+                let applied = self.apply_app_input(input)?;
+                if !applied.rendered_frame {
+                    self.render()?;
+                }
+                Ok(())
             }
         }
     }
@@ -246,17 +264,12 @@ impl KindleApp {
 impl AppDriverContext for KindleApp {
     type Error = std::io::Error;
 
-    fn controller_and_app_state_mut(&mut self) -> (&mut GameplayController, &mut AppState) {
-        (&mut self.controller, &mut self.app_state)
-    }
-}
-
-impl AppPreferencesStore for KindleApp {
-    fn app_preferences(&mut self) -> &mut AppPreferences {
-        &mut self.preferences
-    }
-
-    fn app_preferences_path(&self) -> &Path {
-        Path::new(config::PREFERENCES_PATH)
+    fn app_runtime_mut(&mut self) -> AppRuntimeMut<'_> {
+        AppRuntimeMut {
+            controller: &mut self.controller,
+            app_state: &mut self.app_state,
+            level_persistence: &mut self.level_persistence,
+            preview_boards: &mut self.preview_boards,
+        }
     }
 }

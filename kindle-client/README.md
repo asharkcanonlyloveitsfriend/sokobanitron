@@ -17,7 +17,11 @@ From any directory:
 ```
 
 The script builds `kindle-client` for `armv7-unknown-linux-gnueabi`, copies it to
-`/mnt/us/kindle-client` on the Kindle, stops `lab126_gui`, and starts the binary.
+`/mnt/us/sokobanitron/sokobanitron` on the Kindle, stops `lab126_gui`, and starts the binary.
+
+Level sets should be copied manually into:
+
+- `/mnt/us/sokobanitron/level_sets/to_import`
 
 ## Stop
 

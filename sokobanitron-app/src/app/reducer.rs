@@ -1,12 +1,20 @@
 use super::action::AppAction;
 use super::presentation::{PresentationPlan, build_presentation_plan};
 use super::state::{AppOverlay, AppScreen, AppState};
-use presentation::layout::level_select_menu_start_index;
+use presentation::layout::{level_select_menu_start_index, level_set_select_start_index};
 use sokobanitron_gameplay::{GameplayController, GameplayControllerChanges};
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PersistenceUpdate {
+    pub resume_level_changed: Option<usize>,
+    pub solved_level: Option<usize>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AppUpdate {
     pub changes: GameplayControllerChanges,
+    pub persistence: PersistenceUpdate,
+    pub level_set_selected: Option<usize>,
     pub presentation_plan: Option<PresentationPlan>,
 }
 
@@ -50,6 +58,17 @@ pub fn apply_action(
                 app_state.ui.overlay = Some(AppOverlay::LevelSelect { page_start });
             }
         }
+        AppAction::OpenLevelSetSelect => {
+            if matches!(app_state.ui.screen, AppScreen::Gameplay)
+                && app_state.gameplay.level_sets.len() > 1
+            {
+                let page_start = level_set_select_start_index(
+                    app_state.gameplay.level_sets.len(),
+                    app_state.gameplay.active_level_set,
+                );
+                app_state.ui.overlay = Some(AppOverlay::LevelSetSelect { page_start });
+            }
+        }
         AppAction::EnterEditorMode => {
             app_state.ui.screen = AppScreen::Editor;
             app_state.ui.overlay = None;
@@ -66,9 +85,25 @@ pub fn apply_action(
                 *current_page_start = page_start;
             }
         }
+        AppAction::SetLevelSetSelectPageStart(page_start) => {
+            if let Some(AppOverlay::LevelSetSelect {
+                page_start: current_page_start,
+            }) = &mut app_state.ui.overlay
+            {
+                *current_page_start = page_start;
+            }
+        }
         AppAction::SelectLevel(level) => {
             if matches!(app_state.ui.screen, AppScreen::Gameplay) {
                 update.changes = controller.jump_to_level(level);
+                app_state.ui.overlay = None;
+            }
+        }
+        AppAction::SelectLevelSet(level_set) => {
+            if matches!(app_state.ui.screen, AppScreen::Gameplay)
+                && level_set < app_state.gameplay.level_sets.len()
+            {
+                update.level_set_selected = Some(level_set);
                 app_state.ui.overlay = None;
             }
         }
@@ -84,11 +119,19 @@ pub fn apply_action(
             {
                 let outcome = controller.click_cell_with_outcome(x, y);
                 update.changes = outcome.changes;
+                update.persistence.resume_level_changed = update.changes.resume_level_changed;
+                if outcome.became_solved {
+                    update.persistence.solved_level = Some(controller.current_level());
+                }
                 update.presentation_plan =
                     Some(build_presentation_plan(&outcome, controller, app_state));
             }
         }
         AppAction::NoOp => {}
+    }
+
+    if update.persistence.resume_level_changed.is_none() {
+        update.persistence.resume_level_changed = update.changes.resume_level_changed;
     }
 
     update
@@ -188,6 +231,19 @@ mod tests {
     }
 
     #[test]
+    fn open_level_select_uses_current_browsed_level_for_page_start() {
+        let levels = vec!["    ###   \n $$     #@\n $ #...   \n   #######".to_string(); 30];
+        let mut controller = GameplayController::new_at_level(levels, 4, Some(18));
+        let mut app_state = AppState::default();
+        apply_action(&mut controller, &mut app_state, AppAction::OpenLevelSelect);
+
+        assert_eq!(
+            app_state.ui.overlay,
+            Some(AppOverlay::LevelSelect { page_start: 3 })
+        );
+    }
+
+    #[test]
     fn open_level_select_clamps_to_last_page_at_end() {
         let levels = vec!["    ###   \n $$     #@\n $ #...   \n   #######".to_string(); 30];
         let mut controller = GameplayController::new(levels, Some(29));
@@ -198,5 +254,97 @@ mod tests {
             app_state.ui.overlay,
             Some(AppOverlay::LevelSelect { page_start: 26 })
         );
+    }
+
+    #[test]
+    fn open_level_set_select_positions_active_set_near_top() {
+        let mut controller = test_controller();
+        let mut app_state = AppState::default();
+        app_state.gameplay.level_sets = (0..30)
+            .map(|index| crate::persistence::LevelSetCatalogEntry {
+                title: format!("Set {}", index + 1),
+                completed_puzzle_count: 0,
+                total_puzzle_count: 10,
+            })
+            .collect();
+        app_state.gameplay.active_level_set = 18;
+
+        apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::OpenLevelSetSelect,
+        );
+
+        assert_eq!(
+            app_state.ui.overlay,
+            Some(AppOverlay::LevelSetSelect { page_start: 17 })
+        );
+    }
+
+    #[test]
+    fn open_level_set_select_requires_more_than_one_set() {
+        let mut controller = test_controller();
+        let mut app_state = AppState::default();
+        app_state.gameplay.level_sets = vec![crate::persistence::LevelSetCatalogEntry {
+            title: "Only Set".to_string(),
+            completed_puzzle_count: 0,
+            total_puzzle_count: 10,
+        }];
+
+        apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::OpenLevelSetSelect,
+        );
+
+        assert_eq!(app_state.ui.overlay, None);
+    }
+
+    #[test]
+    fn open_level_set_select_clamps_to_last_page_at_end() {
+        let mut controller = test_controller();
+        let mut app_state = AppState::default();
+        app_state.gameplay.level_sets = (0..30)
+            .map(|index| crate::persistence::LevelSetCatalogEntry {
+                title: format!("Set {}", index + 1),
+                completed_puzzle_count: 0,
+                total_puzzle_count: 10,
+            })
+            .collect();
+        app_state.gameplay.active_level_set = 29;
+
+        apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::OpenLevelSetSelect,
+        );
+
+        assert_eq!(
+            app_state.ui.overlay,
+            Some(AppOverlay::LevelSetSelect { page_start: 10 })
+        );
+    }
+
+    #[test]
+    fn select_level_set_records_requested_index_and_closes_overlay() {
+        let mut controller = test_controller();
+        let mut app_state = AppState::default();
+        app_state.gameplay.level_sets = (0..2)
+            .map(|index| crate::persistence::LevelSetCatalogEntry {
+                title: format!("Set {}", index + 1),
+                completed_puzzle_count: 0,
+                total_puzzle_count: 10,
+            })
+            .collect();
+        app_state.ui.overlay = Some(AppOverlay::LevelSetSelect { page_start: 0 });
+
+        let update = apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::SelectLevelSet(1),
+        );
+
+        assert_eq!(update.level_set_selected, Some(1));
+        assert_eq!(app_state.ui.overlay, None);
     }
 }

@@ -9,12 +9,15 @@ pub enum AppInput {
     // Semantic navigation inputs.
     OverlayToggle,
     OpenLevelSelect,
+    OpenLevelSetSelect,
     OverlayOpen,
     OverlayClose,
     EnterEditorMode,
     EnterGameplayMode,
     LevelSelectNavigate { page_start: usize },
     LevelSelectSelect(usize),
+    LevelSetSelectNavigate { page_start: usize },
+    LevelSetSelectSelect(usize),
     SolvedAdvance,
     BoardTap { x: u32, y: u32 },
     KeyRestart,
@@ -28,6 +31,7 @@ pub fn interpret_input(_app_state: &AppState, input: AppInput) -> AppAction {
         AppInput::ControlUndo => AppAction::Undo,
         AppInput::OverlayToggle => AppAction::ToggleOverlay,
         AppInput::OpenLevelSelect => AppAction::OpenLevelSelect,
+        AppInput::OpenLevelSetSelect => AppAction::OpenLevelSetSelect,
         AppInput::OverlayOpen => AppAction::OpenOverlay,
         AppInput::OverlayClose => AppAction::CloseOverlay,
         AppInput::EnterEditorMode => AppAction::EnterEditorMode,
@@ -36,6 +40,10 @@ pub fn interpret_input(_app_state: &AppState, input: AppInput) -> AppAction {
             AppAction::SetLevelSelectPageStart(page_start)
         }
         AppInput::LevelSelectSelect(level) => AppAction::SelectLevel(level),
+        AppInput::LevelSetSelectNavigate { page_start } => {
+            AppAction::SetLevelSetSelectPageStart(page_start)
+        }
+        AppInput::LevelSetSelectSelect(level_set) => AppAction::SelectLevelSet(level_set),
         AppInput::SolvedAdvance => AppAction::AdvanceAfterSolved,
         AppInput::BoardTap { x, y } => AppAction::TapBoardCell { x, y },
         AppInput::KeyRestart => AppAction::Restart,
@@ -83,6 +91,15 @@ mod tests {
         assert_eq!(
             interpret_input(&app_state, AppInput::OpenLevelSelect),
             AppAction::OpenLevelSelect
+        );
+    }
+
+    #[test]
+    fn interpret_open_level_set_select_maps_to_open_level_set_select() {
+        let app_state = AppState::default();
+        assert_eq!(
+            interpret_input(&app_state, AppInput::OpenLevelSetSelect),
+            AppAction::OpenLevelSetSelect
         );
     }
 

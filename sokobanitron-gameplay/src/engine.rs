@@ -85,6 +85,10 @@ impl GameEngine {
         &self.boxes
     }
 
+    pub fn box_move_history(&self) -> &[Vec<Position>] {
+        &self.box_move_history
+    }
+
     pub fn is_level_solved(&self) -> bool {
         self.boxes
             .iter()

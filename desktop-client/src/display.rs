@@ -1,7 +1,8 @@
 use crate::app_driver::App;
 use presentation::layout::ControlsUiMode;
 use presentation::renderer::{
-    draw_controls_ui, draw_overlay_primary_action_button, draw_top_menu_toggle,
+    draw_controls_ui, draw_gameplay_menu_level_set_button, draw_overlay_primary_action_button,
+    draw_top_menu_toggle,
 };
 use sokobanitron_app::{
     app::{AppScreen, FrameRequest, FrameSink},
@@ -49,6 +50,13 @@ impl App {
                         self.surface_height,
                     );
                     draw_top_menu_toggle(frame, self.surface_width, self.surface_height, true);
+                    if screen.show_change_level_set {
+                        draw_gameplay_menu_level_set_button(
+                            frame,
+                            self.surface_width,
+                            self.surface_height,
+                        );
+                    }
                     if let Some(icon) = screen.primary_action_icon {
                         draw_overlay_primary_action_button(
                             frame,
@@ -74,8 +82,33 @@ impl App {
                         self.surface_width,
                         self.surface_height,
                         &self.preview_boards,
-                        self.controller.current_level(),
+                        screen.resume_level,
                         screen.page_start,
+                    );
+                    draw_controls_ui(
+                        frame,
+                        self.surface_width,
+                        self.surface_height,
+                        ControlsUiMode::MenuOpen,
+                        false,
+                        false,
+                    );
+                    pixels.render().expect("render");
+                }
+            }
+            FrameRequest::LevelSetSelect { screen, .. } => {
+                if let Some(pixels) = &mut self.pixels {
+                    let frame = pixels.frame_mut();
+                    self.renderer.draw_background_only(
+                        frame,
+                        self.surface_width,
+                        self.surface_height,
+                    );
+                    self.renderer.draw_level_set_select_menu_contents(
+                        frame,
+                        self.surface_width,
+                        self.surface_height,
+                        screen,
                     );
                     draw_controls_ui(
                         frame,
