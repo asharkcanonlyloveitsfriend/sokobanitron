@@ -307,7 +307,7 @@ fn resolve_paint_mode(
     let current_tile = editor.world().tile(world_x, world_y);
     if current_tile == EditableTile::BoxOnGoal {
         ui.interaction.double_tap.clear();
-        return PaintMode::SetVoid;
+        return PaintMode::Void;
     }
 
     if ui
@@ -315,7 +315,7 @@ fn resolve_paint_mode(
         .double_tap
         .register_tap((world_x, world_y), at, DOUBLE_TAP_WINDOW)
     {
-        PaintMode::SetBoxOnGoal
+        PaintMode::BoxOnGoal
     } else {
         PaintMode::from_start_tile(current_tile)
     }

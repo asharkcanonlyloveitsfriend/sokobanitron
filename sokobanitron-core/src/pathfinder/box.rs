@@ -69,7 +69,7 @@ impl BoxPathfinder {
                 player_pos: player_start,
             },
             player_pathfinder: PlayerPathfinder::from_rows(planning_rows),
-            stats: PathfinderStats::default(),
+            stats: PathfinderStats,
             visited: vec![0u32; state_count],
             generation: 1,
             parents: vec![None; state_count],
@@ -88,7 +88,7 @@ impl BoxPathfinder {
 
     #[inline]
     pub fn reset_stats(&mut self) {
-        self.stats = PathfinderStats::default();
+        self.stats = PathfinderStats;
     }
 
     pub fn find_box_path(&mut self, to: Position) -> Option<Vec<Position>> {

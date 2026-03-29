@@ -11,7 +11,7 @@ if [ -z "$staged_rust_files" ]; then
 fi
 
 if ! command -v cargo >/dev/null 2>&1; then
-  echo "pre-commit: cargo is required to run rustfmt checks." >&2
+  echo "pre-commit: cargo is required to run Rust checks." >&2
   exit 1
 fi
 
@@ -41,8 +41,7 @@ if ! git diff --quiet --ignore-submodules -- || [ -n "$(git ls-files --others --
 fi
 
 if cargo fmt --all -- --check; then
-  cleanup
-  exit 0
+  :
 else
   status=$?
   echo "pre-commit: rustfmt check failed." >&2
@@ -50,3 +49,15 @@ else
   cleanup || exit 1
   exit "$status"
 fi
+
+if cargo clippy --workspace --all-targets -- -D warnings; then
+  :
+else
+  status=$?
+  echo "pre-commit: clippy check failed." >&2
+  echo "pre-commit: fix the clippy warnings and re-stage your changes." >&2
+  cleanup || exit 1
+  exit "$status"
+fi
+
+cleanup

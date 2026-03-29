@@ -3,7 +3,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct AppPreferences {
     pub progress: ProgressPreferences,
@@ -20,15 +20,6 @@ pub struct ProgressPreferences {
 #[serde(default)]
 pub struct KindlePreferences {
     pub use_app_sleep_screen: bool,
-}
-
-impl Default for AppPreferences {
-    fn default() -> Self {
-        Self {
-            progress: ProgressPreferences::default(),
-            kindle: KindlePreferences::default(),
-        }
-    }
 }
 
 impl AppPreferences {

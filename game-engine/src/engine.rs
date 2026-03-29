@@ -30,32 +30,32 @@ impl GameEngine {
         let mut base_walkable = vec![vec![false; width]; height];
 
         for (row, line) in lines.iter().enumerate() {
-            for col in 0..width {
+            for (col, cell) in base_walkable[row].iter_mut().enumerate() {
                 let ch = line.as_bytes().get(col).copied().unwrap_or(b' ') as char;
                 match ch {
                     '#' => {
-                        base_walkable[row][col] = false;
+                        *cell = false;
                     }
                     '@' | '+' => {
                         player = Some(Position::new(row, col));
                         if ch == '+' {
                             goals.insert(Position::new(row, col));
                         }
-                        base_walkable[row][col] = true;
+                        *cell = true;
                     }
                     '$' | '*' => {
                         boxes.insert(Position::new(row, col));
                         if ch == '*' {
                             goals.insert(Position::new(row, col));
                         }
-                        base_walkable[row][col] = true;
+                        *cell = true;
                     }
                     '.' => {
                         goals.insert(Position::new(row, col));
-                        base_walkable[row][col] = true;
+                        *cell = true;
                     }
                     _ => {
-                        base_walkable[row][col] = true;
+                        *cell = true;
                     }
                 }
             }

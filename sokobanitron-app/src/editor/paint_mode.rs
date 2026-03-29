@@ -7,25 +7,25 @@ use sokobanitron_level_editor::{DrawTool, EditableTile, EditorCommand};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaintMode {
-    SetFloor,
-    SetBoxOnGoal,
-    SetVoid,
+    Floor,
+    BoxOnGoal,
+    Void,
 }
 
 impl PaintMode {
     pub fn from_start_tile(tile: EditableTile) -> Self {
         if matches!(tile, EditableTile::Void) {
-            PaintMode::SetFloor
+            PaintMode::Floor
         } else {
-            PaintMode::SetVoid
+            PaintMode::Void
         }
     }
 
     pub fn to_command(self, cell_x: i32, cell_y: i32) -> EditorCommand {
         let tool = match self {
-            PaintMode::SetFloor => DrawTool::Floor,
-            PaintMode::SetBoxOnGoal => DrawTool::BoxOnGoal,
-            PaintMode::SetVoid => DrawTool::Void,
+            PaintMode::Floor => DrawTool::Floor,
+            PaintMode::BoxOnGoal => DrawTool::BoxOnGoal,
+            PaintMode::Void => DrawTool::Void,
         };
         EditorCommand::PaintCell {
             cell_x,

@@ -14,6 +14,14 @@ const BUTTON_TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
 const HINT_TEXT_COLOR: [u8; 4] = [172, 172, 172, 255];
 const UI_TEXT_SCALE: usize = 4;
 
+struct EditorControlsState {
+    draw_mode_active: bool,
+    can_zoom_out: bool,
+    can_zoom_in: bool,
+    can_undo: bool,
+    can_restart: bool,
+}
+
 impl Renderer {
     pub fn draw_editor_screen(
         &mut self,
@@ -54,11 +62,13 @@ impl Renderer {
             frame,
             width,
             height,
-            request.draw_mode_active,
-            request.can_zoom_out,
-            request.can_zoom_in,
-            request.can_undo,
-            request.can_restart,
+            EditorControlsState {
+                draw_mode_active: request.draw_mode_active,
+                can_zoom_out: request.can_zoom_out,
+                can_zoom_in: request.can_zoom_in,
+                can_undo: request.can_undo,
+                can_restart: request.can_restart,
+            },
         );
         draw_top_menu_toggle(frame, width, height, false);
     }
@@ -82,17 +92,8 @@ impl Renderer {
     }
 }
 
-fn draw_editor_controls(
-    frame: &mut [u8],
-    width: u32,
-    height: u32,
-    draw_mode_active: bool,
-    can_zoom_out: bool,
-    can_zoom_in: bool,
-    can_undo: bool,
-    can_restart: bool,
-) {
-    let mode_icon = if draw_mode_active {
+fn draw_editor_controls(frame: &mut [u8], width: u32, height: u32, controls: EditorControlsState) {
+    let mode_icon = if controls.draw_mode_active {
         UiIcon::Draw
     } else {
         UiIcon::Manipulate
@@ -106,8 +107,8 @@ fn draw_editor_controls(
         BUTTON_TEXT_COLOR,
     );
 
-    if draw_mode_active {
-        if can_zoom_out {
+    if controls.draw_mode_active {
+        if controls.can_zoom_out {
             draw_centered_text_in_rect(
                 frame,
                 width,
@@ -119,7 +120,7 @@ fn draw_editor_controls(
                 BUTTON_TEXT_COLOR,
             );
         }
-        if can_zoom_in {
+        if controls.can_zoom_in {
             draw_centered_text_in_rect(
                 frame,
                 width,
@@ -132,7 +133,7 @@ fn draw_editor_controls(
             );
         }
     } else {
-        if can_undo {
+        if controls.can_undo {
             draw_ui_icon_in_rect(
                 frame,
                 width,
@@ -142,7 +143,7 @@ fn draw_editor_controls(
                 BUTTON_TEXT_COLOR,
             );
         }
-        if can_restart {
+        if controls.can_restart {
             draw_ui_icon_in_rect(
                 frame,
                 width,

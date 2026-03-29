@@ -60,8 +60,10 @@ impl App {
         let preview_boards = initial_levels.preview_boards;
         let controller =
             GameplayController::new(levels.clone(), preferences.level_index(levels.len()));
-        let mut app_state = AppState::default();
-        app_state.editor_available = true;
+        let mut app_state = AppState {
+            editor_available: true,
+            ..AppState::default()
+        };
         resize_gameplay_surface(&mut app_state.gameplay, INITIAL_WIDTH, INITIAL_HEIGHT);
         Self {
             window: None,
