@@ -1,0 +1,52 @@
+#!/bin/sh
+
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+staged_rust_files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.rs')
+if [ -z "$staged_rust_files" ]; then
+  exit 0
+fi
+
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "pre-commit: cargo is required to run rustfmt checks." >&2
+  exit 1
+fi
+
+stashed=0
+stash_name="pre-commit-rustfmt-$(date +%s)-$$"
+
+cleanup() {
+  if [ "$stashed" -eq 1 ]; then
+    if ! git stash pop --quiet >/dev/null 2>&1; then
+      echo "pre-commit: failed to restore unstaged changes from git stash." >&2
+      echo "pre-commit: recover them with 'git stash list' and 'git stash pop'." >&2
+      return 1
+    fi
+  fi
+}
+
+handle_signal() {
+  cleanup || true
+  exit 1
+}
+
+trap handle_signal HUP INT TERM
+
+if ! git diff --quiet --ignore-submodules -- || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+  git stash push --keep-index --include-untracked --quiet --message "$stash_name" >/dev/null
+  stashed=1
+fi
+
+if cargo fmt --all -- --check; then
+  cleanup
+  exit 0
+else
+  status=$?
+  echo "pre-commit: rustfmt check failed." >&2
+  echo "pre-commit: run 'cargo fmt --all' and re-stage your changes." >&2
+  cleanup || exit 1
+  exit "$status"
+fi
