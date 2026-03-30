@@ -48,12 +48,14 @@ internal class EntityRenderer(
         canvas: Canvas,
         viewport: BoardViewport,
         playerPosition: Position,
+        eyesClosed: Boolean = false,
     ) {
         entityDrawer.drawPlayer(
             canvas = canvas,
             viewport = viewport,
             geometry = geometry,
             playerPosition = playerPosition,
+            eyesClosed = eyesClosed,
         )
     }
 

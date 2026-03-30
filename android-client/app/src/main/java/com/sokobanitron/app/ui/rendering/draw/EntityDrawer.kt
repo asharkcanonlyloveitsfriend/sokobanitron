@@ -58,6 +58,7 @@ internal class EntityDrawer(
         viewport: BoardViewport,
         playerPosition: Position,
         geometry: ResolvedEntityGeometry,
+        eyesClosed: Boolean = false,
     ) {
         val bitmapPaint = assets.bitmapPaint()
         val offsetX = viewport.offsetX
@@ -72,5 +73,10 @@ internal class EntityDrawer(
 
         val body = assets.getBitmap(R.drawable.player_slime, geometry.playerSizePx)
         canvas.drawBitmap(body, left, top, bitmapPaint)
+
+        if (eyesClosed) {
+            val blinkEyes = assets.getBitmap(R.drawable.player_eyes_blink, geometry.playerSizePx)
+            canvas.drawBitmap(blinkEyes, left, top, bitmapPaint)
+        }
     }
 }

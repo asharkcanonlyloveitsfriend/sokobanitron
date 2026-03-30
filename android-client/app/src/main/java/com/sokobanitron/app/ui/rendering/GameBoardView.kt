@@ -22,6 +22,10 @@ internal class GameBoardView(
     context: Context,
 ) : View(context),
     GameBoardPresenter {
+    private companion object {
+        const val PLAYER_IDLE_SLEEP_DELAY_MS = 120_000L
+    }
+
     private val assets = AndroidGameAssets(context)
     private val entityRenderer =
         EntityRenderer(
@@ -32,6 +36,7 @@ internal class GameBoardView(
     private var staticFrame: StaticBoardFrame? = null
     private var boxPositions: Set<Position> = emptySet()
     private var playerPosition: Position? = null
+    private var playerIsSleeping = false
 
     private var onTapCell: ((Position) -> Unit)? = null
     private var selectedBox: Position? = null
@@ -41,6 +46,11 @@ internal class GameBoardView(
             invalidateRects = { rects -> invalidateRects(*rects) },
             postDelayed = { runnable, delayMs -> postDelayed(runnable, delayMs) },
         )
+    private val playerIdleSleepRunnable =
+        Runnable {
+            playerIsSleeping = true
+            postInvalidateOnAnimation()
+        }
 
     init {
         setOnTouchListener { _, event ->
@@ -56,6 +66,18 @@ internal class GameBoardView(
     }
 
     override fun asView(): View = this
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(playerIdleSleepRunnable)
+        super.onDetachedFromWindow()
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (hasWindowFocus) {
+            restartPlayerIdleSleepTimer()
+        }
+    }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -81,6 +103,8 @@ internal class GameBoardView(
     }
 
     override fun applyDelta(delta: GameController.RenderDelta) {
+        wakePlayerFromIdleSleep()
+
         when (delta) {
             is GameController.RenderDelta.LevelLoaded -> {
                 onLevelLoaded(
@@ -106,6 +130,8 @@ internal class GameBoardView(
                 onLevelSolved(isClean = delta.isClean)
             }
         }
+
+        restartPlayerIdleSleepTimer()
     }
 
     private fun drawInternal(canvas: Canvas) {
@@ -129,10 +155,13 @@ internal class GameBoardView(
                 canvas = canvas,
                 viewport = viewport,
                 playerPosition = playerPos,
+                eyesClosed = playerIsSleeping,
             )
         }
 
         animationRunner.drawOverEntities(canvas)
+
+        playerIsSleeping = false
     }
 
     private fun onLevelLoaded(
@@ -146,6 +175,17 @@ internal class GameBoardView(
         this.playerPosition = playerPosition
         selectedBox = null
         invalidate()
+    }
+
+    private fun wakePlayerFromIdleSleep() {
+        removeCallbacks(playerIdleSleepRunnable)
+        playerIsSleeping = false
+    }
+
+    private fun restartPlayerIdleSleepTimer() {
+        removeCallbacks(playerIdleSleepRunnable)
+        if (playerPosition == null) return
+        postDelayed(playerIdleSleepRunnable, PLAYER_IDLE_SLEEP_DELAY_MS)
     }
 
     private fun onStateChanged(
