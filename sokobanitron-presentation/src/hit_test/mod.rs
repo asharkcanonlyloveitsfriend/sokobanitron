@@ -20,4 +20,6 @@ pub use level_select::{
 pub use level_set_select::{
     level_set_select_nav_action_at, level_set_select_start_for_nav, level_set_select_target_at,
 };
-pub use overlay::overlay_primary_action_button_contains;
+pub use overlay::{
+    overlay_primary_action_button_contains, overlay_secondary_action_button_contains,
+};

@@ -36,7 +36,7 @@ pub struct LevelSelectScreenRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LevelSetSelectScreenRequest {
     pub page_start: usize,
-    pub active_level_set: usize,
+    pub active_level_set: Option<usize>,
     pub entries: Vec<LevelSetListEntry>,
 }
 
@@ -63,6 +63,7 @@ pub struct EditorScreenRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EditorMenuScreenRequest {
     pub primary_action_icon: UiIcon,
+    pub show_save_button: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

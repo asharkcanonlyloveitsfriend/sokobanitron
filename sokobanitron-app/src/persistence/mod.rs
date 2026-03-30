@@ -12,7 +12,9 @@ mod tests;
 use std::io;
 
 pub use bootstrap::BootstrappedLevelStore;
-pub use store::{LevelPersistence, LevelSetCatalogEntry, LoadedLevelSetData};
+pub use store::{
+    LevelPersistence, LevelSetCatalogEntry, LevelSetKind, LoadedLevelSetData, SavedCreatedPuzzle,
+};
 
 fn sqlite_error(err: rusqlite::Error) -> io::Error {
     io::Error::other(format!("sqlite: {err}"))

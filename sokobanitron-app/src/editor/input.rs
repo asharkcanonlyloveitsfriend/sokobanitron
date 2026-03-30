@@ -23,6 +23,11 @@ use super::view::{
 
 const DOUBLE_TAP_WINDOW: Duration = Duration::from_millis(325);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorUiAction {
+    SavePuzzle,
+}
+
 pub fn editor_cursor_moved(app_state: &mut AppState, editor: &mut LevelEditor, x: f64, y: f64) {
     let x = x.round() as i32;
     let y = y.round() as i32;
@@ -47,7 +52,12 @@ pub fn editor_cursor_moved(app_state: &mut AppState, editor: &mut LevelEditor, x
     }
 }
 
-pub fn editor_mouse_pressed(app_state: &mut AppState, editor: &mut LevelEditor, x: f64, y: f64) {
+pub fn editor_mouse_pressed(
+    app_state: &mut AppState,
+    editor: &mut LevelEditor,
+    x: f64,
+    y: f64,
+) -> Option<EditorUiAction> {
     app_state.editor.interaction.cursor_position = Some((x.round() as i32, y.round() as i32));
     handle_editor_pointer_event(
         app_state,
@@ -59,7 +69,7 @@ pub fn editor_mouse_pressed(app_state: &mut AppState, editor: &mut LevelEditor, 
             y,
             Instant::now(),
         ),
-    );
+    )
 }
 
 pub fn editor_mouse_released(app_state: &mut AppState) {
@@ -109,58 +119,72 @@ pub fn editor_touch(
     phase: PointerPhase,
     x: f64,
     y: f64,
-) {
+) -> Option<EditorUiAction> {
     handle_editor_pointer_event(
         app_state,
         editor,
         PointerEvent::new(id, phase, x, y, Instant::now()),
-    );
+    )
 }
 
 fn handle_editor_pointer_event(
     app_state: &mut AppState,
     editor: &mut LevelEditor,
     event: PointerEvent,
-) {
-    let Some(gesture) = app_state.editor.interaction.pointer.handle_event(event) else {
-        return;
-    };
-    handle_editor_gesture(app_state, editor, gesture);
+) -> Option<EditorUiAction> {
+    let gesture = app_state.editor.interaction.pointer.handle_event(event)?;
+    handle_editor_gesture(app_state, editor, gesture)
 }
 
 fn handle_editor_gesture(
     app_state: &mut AppState,
     editor: &mut LevelEditor,
     gesture: PointerGesture,
-) {
+) -> Option<EditorUiAction> {
     match gesture {
         PointerGesture::Started(contact) => {
             let surface = build_editor_surface_model(app_state, editor);
             let (screen_x, screen_y) = contact.position.as_f64();
             let target = editor_surface_target_at(&surface, screen_x, screen_y);
             if app_state.is_editor_menu_open() {
-                handle_editor_menu_target(app_state, target);
-                return;
+                return handle_editor_menu_target(app_state, target);
             }
             handle_editor_started_target(app_state, editor, contact, target);
+            None
         }
         PointerGesture::DragStarted(contact) | PointerGesture::DragMoved(contact) => {
             continue_editor_drag(app_state, editor, contact);
+            None
         }
         PointerGesture::Ended(contact) | PointerGesture::Cancelled(contact) => {
             clear_active_stroke(app_state, contact.id);
+            None
         }
         PointerGesture::Tap(tap) => {
             clear_active_stroke(app_state, tap.id);
+            None
         }
     }
 }
 
-fn handle_editor_menu_target(app_state: &mut AppState, target: Option<EditorSurfaceTarget>) {
+fn handle_editor_menu_target(
+    app_state: &mut AppState,
+    target: Option<EditorSurfaceTarget>,
+) -> Option<EditorUiAction> {
     match target {
-        Some(EditorSurfaceTarget::TopMenuToggle) => close_editor_menu(app_state),
-        Some(EditorSurfaceTarget::OverlayPrimaryAction) => leave_editor_for_gameplay(app_state),
-        _ => {}
+        Some(EditorSurfaceTarget::TopMenuToggle) => {
+            close_editor_menu(app_state);
+            None
+        }
+        Some(EditorSurfaceTarget::OverlayPrimaryAction) => {
+            leave_editor_for_gameplay(app_state);
+            None
+        }
+        Some(EditorSurfaceTarget::OverlaySecondaryAction) => {
+            close_editor_menu(app_state);
+            Some(EditorUiAction::SavePuzzle)
+        }
+        _ => None,
     }
 }
 
@@ -183,7 +207,9 @@ fn handle_editor_started_target(
         Some(EditorSurfaceTarget::BoardCell { world_x, world_y }) => {
             begin_editor_board_interaction(app_state, editor, contact, world_x, world_y);
         }
-        Some(EditorSurfaceTarget::OverlayPrimaryAction) | None => {}
+        Some(EditorSurfaceTarget::OverlayPrimaryAction)
+        | Some(EditorSurfaceTarget::OverlaySecondaryAction)
+        | None => {}
     }
 }
 
@@ -350,4 +376,53 @@ fn resolve_manipulate_action(
 enum ZoomAction {
     ZoomIn,
     ZoomOut,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{EditorUiAction, editor_mouse_pressed};
+    use crate::app::state::{AppOverlay, AppScreen, AppState};
+    use presentation::layout::overlay_secondary_action_button_rect;
+    use sokobanitron_level_editor::{DrawTool, EditorCommand, EditorMode, LevelEditor};
+
+    #[test]
+    fn save_button_returns_action_and_closes_editor_menu() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        app_state.ui.overlay = Some(AppOverlay::EditorMenu);
+        let mut editor = LevelEditor::new();
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 2,
+            cell_y: 0,
+            tool: DrawTool::Floor,
+        });
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 0,
+            cell_y: 0,
+            tool: DrawTool::BoxOnGoal,
+        });
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Manipulate));
+        editor.apply_command(EditorCommand::SelectBox {
+            cell_x: 0,
+            cell_y: 0,
+        });
+        editor.apply_command(EditorCommand::MoveSelectedBoxTo {
+            cell_x: 1,
+            cell_y: 0,
+        });
+        let rect = overlay_secondary_action_button_rect(
+            app_state.editor.viewport.surface_width,
+            app_state.editor.viewport.surface_height,
+        );
+
+        let action = editor_mouse_pressed(
+            &mut app_state,
+            &mut editor,
+            (rect.x + rect.w / 2) as f64,
+            (rect.y + rect.h / 2) as f64,
+        );
+
+        assert_eq!(action, Some(EditorUiAction::SavePuzzle));
+        assert!(!app_state.is_editor_menu_open());
+    }
 }

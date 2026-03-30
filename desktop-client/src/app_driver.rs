@@ -3,7 +3,7 @@ use presentation::{GameplayPresentationState, Renderer};
 use sokobanitron_app::{
     app::{
         AppDriverContext, AppInput, AppInteractionMode, AppRuntimeMut, AppScreen, AppState,
-        AppliedUpdate, apply_input_and_render_in_context,
+        AppliedUpdate, apply_editor_ui_action, apply_input_and_render_in_context,
     },
     editor::{
         editor_cursor_moved, editor_mouse_pressed, editor_mouse_released, editor_touch,
@@ -19,6 +19,7 @@ use sokobanitron_app::{
 };
 use sokobanitron_gameplay::{BoardView, GameplayController};
 use sokobanitron_level_editor::LevelEditor;
+use std::io;
 use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
@@ -49,8 +50,8 @@ pub struct App {
 }
 
 impl App {
-    pub fn new() -> Self {
-        let initial_levels = load_initial_levels_for_app(std::path::Path::new(LEVEL_SETS_ROOT));
+    pub fn new() -> io::Result<Self> {
+        let initial_levels = load_initial_levels_for_app(std::path::Path::new(LEVEL_SETS_ROOT))?;
         let levels = initial_levels.levels;
         let preview_boards = initial_levels.preview_boards;
         let controller = GameplayController::new_at_level(
@@ -66,9 +67,9 @@ impl App {
         set_gameplay_level_sets(
             &mut app_state.gameplay,
             initial_levels.level_set_catalog.clone(),
-            initial_levels.active_level_set_index,
+            Some(initial_levels.active_level_set_index),
         );
-        Self {
+        Ok(Self {
             window: None,
             pixels: None,
             renderer: Renderer::new(),
@@ -81,7 +82,7 @@ impl App {
             surface_width: INITIAL_WIDTH,
             surface_height: INITIAL_HEIGHT,
             editor: LevelEditor::new(),
-        }
+        })
     }
 
     fn apply_app_input(&mut self, input: AppInput) -> Option<AppliedUpdate> {
@@ -132,12 +133,26 @@ impl App {
     }
 
     fn on_editor_mouse_pressed(&mut self, x: f64, y: f64) {
-        editor_mouse_pressed(&mut self.app_state, &mut self.editor, x, y);
+        let action = editor_mouse_pressed(&mut self.app_state, &mut self.editor, x, y);
+        let runtime = AppRuntimeMut {
+            controller: &mut self.controller,
+            app_state: &mut self.app_state,
+            level_persistence: &mut self.level_persistence,
+            preview_boards: &mut self.preview_boards,
+        };
+        apply_editor_ui_action(action, runtime.with_editor(&mut self.editor));
         self.render_current();
     }
 
     fn on_editor_touch(&mut self, id: u64, phase: PointerPhase, x: f64, y: f64) {
-        editor_touch(&mut self.app_state, &mut self.editor, id, phase, x, y);
+        let action = editor_touch(&mut self.app_state, &mut self.editor, id, phase, x, y);
+        let runtime = AppRuntimeMut {
+            controller: &mut self.controller,
+            app_state: &mut self.app_state,
+            level_persistence: &mut self.level_persistence,
+            preview_boards: &mut self.preview_boards,
+        };
+        apply_editor_ui_action(action, runtime.with_editor(&mut self.editor));
         self.render_current();
     }
 

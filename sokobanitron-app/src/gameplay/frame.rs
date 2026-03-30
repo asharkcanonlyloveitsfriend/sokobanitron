@@ -142,7 +142,7 @@ mod tests {
 
         assert_eq!(
             build_current_frame_request(&controller, &app_state),
-            build_level_select_frame_request(12, controller.resume_level(), PresentMode::Full),
+            build_level_select_frame_request(12, controller.resume_level(), PresentMode::Full,),
         );
     }
 
@@ -184,7 +184,6 @@ mod tests {
         let controller = controller();
         let app_state = AppState::default();
 
-        let request = build_current_frame_request(&controller, &app_state);
         let FrameRequest::Gameplay {
             screen:
                 GameplayScreenRequest {
@@ -193,7 +192,7 @@ mod tests {
                     ..
                 },
             present_mode,
-        } = request
+        } = build_current_frame_request(&controller, &app_state)
         else {
             panic!("expected gameplay request");
         };

@@ -1,9 +1,7 @@
 use crate::persistence::{BootstrappedLevelStore, LevelPersistence, LevelSetCatalogEntry};
 use sokobanitron_gameplay::{BoardView, GameplayController, OrientationPolicy};
+use std::io;
 use std::path::Path;
-
-const DEFAULT_FALLBACK_LEVEL_LINES: [&str; 4] =
-    ["    ###   ", " $$     #@", " $ #...   ", "   #######"];
 
 pub struct InitialLevels {
     pub levels: Vec<String>,
@@ -15,46 +13,30 @@ pub struct InitialLevels {
     pub active_level_set_index: usize,
 }
 
-pub fn load_initial_levels_for_app(level_sets_root: &Path) -> InitialLevels {
-    match LevelPersistence::bootstrap(level_sets_root, OrientationPolicy::RotateWideToPortrait) {
-        Ok(bootstrapped) if !bootstrapped.levels.is_empty() => {
-            initial_levels_from_bootstrap(bootstrapped)
-        }
-        Ok(_) => fallback_initial_levels(),
-        Err(err) => {
-            eprintln!(
-                "warning: failed to initialize persistent level storage at {}: {err}",
+pub fn load_initial_levels_for_app(level_sets_root: &Path) -> io::Result<InitialLevels> {
+    let bootstrapped =
+        LevelPersistence::bootstrap(level_sets_root, OrientationPolicy::RotateWideToPortrait)?;
+    if bootstrapped.levels.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!(
+                "no levels available in {}; import an .slc file into to_import",
                 level_sets_root.display()
-            );
-            fallback_initial_levels()
-        }
+            ),
+        ));
     }
-}
 
-fn fallback_level_ascii() -> String {
-    DEFAULT_FALLBACK_LEVEL_LINES.join("\n")
-}
-
-fn fallback_initial_levels() -> InitialLevels {
-    let levels = vec![fallback_level_ascii()];
-    let preview_boards = levels
-        .iter()
-        .map(String::as_str)
-        .map(build_preview_board)
-        .collect();
-
-    InitialLevels {
-        levels,
-        preview_boards,
-        initial_level_index: 0,
-        persisted_resume_level_index: None,
-        persistence: LevelPersistence::default(),
-        level_set_catalog: Vec::new(),
-        active_level_set_index: 0,
-    }
+    Ok(initial_levels_from_bootstrap(bootstrapped))
 }
 
 fn initial_levels_from_bootstrap(bootstrapped: BootstrappedLevelStore) -> InitialLevels {
+    debug_assert!(
+        bootstrapped.levels.is_empty() == bootstrapped.active_level_set_index.is_none(),
+        "bootstrapped active level set index should be present iff levels are present"
+    );
+    let active_level_set_index = bootstrapped
+        .active_level_set_index
+        .expect("playable bootstrap result must include an active level set index");
     let preview_boards = build_preview_boards(&bootstrapped.levels);
 
     InitialLevels {
@@ -64,7 +46,7 @@ fn initial_levels_from_bootstrap(bootstrapped: BootstrappedLevelStore) -> Initia
         persisted_resume_level_index: bootstrapped.persisted_resume_level_index,
         persistence: bootstrapped.persistence,
         level_set_catalog: bootstrapped.level_set_catalog,
-        active_level_set_index: bootstrapped.active_level_set_index,
+        active_level_set_index,
     }
 }
 
@@ -80,4 +62,38 @@ fn build_preview_board(level_ascii: &str) -> BoardView {
     GameplayController::new(vec![level_ascii.to_string()], None)
         .board()
         .clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::load_initial_levels_for_app;
+    use std::fs;
+    use std::io;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn empty_store_bootstraps_without_fallback_content() {
+        let root = temp_dir("empty-store");
+
+        let err = match load_initial_levels_for_app(&root) {
+            Ok(_) => panic!("empty store should fail"),
+            Err(err) => err,
+        };
+
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
+        assert!(err.to_string().contains("no levels available"));
+
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock before epoch")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("sokobanitron-level-bootstrap-{name}-{nanos}"));
+        fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
 }

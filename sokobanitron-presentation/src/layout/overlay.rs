@@ -15,7 +15,7 @@ pub fn overlay_primary_action_button_rect(width: u32, height: u32) -> ScreenRect
     }
 }
 
-pub fn gameplay_menu_level_set_button_rect(width: u32, height: u32) -> ScreenRect {
+pub fn overlay_secondary_action_button_rect(width: u32, height: u32) -> ScreenRect {
     let w = width
         .saturating_sub(UI_BUTTON_MARGIN.saturating_mul(4))
         .min(UI_BUTTON_SIZE.saturating_mul(5));
@@ -32,4 +32,8 @@ pub fn gameplay_menu_level_set_button_rect(width: u32, height: u32) -> ScreenRec
         w,
         h,
     }
+}
+
+pub fn gameplay_menu_level_set_button_rect(width: u32, height: u32) -> ScreenRect {
+    overlay_secondary_action_button_rect(width, height)
 }

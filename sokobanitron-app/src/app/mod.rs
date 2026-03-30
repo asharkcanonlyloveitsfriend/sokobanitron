@@ -17,8 +17,9 @@ pub mod state;
 
 pub use action::AppAction;
 pub use driver::{
-    AppDriverContext, AppRuntimeMut, AppliedUpdate, apply_action_and_render_in_context,
-    apply_action_in_context, apply_input_and_render_in_context,
+    AppDriverContext, AppRuntimeMut, AppliedUpdate, EditorAppRuntimeMut,
+    apply_action_and_render_in_context, apply_action_in_context, apply_editor_ui_action,
+    apply_input_and_render_in_context,
 };
 pub use input::{AppInput, interpret_input};
 pub use presentation::{

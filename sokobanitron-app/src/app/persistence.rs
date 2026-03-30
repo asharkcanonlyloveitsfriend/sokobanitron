@@ -1,9 +1,12 @@
 use super::{AppState, AppliedUpdate};
 use crate::gameplay::set_gameplay_level_sets;
 use crate::level_bootstrap::build_preview_boards;
-use crate::persistence::LevelPersistence;
+use crate::persistence::{LevelPersistence, SavedCreatedPuzzle};
 use sokobanitron_gameplay::{BoardView, GameplayController};
+use sokobanitron_level_editor::{ExportPuzzleError, LevelEditor};
 use std::io;
+
+pub const DEFAULT_USER_CREATED_LEVEL_SET_TITLE: &str = "My Puzzles";
 
 struct ActivatedLevelSet {
     pub controller: GameplayController,
@@ -42,12 +45,33 @@ fn persist_runtime_changes(
     }
 }
 
-fn sync_level_set_catalog(app_state: &mut AppState, level_persistence: &LevelPersistence) {
-    set_gameplay_level_sets(
-        &mut app_state.gameplay,
-        level_persistence.level_set_catalog(),
-        level_persistence.active_level_set_index().unwrap_or(0),
-    );
+pub(crate) fn sync_level_set_catalog_for_app(
+    app_state: &mut AppState,
+    level_persistence: &LevelPersistence,
+) {
+    let level_sets = level_persistence.level_set_catalog();
+    let active_level_set = if level_sets.is_empty() {
+        None
+    } else {
+        Some(
+            level_persistence
+                .active_level_set_index()
+                .expect("non-empty level set catalog must have an active level set index"),
+        )
+    };
+    set_gameplay_level_sets(&mut app_state.gameplay, level_sets, active_level_set);
+}
+
+pub(crate) fn persist_editor_puzzle_to_default_set(
+    level_persistence: &mut LevelPersistence,
+    editor: &LevelEditor,
+) -> io::Result<SavedCreatedPuzzle> {
+    let exported = editor.export_puzzle().map_err(map_export_puzzle_error)?;
+    level_persistence.save_created_puzzle(
+        DEFAULT_USER_CREATED_LEVEL_SET_TITLE,
+        &exported.level_ascii,
+        &exported.reference_solution,
+    )
 }
 
 fn activate_level_set_for_app(
@@ -68,6 +92,19 @@ fn activate_level_set_for_app(
         controller,
         preview_boards,
     }))
+}
+
+pub(crate) fn refresh_level_set_for_app(
+    controller: &mut GameplayController,
+    level_persistence: &mut LevelPersistence,
+    preview_boards: &mut Vec<BoardView>,
+    selected_index: usize,
+) -> io::Result<()> {
+    let activated = activate_level_set_for_app(level_persistence, selected_index)?
+        .ok_or_else(|| io::Error::other(format!("level set index {selected_index} missing")))?;
+    *controller = activated.controller;
+    *preview_boards = activated.preview_boards;
+    Ok(())
 }
 
 pub(crate) fn apply_runtime_effects(
@@ -98,7 +135,7 @@ pub(crate) fn apply_runtime_effects(
 
     // Catalog sync is an in-memory mirror of the persistence state, so keep it as the final step
     // after any level-set activation and persistence writes have settled.
-    sync_level_set_catalog(app_state, level_persistence);
+    sync_level_set_catalog_for_app(app_state, level_persistence);
 
     if errors.is_empty() {
         Ok(effects)
@@ -107,12 +144,28 @@ pub(crate) fn apply_runtime_effects(
     }
 }
 
+fn map_export_puzzle_error(err: ExportPuzzleError) -> io::Error {
+    let message = match err {
+        ExportPuzzleError::EmptyBoard => "editor puzzle has no non-void cells",
+        ExportPuzzleError::MissingPlayer => "editor puzzle is missing a player start",
+        ExportPuzzleError::MissingReferenceSolution => {
+            "editor puzzle is missing a reference solution"
+        }
+    };
+    io::Error::new(io::ErrorKind::InvalidInput, message)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::apply_runtime_effects;
+    use super::{
+        DEFAULT_USER_CREATED_LEVEL_SET_TITLE, apply_runtime_effects,
+        persist_editor_puzzle_to_default_set,
+    };
     use crate::app::{AppState, AppliedUpdate};
     use crate::gameplay::set_gameplay_level_sets;
     use crate::level_bootstrap::load_initial_levels_for_app;
+    use crate::persistence::LevelPersistence;
+    use sokobanitron_level_editor::{DrawTool, EditorCommand, EditorMode, LevelEditor};
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -160,7 +213,7 @@ mod tests {
         )
         .expect("write beta");
 
-        let initial = load_initial_levels_for_app(&root);
+        let initial = load_initial_levels_for_app(&root).expect("load initial levels");
         let mut controller = sokobanitron_gameplay::GameplayController::new_at_level(
             initial.levels.clone(),
             initial.initial_level_index,
@@ -170,7 +223,7 @@ mod tests {
         set_gameplay_level_sets(
             &mut app_state.gameplay,
             initial.level_set_catalog.clone(),
-            initial.active_level_set_index,
+            Some(initial.active_level_set_index),
         );
         let mut level_persistence = initial.persistence;
         let mut preview_boards = initial.preview_boards;
@@ -193,15 +246,56 @@ mod tests {
         .expect("apply runtime update");
 
         assert!(effects.needs_gameplay_render);
-        assert_eq!(app_state.gameplay.active_level_set, 1);
+        assert_eq!(app_state.gameplay.active_level_set, Some(1));
         assert_eq!(controller.level_count(), 2);
         assert_eq!(preview_boards.len(), 2);
 
         drop(level_persistence);
 
-        let reloaded = load_initial_levels_for_app(&root);
+        let reloaded = load_initial_levels_for_app(&root).expect("reload initial levels");
         assert_eq!(reloaded.active_level_set_index, 0);
         assert_eq!(reloaded.initial_level_index, 0);
+
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn persisting_editor_puzzle_uses_default_user_created_set() {
+        let root = temp_dir("persist-editor-puzzle");
+        let mut level_persistence =
+            LevelPersistence::bootstrap(&root, sokobanitron_gameplay::OrientationPolicy::Keep)
+                .expect("bootstrap persistence")
+                .persistence;
+        let mut editor = LevelEditor::new();
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 2,
+            cell_y: 0,
+            tool: DrawTool::Floor,
+        });
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 0,
+            cell_y: 0,
+            tool: DrawTool::BoxOnGoal,
+        });
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Manipulate));
+        editor.apply_command(EditorCommand::SelectBox {
+            cell_x: 0,
+            cell_y: 0,
+        });
+        editor.apply_command(EditorCommand::MoveSelectedBoxTo {
+            cell_x: 1,
+            cell_y: 0,
+        });
+
+        let saved = persist_editor_puzzle_to_default_set(&mut level_persistence, &editor)
+            .expect("persist editor puzzle");
+
+        assert_eq!(saved.level_set_index, 0);
+        assert_eq!(saved.level_index, 0);
+        let catalog = level_persistence.level_set_catalog();
+        assert_eq!(catalog.len(), 1);
+        assert_eq!(catalog[0].title, DEFAULT_USER_CREATED_LEVEL_SET_TITLE);
+        assert_eq!(catalog[0].total_puzzle_count, 1);
 
         fs::remove_dir_all(root).expect("cleanup");
     }

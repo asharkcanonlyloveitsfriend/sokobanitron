@@ -262,12 +262,13 @@ mod tests {
         let mut app_state = AppState::default();
         app_state.gameplay.level_sets = (0..30)
             .map(|index| crate::persistence::LevelSetCatalogEntry {
+                kind: crate::persistence::LevelSetKind::Imported,
                 title: format!("Set {}", index + 1),
                 completed_puzzle_count: 0,
                 total_puzzle_count: 10,
             })
             .collect();
-        app_state.gameplay.active_level_set = 18;
+        app_state.gameplay.active_level_set = Some(18);
 
         apply_action(
             &mut controller,
@@ -286,6 +287,7 @@ mod tests {
         let mut controller = test_controller();
         let mut app_state = AppState::default();
         app_state.gameplay.level_sets = vec![crate::persistence::LevelSetCatalogEntry {
+            kind: crate::persistence::LevelSetKind::Imported,
             title: "Only Set".to_string(),
             completed_puzzle_count: 0,
             total_puzzle_count: 10,
@@ -306,12 +308,13 @@ mod tests {
         let mut app_state = AppState::default();
         app_state.gameplay.level_sets = (0..30)
             .map(|index| crate::persistence::LevelSetCatalogEntry {
+                kind: crate::persistence::LevelSetKind::Imported,
                 title: format!("Set {}", index + 1),
                 completed_puzzle_count: 0,
                 total_puzzle_count: 10,
             })
             .collect();
-        app_state.gameplay.active_level_set = 29;
+        app_state.gameplay.active_level_set = Some(29);
 
         apply_action(
             &mut controller,
@@ -331,6 +334,7 @@ mod tests {
         let mut app_state = AppState::default();
         app_state.gameplay.level_sets = (0..2)
             .map(|index| crate::persistence::LevelSetCatalogEntry {
+                kind: crate::persistence::LevelSetKind::Imported,
                 title: format!("Set {}", index + 1),
                 completed_puzzle_count: 0,
                 total_puzzle_count: 10,

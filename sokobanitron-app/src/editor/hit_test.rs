@@ -8,19 +8,22 @@
 
 use crate::app::state::AppState;
 use presentation::hit_test::{
-    overlay_primary_action_button_contains, top_menu_toggle_button_contains,
+    overlay_primary_action_button_contains, overlay_secondary_action_button_contains,
+    top_menu_toggle_button_contains,
 };
 use presentation::layout::top_left_level_button_rect;
 use sokobanitron_level_editor::LevelEditor;
 
 use super::view::{
-    VisibleBoardWindow, build_visible_window, zoom_in_button_rect, zoom_out_button_rect,
+    VisibleBoardWindow, build_visible_window, can_save_editor_puzzle, zoom_in_button_rect,
+    zoom_out_button_rect,
 };
 
 #[derive(Debug)]
 pub(super) struct EditorSurfaceModel {
     pub(super) surface_width: u32,
     pub(super) surface_height: u32,
+    pub(super) show_save_button: bool,
     pub(super) visible_window: VisibleBoardWindow,
 }
 
@@ -35,6 +38,7 @@ pub(super) enum EditorSurfaceTarget {
     ModeToggle,
     TopMenuToggle,
     OverlayPrimaryAction,
+    OverlaySecondaryAction,
     ControlSlot(EditorControlSlot),
     BoardCell { world_x: i32, world_y: i32 },
 }
@@ -46,6 +50,7 @@ pub(super) fn build_editor_surface_model(
     EditorSurfaceModel {
         surface_width: app_state.editor.viewport.surface_width,
         surface_height: app_state.editor.viewport.surface_height,
+        show_save_button: can_save_editor_puzzle(editor),
         visible_window: build_visible_window(&app_state.editor, editor),
     }
 }
@@ -68,6 +73,16 @@ pub(super) fn editor_surface_target_at(
         surface.surface_height,
     ) {
         return Some(EditorSurfaceTarget::OverlayPrimaryAction);
+    }
+    if surface.show_save_button
+        && overlay_secondary_action_button_contains(
+            screen_x,
+            screen_y,
+            surface.surface_width,
+            surface.surface_height,
+        )
+    {
+        return Some(EditorSurfaceTarget::OverlaySecondaryAction);
     }
     if zoom_out_button_rect(surface.surface_height).contains(screen_x, screen_y) {
         return Some(EditorSurfaceTarget::ControlSlot(
@@ -96,7 +111,8 @@ pub(super) fn editor_surface_target_at(
 mod tests {
     use super::{EditorSurfaceTarget, build_editor_surface_model, editor_surface_target_at};
     use crate::app::state::AppState;
-    use sokobanitron_level_editor::LevelEditor;
+    use presentation::layout::overlay_secondary_action_button_rect;
+    use sokobanitron_level_editor::{DrawTool, EditorCommand, EditorMode, LevelEditor};
 
     #[test]
     fn no_hit_returns_none() {
@@ -143,6 +159,61 @@ mod tests {
                 world_x: surface.visible_window.world_origin_x + local_x as i32,
                 world_y: surface.visible_window.world_origin_y + local_y as i32,
             })
+        );
+    }
+
+    #[test]
+    fn secondary_action_requires_saveable_editor_state() {
+        let app_state = AppState::default();
+        let editor = LevelEditor::new();
+        let surface = build_editor_surface_model(&app_state, &editor);
+        let rect =
+            overlay_secondary_action_button_rect(surface.surface_width, surface.surface_height);
+
+        assert_ne!(
+            editor_surface_target_at(
+                &surface,
+                (rect.x + rect.w / 2) as f64,
+                (rect.y + rect.h / 2) as f64,
+            ),
+            Some(EditorSurfaceTarget::OverlaySecondaryAction)
+        );
+    }
+
+    #[test]
+    fn secondary_action_hits_when_save_button_is_visible() {
+        let app_state = AppState::default();
+        let mut editor = LevelEditor::new();
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 2,
+            cell_y: 0,
+            tool: DrawTool::Floor,
+        });
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 0,
+            cell_y: 0,
+            tool: DrawTool::BoxOnGoal,
+        });
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Manipulate));
+        editor.apply_command(EditorCommand::SelectBox {
+            cell_x: 0,
+            cell_y: 0,
+        });
+        editor.apply_command(EditorCommand::MoveSelectedBoxTo {
+            cell_x: 1,
+            cell_y: 0,
+        });
+        let surface = build_editor_surface_model(&app_state, &editor);
+        let rect =
+            overlay_secondary_action_button_rect(surface.surface_width, surface.surface_height);
+
+        assert_eq!(
+            editor_surface_target_at(
+                &surface,
+                (rect.x + rect.w / 2) as f64,
+                (rect.y + rect.h / 2) as f64,
+            ),
+            Some(EditorSurfaceTarget::OverlaySecondaryAction)
         );
     }
 }

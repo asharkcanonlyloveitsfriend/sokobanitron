@@ -8,7 +8,7 @@ use presentation::layout::{
     BoardViewport, ScreenRect, editor_bottom_left_button_rect, editor_bottom_right_button_rect,
 };
 use sokobanitron_gameplay::{BoardView, TileKind};
-use sokobanitron_level_editor::{EditorMode, LevelEditor, NonVoidBounds};
+use sokobanitron_level_editor::{EditableTile, EditorMode, LevelEditor, NonVoidBounds};
 
 use crate::shared::{DoubleTapTracker, PointerId, SinglePointerGestureState};
 
@@ -74,6 +74,22 @@ pub fn resize_editor_surface(editor: &mut EditorUiState, width: u32, height: u32
 pub fn reset_editor_interaction_state(editor: &mut EditorUiState) {
     editor.interaction.pointer.reset();
     editor.interaction.active_stroke = None;
+}
+
+pub(crate) fn can_save_editor_puzzle(editor: &LevelEditor) -> bool {
+    let Some(bounds) = editor.world().non_void_bounds() else {
+        return false;
+    };
+
+    for y in bounds.min_y..=bounds.max_y {
+        for x in bounds.min_x..=bounds.max_x {
+            if editor.world().tile(x, y) == EditableTile::Box {
+                return true;
+            }
+        }
+    }
+
+    false
 }
 
 #[derive(Debug)]

@@ -3,7 +3,7 @@ use crate::snapshot::{
     BoxMoveCountSnapshot, EditorBoardSnapshot, EditorCellSnapshot, EditorSnapshot,
     PullHintSnapshot, PullHintStatus,
 };
-use crate::world::{EditableTile, EditableWorld};
+use crate::world::{EditableTile, EditableWorld, NonVoidBounds};
 use sokobanitron_core::optimizer::{ReverseOptimizationInput, optimize_reverse_solution_in_place};
 use sokobanitron_core::pathfinder::{Position, PullPathfinder};
 use std::collections::{HashMap, VecDeque};
@@ -67,6 +67,19 @@ pub struct LevelEditor {
     active_pull_hint_job: Option<ActivePullHintJob>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportedPuzzle {
+    pub level_ascii: String,
+    pub reference_solution: Vec<Vec<(usize, usize)>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportPuzzleError {
+    EmptyBoard,
+    MissingPlayer,
+    MissingReferenceSolution,
+}
+
 impl LevelEditor {
     pub fn new() -> Self {
         let world = EditableWorld::new();
@@ -101,6 +114,23 @@ impl LevelEditor {
 
     pub fn can_restart(&self) -> bool {
         !self.is_reset_state()
+    }
+
+    pub fn export_puzzle(&self) -> Result<ExportedPuzzle, ExportPuzzleError> {
+        let Some(bounds) = self.world.non_void_bounds() else {
+            return Err(ExportPuzzleError::EmptyBoard);
+        };
+        if self.world.player().is_none() {
+            return Err(ExportPuzzleError::MissingPlayer);
+        }
+        if self.solution_history.is_empty() {
+            return Err(ExportPuzzleError::MissingReferenceSolution);
+        }
+
+        Ok(ExportedPuzzle {
+            level_ascii: self.level_ascii_in_bounds(bounds),
+            reference_solution: self.forward_reference_solution_in_bounds(bounds),
+        })
     }
 
     pub fn selected_box(&self) -> Option<(i32, i32)> {
@@ -286,6 +316,45 @@ impl LevelEditor {
         self.solution_history.is_empty()
             && self.undo_history.is_empty()
             && self.world.player().is_none()
+    }
+
+    fn level_ascii_in_bounds(&self, bounds: NonVoidBounds) -> String {
+        let mut lines = Vec::new();
+        for y in bounds.min_y..=bounds.max_y {
+            let mut line = String::with_capacity((bounds.max_x - bounds.min_x + 1) as usize);
+            for x in bounds.min_x..=bounds.max_x {
+                let is_player = self.world.player() == Some((x, y));
+                let ch = match (self.world.tile(x, y), is_player) {
+                    (EditableTile::Void, false) => '#',
+                    (EditableTile::Floor, false) => ' ',
+                    (EditableTile::Goal, false) => '.',
+                    (EditableTile::Box, false) => '$',
+                    (EditableTile::BoxOnGoal, false) => '*',
+                    (EditableTile::Void, true) | (EditableTile::Floor, true) => '@',
+                    (EditableTile::Goal, true) | (EditableTile::BoxOnGoal, true) => '+',
+                    (EditableTile::Box, true) => '@',
+                };
+                line.push(ch);
+            }
+            lines.push(line);
+        }
+        lines.join("\n")
+    }
+
+    fn forward_reference_solution_in_bounds(
+        &self,
+        bounds: NonVoidBounds,
+    ) -> Vec<Vec<(usize, usize)>> {
+        self.solution_history
+            .iter()
+            .rev()
+            .map(|path| {
+                path.iter()
+                    .rev()
+                    .map(|&(x, y)| ((y - bounds.min_y) as usize, (x - bounds.min_x) as usize))
+                    .collect::<Vec<_>>()
+            })
+            .collect()
     }
 
     fn reset_solution_tracking(&mut self) {
@@ -842,7 +911,7 @@ impl Default for LevelEditor {
 
 #[cfg(test)]
 mod tests {
-    use super::{LevelEditor, PullHintState};
+    use super::{ExportPuzzleError, LevelEditor, PullHintState};
     use crate::command::{DrawTool, EditorCommand, EditorMode};
     use crate::snapshot::PullHintStatus;
     use crate::world::EditableTile;
@@ -857,6 +926,74 @@ mod tests {
             }
         }
         editor.world.set_player(None);
+    }
+
+    #[test]
+    fn export_puzzle_requires_player_start() {
+        let editor = LevelEditor::new();
+
+        assert_eq!(
+            editor.export_puzzle(),
+            Err(ExportPuzzleError::MissingPlayer)
+        );
+    }
+
+    #[test]
+    fn export_puzzle_requires_reference_solution() {
+        let mut editor = LevelEditor::new();
+        editor.world.set_player(Some((0, 0)));
+
+        assert_eq!(
+            editor.export_puzzle(),
+            Err(ExportPuzzleError::MissingReferenceSolution)
+        );
+    }
+
+    #[test]
+    fn export_puzzle_returns_forward_reference_solution() {
+        let mut editor = LevelEditor::new();
+        clear_world(&mut editor);
+        for y in 0..3 {
+            for x in 0..5 {
+                editor.world.set_tile(x, y, EditableTile::Floor);
+            }
+        }
+        editor.world.set_tile(3, 1, EditableTile::Goal);
+        editor.world.set_tile(1, 1, EditableTile::Box);
+        editor.world.set_player(Some((0, 1)));
+        editor.solution_history = vec![vec![(3, 1), (2, 1), (1, 1)]];
+
+        let exported = editor.export_puzzle().expect("export puzzle");
+
+        assert_eq!(exported.level_ascii, "     \n@$ . \n     ");
+        assert_eq!(
+            exported.reference_solution,
+            vec![vec![(1, 1), (1, 2), (1, 3)]]
+        );
+    }
+
+    #[test]
+    fn export_puzzle_reverses_move_order_for_multiple_paths() {
+        let mut editor = LevelEditor::new();
+        clear_world(&mut editor);
+        for y in 0..3 {
+            for x in 0..6 {
+                editor.world.set_tile(x, y, EditableTile::Floor);
+            }
+        }
+        editor.world.set_tile(4, 1, EditableTile::Goal);
+        editor.world.set_tile(3, 1, EditableTile::Goal);
+        editor.world.set_tile(1, 1, EditableTile::Box);
+        editor.world.set_tile(2, 1, EditableTile::Box);
+        editor.world.set_player(Some((0, 1)));
+        editor.solution_history = vec![vec![(4, 1), (3, 1), (2, 1)], vec![(3, 1), (2, 1), (1, 1)]];
+
+        let exported = editor.export_puzzle().expect("export puzzle");
+
+        assert_eq!(
+            exported.reference_solution,
+            vec![vec![(1, 1), (1, 2), (1, 3)], vec![(1, 2), (1, 3), (1, 4)],]
+        );
     }
 
     #[test]

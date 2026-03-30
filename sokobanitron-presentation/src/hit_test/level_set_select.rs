@@ -7,7 +7,7 @@ use crate::layout::{
 
 pub fn level_set_select_start_for_nav(
     level_set_count: usize,
-    active_level_set: usize,
+    active_level_set: Option<usize>,
     current_start: usize,
     action: MenuNavAction,
 ) -> usize {
@@ -26,7 +26,7 @@ pub fn level_set_select_nav_action_at(
     width: u32,
     height: u32,
     level_set_count: usize,
-    active_level_set: usize,
+    active_level_set: Option<usize>,
     current_start: usize,
 ) -> Option<MenuNavAction> {
     tap_target_at(
@@ -65,7 +65,7 @@ pub fn level_set_select_target_at(
 
 fn scrollbar_state(
     level_set_count: usize,
-    active_level_set: usize,
+    active_level_set: Option<usize>,
     page_start: usize,
 ) -> ScrollbarState {
     ScrollbarState {

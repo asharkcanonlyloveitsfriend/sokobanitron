@@ -2,7 +2,7 @@ use super::sqlite_error;
 use rusqlite::Connection;
 use std::io;
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 pub(crate) fn migrate_schema(conn: &mut Connection) -> io::Result<()> {
     let version = conn
@@ -15,7 +15,8 @@ pub(crate) fn migrate_schema(conn: &mut Connection) -> io::Result<()> {
                 "
                 CREATE TABLE level_sets (
                     id INTEGER PRIMARY KEY,
-                    title TEXT NOT NULL
+                    title TEXT NOT NULL,
+                    kind TEXT NOT NULL
                 );
 
                 CREATE TABLE puzzles (
@@ -24,7 +25,8 @@ pub(crate) fn migrate_schema(conn: &mut Connection) -> io::Result<()> {
                     last_completed_at TEXT,
                     rating INTEGER NOT NULL DEFAULT 0 CHECK (rating IN (-1, 0, 1)),
                     is_starred INTEGER NOT NULL DEFAULT 0 CHECK (is_starred IN (0, 1)),
-                    user_solution TEXT
+                    user_solution TEXT,
+                    reference_solution TEXT
                 );
 
                 CREATE TABLE levels (
@@ -46,6 +48,21 @@ pub(crate) fn migrate_schema(conn: &mut Connection) -> io::Result<()> {
 
                 CREATE INDEX level_set_progress_updated_at_idx
                     ON level_set_progress(updated_at DESC);
+                ",
+            )
+            .map_err(sqlite_error)?;
+            conn.pragma_update(None, "user_version", SCHEMA_VERSION)
+                .map_err(sqlite_error)?;
+            Ok(())
+        }
+        1 => {
+            conn.execute_batch(
+                "
+                ALTER TABLE level_sets
+                    ADD COLUMN kind TEXT NOT NULL DEFAULT 'imported';
+
+                ALTER TABLE puzzles
+                    ADD COLUMN reference_solution TEXT;
                 ",
             )
             .map_err(sqlite_error)?;

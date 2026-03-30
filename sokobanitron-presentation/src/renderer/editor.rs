@@ -1,7 +1,7 @@
 use crate::assets::{UiIcon, draw_ui_icon_in_rect};
 use crate::layout::{
     ScreenRect, editor_bottom_left_button_rect, editor_bottom_right_button_rect,
-    top_left_level_button_rect,
+    overlay_secondary_action_button_rect, top_left_level_button_rect,
 };
 use crate::screen_requests::{EditorMenuScreenRequest, EditorScreenRequest};
 use sokobanitron_level_editor::PullHintStatus;
@@ -89,6 +89,18 @@ impl Renderer {
             request.primary_action_icon,
             BUTTON_TEXT_COLOR,
         );
+        if request.show_save_button {
+            draw_centered_text_in_rect(
+                frame,
+                width,
+                height,
+                overlay_secondary_action_button_rect(width, height),
+                "SAVE",
+                UI_TEXT_SCALE,
+                1,
+                BUTTON_TEXT_COLOR,
+            );
+        }
     }
 }
 

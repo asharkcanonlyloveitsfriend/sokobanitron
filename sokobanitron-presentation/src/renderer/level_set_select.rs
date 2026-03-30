@@ -26,9 +26,6 @@ impl Renderer {
             return;
         }
 
-        let active_level_set = screen
-            .active_level_set
-            .min(screen.entries.len().saturating_sub(1));
         let page_start = level_set_select_clamp_start(screen.entries.len(), screen.page_start);
         let row_rects = level_set_select_row_rects(width, height);
         let indices = level_set_select_indices(screen.entries.len(), page_start);
@@ -43,7 +40,7 @@ impl Renderer {
             let rect = row_rects[slot_index];
             draw_level_set_row(frame, width, height, rect, entry);
             draw_row_separator(frame, width, height, rect);
-            if level_set_index == active_level_set {
+            if screen.active_level_set == Some(level_set_index) {
                 draw_selection_brackets(frame, width, height, rect);
             }
         }
@@ -56,7 +53,10 @@ impl Renderer {
                 level_count: screen.entries.len(),
                 visible_count: level_set_rows_per_page().min(screen.entries.len()).max(1),
                 page_start,
-                return_start: level_set_select_start_index(screen.entries.len(), active_level_set),
+                return_start: level_set_select_start_index(
+                    screen.entries.len(),
+                    screen.active_level_set,
+                ),
             },
         );
     }

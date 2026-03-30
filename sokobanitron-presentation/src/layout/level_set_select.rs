@@ -7,7 +7,13 @@ pub(crate) const fn level_set_rows_per_page() -> usize {
     LEVEL_SET_ROWS_PER_PAGE
 }
 
-pub fn level_set_select_start_index(level_set_count: usize, active_level_set: usize) -> usize {
+pub fn level_set_select_start_index(
+    level_set_count: usize,
+    active_level_set: Option<usize>,
+) -> usize {
+    let Some(active_level_set) = active_level_set else {
+        return 0;
+    };
     if level_set_count <= LEVEL_SET_ROWS_PER_PAGE || active_level_set == 0 {
         0
     } else if active_level_set >= level_set_count.saturating_sub(1) {

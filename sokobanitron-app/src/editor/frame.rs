@@ -12,7 +12,9 @@ use presentation::screen_requests::{
 };
 use sokobanitron_level_editor::{EditorMode, EditorSnapshot, LevelEditor};
 
-use super::view::{VisibleBoardWindow, build_visible_window, can_zoom_in, can_zoom_out};
+use super::view::{
+    VisibleBoardWindow, build_visible_window, can_save_editor_puzzle, can_zoom_in, can_zoom_out,
+};
 
 pub fn build_current_editor_frame_request(
     app_state: &AppState,
@@ -22,6 +24,7 @@ pub fn build_current_editor_frame_request(
         FrameRequest::EditorMenu {
             screen: EditorMenuScreenRequest {
                 primary_action_icon: UiIcon::Manipulate,
+                show_save_button: can_save_editor_puzzle(editor),
             },
         }
     } else {
@@ -118,4 +121,63 @@ fn build_hint_overlays(
         });
     }
     overlays
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_current_editor_frame_request;
+    use crate::app::presentation::FrameRequest;
+    use crate::app::state::{AppOverlay, AppScreen, AppState};
+    use sokobanitron_level_editor::{DrawTool, EditorCommand, EditorMode, LevelEditor};
+
+    #[test]
+    fn editor_menu_hides_save_without_off_goal_box() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        app_state.ui.overlay = Some(AppOverlay::EditorMenu);
+        let editor = LevelEditor::new();
+
+        let FrameRequest::EditorMenu { screen } =
+            build_current_editor_frame_request(&app_state, &editor)
+        else {
+            panic!("expected editor menu frame");
+        };
+
+        assert!(!screen.show_save_button);
+    }
+
+    #[test]
+    fn editor_menu_shows_save_with_off_goal_box() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        app_state.ui.overlay = Some(AppOverlay::EditorMenu);
+        let mut editor = LevelEditor::new();
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 2,
+            cell_y: 0,
+            tool: DrawTool::Floor,
+        });
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 0,
+            cell_y: 0,
+            tool: DrawTool::BoxOnGoal,
+        });
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Manipulate));
+        editor.apply_command(EditorCommand::SelectBox {
+            cell_x: 0,
+            cell_y: 0,
+        });
+        editor.apply_command(EditorCommand::MoveSelectedBoxTo {
+            cell_x: 1,
+            cell_y: 0,
+        });
+
+        let FrameRequest::EditorMenu { screen } =
+            build_current_editor_frame_request(&app_state, &editor)
+        else {
+            panic!("expected editor menu frame");
+        };
+
+        assert!(screen.show_save_button);
+    }
 }

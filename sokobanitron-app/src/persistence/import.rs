@@ -1,6 +1,7 @@
 use super::normalize::normalize_and_orient_level;
 use super::slc::{fallback_title_from_path, parse_slc_file};
 use super::sqlite_error;
+use super::store::LevelSetKind;
 use rusqlite::{Connection, Transaction, params};
 use sokobanitron_gameplay::OrientationPolicy;
 use std::fs;
@@ -75,7 +76,7 @@ fn import_one_level_set(
     }
 
     let tx = conn.transaction().map_err(sqlite_error)?;
-    let level_set_id = insert_level_set(&tx, &level_set_title)?;
+    let level_set_id = insert_level_set(&tx, &level_set_title, LevelSetKind::Imported)?;
     for (ordinal, grid) in normalized_levels.iter().enumerate() {
         let puzzle_id = insert_puzzle(&tx, grid)?;
         insert_level(&tx, level_set_id, ordinal + 1, puzzle_id)?;
@@ -87,9 +88,12 @@ fn import_one_level_set(
     Ok(())
 }
 
-fn insert_level_set(tx: &Transaction<'_>, title: &str) -> io::Result<i64> {
-    tx.execute("INSERT INTO level_sets (title) VALUES (?1)", params![title])
-        .map_err(sqlite_error)?;
+fn insert_level_set(tx: &Transaction<'_>, title: &str, kind: LevelSetKind) -> io::Result<i64> {
+    tx.execute(
+        "INSERT INTO level_sets (title, kind) VALUES (?1, ?2)",
+        params![title, kind.as_str()],
+    )
+    .map_err(sqlite_error)?;
     Ok(tx.last_insert_rowid())
 }
 

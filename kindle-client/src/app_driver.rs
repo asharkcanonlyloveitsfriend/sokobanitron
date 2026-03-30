@@ -49,7 +49,7 @@ pub struct KindleApp {
 impl KindleApp {
     pub fn new() -> Result<Self> {
         let initial_levels =
-            load_initial_levels_for_app(std::path::Path::new(config::LEVEL_SETS_ROOT));
+            load_initial_levels_for_app(std::path::Path::new(config::LEVEL_SETS_ROOT))?;
         let levels = initial_levels.levels;
         let preview_boards = initial_levels.preview_boards;
         let preferences = AppPreferences::load_and_save_normalized(config::PREFERENCES_PATH)
@@ -72,7 +72,7 @@ impl KindleApp {
         set_gameplay_level_sets(
             &mut app_state.gameplay,
             initial_levels.level_set_catalog.clone(),
-            initial_levels.active_level_set_index,
+            Some(initial_levels.active_level_set_index),
         );
         Ok(Self {
             renderer: Self::build_renderer(),
