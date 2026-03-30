@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "sokobanitron-core",
-    "game-engine",
     "sokobanitron-gameplay",
     "sokobanitron-app",
     "desktop-client",

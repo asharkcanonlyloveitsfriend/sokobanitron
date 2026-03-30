@@ -2193,14 +2193,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sokobanitron-game-engine"
-version = "0.1.0"
-dependencies = [
- "jni",
- "sokobanitron-core",
-]
-
-[[package]]
 name = "sokobanitron-gameplay"
 version = "0.1.0"
 dependencies = [
