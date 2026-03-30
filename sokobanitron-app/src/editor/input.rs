@@ -10,7 +10,7 @@ use crate::shared::{
 };
 use presentation::hit_test::ControlsButtonAction;
 use sokobanitron_level_editor::{EditorCommand, EditorMode, LevelEditor, Tile};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use super::hit_test::{
     EditorControlSlot, EditorSurfaceTarget, build_editor_surface_model, editor_surface_target_at,
@@ -20,8 +20,6 @@ use super::view::{
     ActiveEditorStroke, EditorUiState, can_zoom_in, can_zoom_out, reset_editor_interaction_state,
     zoom_in, zoom_out,
 };
-
-const DOUBLE_TAP_WINDOW: Duration = Duration::from_millis(325);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorUiAction {
@@ -334,11 +332,11 @@ fn resolve_paint_mode(
         return PaintMode::Void;
     }
 
-    if ui
-        .interaction
-        .double_tap
-        .register_tap((world_x, world_y), at, DOUBLE_TAP_WINDOW)
-    {
+    if ui.interaction.double_tap.register_tap(
+        (world_x, world_y),
+        at,
+        ui.interaction.double_tap_window,
+    ) {
         PaintMode::GoalWithBox
     } else {
         PaintMode::from_start_tile(current_tile)

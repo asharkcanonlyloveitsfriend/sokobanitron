@@ -11,6 +11,7 @@ use sokobanitron_gameplay::{BoardView, TileKind};
 use sokobanitron_level_editor::{EditorMode, LevelEditor, NonVoidBounds, Tile};
 
 use crate::shared::{DoubleTapTracker, PointerId, SinglePointerGestureState};
+use std::time::Duration;
 
 use super::paint_mode::PaintMode;
 
@@ -36,12 +37,25 @@ pub struct EditorViewportState {
     pub zoom_steps: i32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EditorInteractionState {
     pub cursor_position: Option<(i32, i32)>,
     pub pointer: SinglePointerGestureState,
     pub active_stroke: Option<ActiveEditorStroke>,
     pub double_tap: DoubleTapTracker<(i32, i32)>,
+    pub double_tap_window: Duration,
+}
+
+impl Default for EditorInteractionState {
+    fn default() -> Self {
+        Self {
+            cursor_position: None,
+            pointer: SinglePointerGestureState::default(),
+            active_stroke: None,
+            double_tap: DoubleTapTracker::default(),
+            double_tap_window: Duration::from_millis(325),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +83,14 @@ pub fn resize_editor_surface(editor: &mut EditorUiState, width: u32, height: u32
     editor.viewport.surface_width = width.max(1);
     editor.viewport.surface_height = height.max(1);
     editor.viewport.zoom_steps = clamp_zoom_steps(editor.viewport.zoom_steps);
+}
+
+pub fn set_editor_touch_slop(editor: &mut EditorUiState, tap_slop_px: i32) {
+    editor.interaction.pointer.set_tap_slop(tap_slop_px);
+}
+
+pub fn set_editor_double_tap_window(editor: &mut EditorUiState, window: Duration) {
+    editor.interaction.double_tap_window = window;
 }
 
 pub fn reset_editor_interaction_state(editor: &mut EditorUiState) {

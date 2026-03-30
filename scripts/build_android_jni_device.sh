@@ -9,7 +9,7 @@ ANDROID_CLIENT_DIR="$REPO_ROOT/android-client"
 LOCAL_PROPERTIES="$ANDROID_CLIENT_DIR/local.properties"
 TARGET_TRIPLE="aarch64-linux-android"
 ANDROID_ABI_DIR="arm64-v8a"
-MIN_SDK=33
+MIN_SDK=30
 BUILD_PROFILE="${1:-release}"
 
 if [[ "$BUILD_PROFILE" != "release" && "$BUILD_PROFILE" != "debug" ]]; then
@@ -60,6 +60,9 @@ if ! rustup target list --installed | grep -q "^${TARGET_TRIPLE}\$"; then
 fi
 
 export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_TOOLCHAIN/bin/aarch64-linux-android${MIN_SDK}-clang"
+export CC_aarch64_linux_android="$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
+export AR_aarch64_linux_android="$NDK_TOOLCHAIN/bin/llvm-ar"
+export CXX_aarch64_linux_android="$NDK_TOOLCHAIN/bin/aarch64-linux-android${MIN_SDK}-clang++"
 
 if [[ ! -x "$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER" ]]; then
   echo "Expected linker not found: $CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
@@ -67,11 +70,15 @@ if [[ ! -x "$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER" ]]; then
 fi
 
 echo "Building JNI library for $TARGET_TRIPLE ($BUILD_PROFILE)..."
-cargo build -p sokobanitron-game-engine --target "$TARGET_TRIPLE" "--$BUILD_PROFILE"
+if [[ "$BUILD_PROFILE" == "release" ]]; then
+  cargo build -p sokobanitron-android-jni --target "$TARGET_TRIPLE" --release
+else
+  cargo build -p sokobanitron-android-jni --target "$TARGET_TRIPLE"
+fi
 
-SOURCE_SO="$REPO_ROOT/target/$TARGET_TRIPLE/$BUILD_PROFILE/libsokobanitron_game_engine_jni.so"
+SOURCE_SO="$REPO_ROOT/target/$TARGET_TRIPLE/$BUILD_PROFILE/libsokobanitron_android_jni.so"
 DEST_DIR="$ANDROID_CLIENT_DIR/app/src/main/jniLibs/$ANDROID_ABI_DIR"
-DEST_SO="$DEST_DIR/libsokobanitron_game_engine_jni.so"
+DEST_SO="$DEST_DIR/libsokobanitron_android_jni.so"
 
 if [[ ! -f "$SOURCE_SO" ]]; then
   echo "Build finished but expected output is missing: $SOURCE_SO"
