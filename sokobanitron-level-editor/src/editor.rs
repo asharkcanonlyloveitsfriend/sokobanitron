@@ -3,7 +3,7 @@ use crate::snapshot::{
     BoxMoveCountSnapshot, EditorBoardSnapshot, EditorCellSnapshot, EditorSnapshot,
     PullHintSnapshot, PullHintStatus,
 };
-use crate::world::{EditableTile, EditableWorld, NonVoidBounds};
+use crate::world::{EditableWorld, NonVoidBounds, Tile};
 use sokobanitron_core::optimizer::{ReverseOptimizationInput, optimize_reverse_solution_in_place};
 use sokobanitron_core::pathfinder::{Position, PullPathfinder};
 use std::collections::{HashMap, VecDeque};
@@ -144,11 +144,17 @@ impl LevelEditor {
             for y in bounds.min_y..=bounds.max_y {
                 for x in bounds.min_x..=bounds.max_x {
                     let tile = self.world.tile(x, y);
-                    if !matches!(tile, EditableTile::Void) {
+                    if matches!(tile, Tile::Void) {
+                        assert!(
+                            !self.world.has_box(x, y),
+                            "void tile cannot contain a box in the editor snapshot"
+                        );
+                    } else {
                         cells.push(EditorCellSnapshot {
                             world_x: x,
                             world_y: y,
                             tile,
+                            has_box: self.world.has_box(x, y),
                         });
                     }
                 }
@@ -288,7 +294,7 @@ impl LevelEditor {
             self.clear_pull_destination_hints();
             return;
         };
-        if !matches!(self.mode, EditorMode::Manipulate) {
+        if !matches!(self.mode, EditorMode::Move) {
             self.clear_pull_destination_hints();
             return;
         }
@@ -324,15 +330,26 @@ impl LevelEditor {
             let mut line = String::with_capacity((bounds.max_x - bounds.min_x + 1) as usize);
             for x in bounds.min_x..=bounds.max_x {
                 let is_player = self.world.player() == Some((x, y));
-                let ch = match (self.world.tile(x, y), is_player) {
-                    (EditableTile::Void, false) => '#',
-                    (EditableTile::Floor, false) => ' ',
-                    (EditableTile::Goal, false) => '.',
-                    (EditableTile::Box, false) => '$',
-                    (EditableTile::BoxOnGoal, false) => '*',
-                    (EditableTile::Void, true) | (EditableTile::Floor, true) => '@',
-                    (EditableTile::Goal, true) | (EditableTile::BoxOnGoal, true) => '+',
-                    (EditableTile::Box, true) => '@',
+                let tile = self.world.tile(x, y);
+                let has_box = self.world.has_box(x, y);
+                let ch = if is_player {
+                    match tile {
+                        Tile::Goal => '+',
+                        Tile::Floor => '@',
+                        Tile::Void => panic!("player cannot stand on void during export"),
+                    }
+                } else if has_box {
+                    match tile {
+                        Tile::Goal => '*',
+                        Tile::Floor => '$',
+                        Tile::Void => panic!("void tile cannot contain a box during export"),
+                    }
+                } else {
+                    match tile {
+                        Tile::Void => '#',
+                        Tile::Floor => ' ',
+                        Tile::Goal => '.',
+                    }
                 };
                 line.push(ch);
             }
@@ -357,18 +374,13 @@ impl LevelEditor {
             .collect()
     }
 
-    fn reset_solution_tracking(&mut self) {
+    fn rebuild_start_state_from_terrain(&mut self) {
         let goals = self.world.goal_positions();
         for (x, y) in self.world.box_positions() {
-            let cleared = match self.world.tile(x, y) {
-                EditableTile::BoxOnGoal => EditableTile::Goal,
-                EditableTile::Box => EditableTile::Floor,
-                other => other,
-            };
-            self.world.set_tile(x, y, cleared);
+            self.world.set_box(x, y, false);
         }
         for (x, y) in goals {
-            self.world.set_tile(x, y, EditableTile::BoxOnGoal);
+            self.world.set_box(x, y, true);
         }
         self.world.set_player(None);
         self.solution_start_boxes = self.world.box_positions();
@@ -408,7 +420,7 @@ impl LevelEditor {
     }
 
     fn restart_to_goals(&mut self) {
-        self.reset_solution_tracking();
+        self.rebuild_start_state_from_terrain();
         self.selected_box = None;
     }
 
@@ -420,7 +432,7 @@ impl LevelEditor {
         let mut cells = Vec::new();
         for y in bounds.min_y..=bounds.max_y {
             for x in bounds.min_x..=bounds.max_x {
-                if !matches!(self.world.tile(x, y), EditableTile::Void) {
+                if !matches!(self.world.tile(x, y), Tile::Void) {
                     cells.push((x, y));
                 }
             }
@@ -514,7 +526,7 @@ impl LevelEditor {
     }
 
     fn mark_pull_destination_hints_dirty(&mut self) {
-        if matches!(self.mode, EditorMode::Manipulate) && self.selected_box.is_some() {
+        if matches!(self.mode, EditorMode::Move) && self.selected_box.is_some() {
             self.pull_destination_hints.clear();
             self.pull_hints_dirty = true;
             self.pull_hint_generation = self.pull_hint_generation.wrapping_add(1);
@@ -691,26 +703,16 @@ impl LevelEditor {
     fn paint_world_cell(&mut self, world_x: i32, world_y: i32, tool: DrawTool) -> bool {
         let original_tile = self.world.tile(world_x, world_y);
         match tool {
-            DrawTool::Floor => self.world.set_tile(world_x, world_y, EditableTile::Floor),
-            DrawTool::BoxOnGoal => self
-                .world
-                .set_tile(world_x, world_y, EditableTile::BoxOnGoal),
-            DrawTool::Void => self.world.set_tile(world_x, world_y, EditableTile::Void),
+            DrawTool::Floor => self.world.set_tile(world_x, world_y, Tile::Floor),
+            DrawTool::GoalWithBox => self.world.set_tile(world_x, world_y, Tile::Goal),
+            DrawTool::Void => self.world.set_tile(world_x, world_y, Tile::Void),
         }
-        let updated_tile = self.world.tile(world_x, world_y);
-        if self.selected_box == Some((world_x, world_y)) && !Self::is_box_tile(updated_tile) {
-            self.selected_box = None;
-        }
-        if original_tile != updated_tile {
-            self.reset_solution_tracking();
+        if original_tile != self.world.tile(world_x, world_y) {
+            self.rebuild_start_state_from_terrain();
             self.mark_pull_destination_hints_dirty();
             return true;
         }
         false
-    }
-
-    fn is_box_tile(tile: EditableTile) -> bool {
-        matches!(tile, EditableTile::Box | EditableTile::BoxOnGoal)
     }
 
     fn to_grid_position(world_x: i32, world_y: i32, min_x: i32, min_y: i32) -> Position {
@@ -751,9 +753,10 @@ impl LevelEditor {
         for y in min_y..=max_y {
             for x in min_x..=max_x {
                 let walkable = match self.world.tile(x, y) {
-                    EditableTile::Void => false,
-                    EditableTile::Box | EditableTile::BoxOnGoal => (x, y) == (from_x, from_y),
-                    EditableTile::Floor | EditableTile::Goal => true,
+                    Tile::Void => false,
+                    Tile::Floor | Tile::Goal => {
+                        !self.world.has_box(x, y) || (x, y) == (from_x, from_y)
+                    }
                 };
                 grid[(y - min_y) as usize][(x - min_x) as usize] = walkable;
             }
@@ -829,8 +832,7 @@ impl LevelEditor {
     }
 
     fn select_box(&mut self, world_x: i32, world_y: i32) -> bool {
-        let tapped_tile = self.world.tile(world_x, world_y);
-        if !Self::is_box_tile(tapped_tile) {
+        if !self.world.has_box(world_x, world_y) {
             return false;
         }
 
@@ -845,8 +847,7 @@ impl LevelEditor {
     }
 
     fn move_selected_box_to(&mut self, world_x: i32, world_y: i32) -> bool {
-        let tapped_tile = self.world.tile(world_x, world_y);
-        if matches!(tapped_tile, EditableTile::Void) {
+        if matches!(self.world.tile(world_x, world_y), Tile::Void) {
             if self.selected_box.take().is_some() {
                 self.clear_pull_destination_hints();
             }
@@ -860,8 +861,7 @@ impl LevelEditor {
             return false;
         }
 
-        let from_tile = self.world.tile(from_x, from_y);
-        if !Self::is_box_tile(from_tile) {
+        if !self.world.has_box(from_x, from_y) {
             self.selected_box = None;
             self.clear_pull_destination_hints();
             return false;
@@ -871,20 +871,8 @@ impl LevelEditor {
         };
 
         let undo_snapshot = self.make_undo_snapshot();
-        let from_base = match from_tile {
-            EditableTile::BoxOnGoal => EditableTile::Goal,
-            EditableTile::Box => EditableTile::Floor,
-            _ => from_tile,
-        };
-        self.world.set_tile(from_x, from_y, from_base);
-
-        let to_tile = self.world.tile(world_x, world_y);
-        let to_with_box = match to_tile {
-            EditableTile::Goal => EditableTile::BoxOnGoal,
-            EditableTile::BoxOnGoal => EditableTile::BoxOnGoal,
-            _ => EditableTile::Box,
-        };
-        self.world.set_tile(world_x, world_y, to_with_box);
+        self.world.set_box(from_x, from_y, false);
+        self.world.set_box(world_x, world_y, true);
         self.world.set_player(Some(plan.player_start));
         self.record_box_move(plan.box_path);
         self.undo_history.push(undo_snapshot);
@@ -895,8 +883,8 @@ impl LevelEditor {
 
     fn toggle_mode(&mut self) {
         self.mode = match self.mode {
-            EditorMode::Draw => EditorMode::Manipulate,
-            EditorMode::Manipulate => EditorMode::Draw,
+            EditorMode::Draw => EditorMode::Move,
+            EditorMode::Move => EditorMode::Draw,
         };
         self.selected_box = None;
         self.clear_pull_destination_hints();
@@ -914,7 +902,7 @@ mod tests {
     use super::{ExportPuzzleError, LevelEditor, PullHintState};
     use crate::command::{DrawTool, EditorCommand, EditorMode};
     use crate::snapshot::PullHintStatus;
-    use crate::world::EditableTile;
+    use crate::world::Tile;
 
     fn clear_world(editor: &mut LevelEditor) {
         let Some(bounds) = editor.world.non_void_bounds() else {
@@ -922,7 +910,7 @@ mod tests {
         };
         for y in bounds.min_y..=bounds.max_y {
             for x in bounds.min_x..=bounds.max_x {
-                editor.world.set_tile(x, y, EditableTile::Void);
+                editor.world.set_tile(x, y, Tile::Void);
             }
         }
         editor.world.set_player(None);
@@ -955,11 +943,11 @@ mod tests {
         clear_world(&mut editor);
         for y in 0..3 {
             for x in 0..5 {
-                editor.world.set_tile(x, y, EditableTile::Floor);
+                editor.world.set_tile(x, y, Tile::Floor);
             }
         }
-        editor.world.set_tile(3, 1, EditableTile::Goal);
-        editor.world.set_tile(1, 1, EditableTile::Box);
+        editor.world.set_tile(3, 1, Tile::Goal);
+        editor.world.set_box(1, 1, true);
         editor.world.set_player(Some((0, 1)));
         editor.solution_history = vec![vec![(3, 1), (2, 1), (1, 1)]];
 
@@ -978,13 +966,13 @@ mod tests {
         clear_world(&mut editor);
         for y in 0..3 {
             for x in 0..6 {
-                editor.world.set_tile(x, y, EditableTile::Floor);
+                editor.world.set_tile(x, y, Tile::Floor);
             }
         }
-        editor.world.set_tile(4, 1, EditableTile::Goal);
-        editor.world.set_tile(3, 1, EditableTile::Goal);
-        editor.world.set_tile(1, 1, EditableTile::Box);
-        editor.world.set_tile(2, 1, EditableTile::Box);
+        editor.world.set_tile(4, 1, Tile::Goal);
+        editor.world.set_tile(3, 1, Tile::Goal);
+        editor.world.set_box(1, 1, true);
+        editor.world.set_box(2, 1, true);
         editor.world.set_player(Some((0, 1)));
         editor.solution_history = vec![vec![(4, 1), (3, 1), (2, 1)], vec![(3, 1), (2, 1), (1, 1)]];
 
@@ -1005,7 +993,7 @@ mod tests {
             tool: DrawTool::Void,
         });
 
-        assert_eq!(editor.world().tile(0, 0), EditableTile::Void);
+        assert_eq!(editor.world().tile(0, 0), Tile::Void);
         assert!(effects.world_changed);
         assert!(effects.needs_revalidation);
     }
@@ -1013,15 +1001,15 @@ mod tests {
     #[test]
     fn snapshot_exposes_mode_and_selection() {
         let mut editor = LevelEditor::new();
-        editor.apply_command(EditorCommand::SetMode(EditorMode::Manipulate));
-        editor.world.set_tile(1, 0, EditableTile::Box);
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Move));
+        editor.world.set_box(1, 0, true);
         editor.apply_command(EditorCommand::SelectBox {
             cell_x: 1,
             cell_y: 0,
         });
 
         let snapshot = editor.snapshot();
-        assert_eq!(snapshot.mode, EditorMode::Manipulate);
+        assert_eq!(snapshot.mode, EditorMode::Move);
         assert_eq!(snapshot.selected_box, Some((1, 0)));
     }
 
@@ -1067,22 +1055,22 @@ mod tests {
         let mut editor = LevelEditor::new();
         let snapshot = editor.make_undo_snapshot();
 
-        editor.world.set_tile(0, 0, EditableTile::Void);
+        editor.world.set_tile(0, 0, Tile::Void);
         editor.world.set_player(Some((1, 1)));
         editor.solution_history.push(vec![(1, 1), (1, 2)]);
         editor.undo_history.push(snapshot);
         editor.undo_last_move();
 
         assert!(editor.solution_history.is_empty());
-        assert_ne!(editor.world.tile(0, 0), EditableTile::Void);
+        assert_ne!(editor.world.tile(0, 0), Tile::Void);
         assert_eq!(editor.world.player(), None);
     }
 
     #[test]
     fn restart_resets_boxes_on_goals_and_clears_undo_history() {
         let mut editor = LevelEditor::new();
-        editor.world.set_tile(-2, -1, EditableTile::Goal);
-        editor.world.set_tile(0, 0, EditableTile::Box);
+        editor.world.set_tile(-2, -1, Tile::Goal);
+        editor.world.set_box(0, 0, true);
         editor.solution_history.push(vec![(-2, -1), (0, 0)]);
         editor.undo_history.push(editor.make_undo_snapshot());
 
@@ -1092,7 +1080,7 @@ mod tests {
         assert!(editor.undo_history.is_empty());
         assert_eq!(editor.world.player(), None);
         for (x, y) in editor.world.box_positions() {
-            assert_eq!(editor.world.tile(x, y), EditableTile::BoxOnGoal);
+            assert_eq!(editor.world.tile(x, y), Tile::Goal);
         }
     }
 
@@ -1130,16 +1118,16 @@ mod tests {
         clear_world(&mut editor);
         for x in 0..=4 {
             for y in 0..=1 {
-                editor.world.set_tile(x, y, EditableTile::Floor);
+                editor.world.set_tile(x, y, Tile::Floor);
             }
         }
-        editor.world.set_tile(2, 0, EditableTile::Box);
+        editor.world.set_box(2, 0, true);
         editor.world.set_player(None);
         editor.solution_start_boxes = vec![(2, 0)];
         editor.solution_start_player = None;
         editor.solution_history.clear();
         editor.selected_box = Some((2, 0));
-        editor.mode = EditorMode::Manipulate;
+        editor.mode = EditorMode::Move;
 
         editor.start_pull_destination_hints_job((2, 0));
 
@@ -1156,16 +1144,16 @@ mod tests {
         clear_world(&mut editor);
         for x in 0..=4 {
             for y in 0..=1 {
-                editor.world.set_tile(x, y, EditableTile::Floor);
+                editor.world.set_tile(x, y, Tile::Floor);
             }
         }
-        editor.world.set_tile(2, 0, EditableTile::Box);
+        editor.world.set_box(2, 0, true);
         editor.world.set_player(None);
         editor.solution_start_boxes = vec![(2, 0)];
         editor.solution_start_player = None;
         editor.solution_history = vec![vec![(2, 0), (3, 0)], vec![(3, 0), (2, 0)]];
         editor.selected_box = Some((2, 0));
-        editor.mode = EditorMode::Manipulate;
+        editor.mode = EditorMode::Move;
 
         editor.start_pull_destination_hints_job((2, 0));
 
@@ -1198,16 +1186,16 @@ mod tests {
         clear_world(&mut editor);
         for x in 0..=4 {
             for y in 0..=1 {
-                editor.world.set_tile(x, y, EditableTile::Floor);
+                editor.world.set_tile(x, y, Tile::Floor);
             }
         }
-        editor.world.set_tile(2, 0, EditableTile::Box);
+        editor.world.set_box(2, 0, true);
         editor.world.set_player(None);
         editor.solution_start_boxes = vec![(2, 0)];
         editor.solution_start_player = None;
         editor.solution_history = vec![vec![(2, 0), (3, 0)], vec![(3, 0), (2, 0)]];
         editor.selected_box = Some((2, 0));
-        editor.mode = EditorMode::Manipulate;
+        editor.mode = EditorMode::Move;
 
         editor.start_pull_destination_hints_job((2, 0));
         assert!(editor.active_pull_hint_job.is_some());
@@ -1235,16 +1223,16 @@ mod tests {
         clear_world(&mut editor);
         for x in 0..=4 {
             for y in 0..=1 {
-                editor.world.set_tile(x, y, EditableTile::Floor);
+                editor.world.set_tile(x, y, Tile::Floor);
             }
         }
-        editor.world.set_tile(2, 0, EditableTile::Box);
+        editor.world.set_box(2, 0, true);
         editor.world.set_player(None);
         editor.solution_start_boxes = vec![(2, 0)];
         editor.solution_start_player = None;
         editor.solution_history = vec![vec![(2, 0), (3, 0)], vec![(3, 0), (2, 0)]];
         editor.selected_box = Some((2, 0));
-        editor.mode = EditorMode::Manipulate;
+        editor.mode = EditorMode::Move;
 
         editor.start_pull_destination_hints_job((2, 0));
         assert!(editor.active_pull_hint_job.is_some());

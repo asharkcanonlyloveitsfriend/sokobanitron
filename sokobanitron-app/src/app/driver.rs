@@ -170,7 +170,10 @@ mod tests {
     };
     use std::fs;
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    static NEXT_TEMP_DIR_ID: AtomicU64 = AtomicU64::new(0);
 
     struct TestContext {
         controller: GameplayController,
@@ -552,9 +555,9 @@ mod tests {
         editor.apply_command(EditorCommand::PaintCell {
             cell_x: 0,
             cell_y: 0,
-            tool: DrawTool::BoxOnGoal,
+            tool: DrawTool::GoalWithBox,
         });
-        editor.apply_command(EditorCommand::SetMode(EditorMode::Manipulate));
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Move));
         editor.apply_command(EditorCommand::SelectBox {
             cell_x: 0,
             cell_y: 0,
@@ -571,7 +574,8 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("clock before epoch")
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("sokobanitron-{name}-{nanos}"));
+        let unique = NEXT_TEMP_DIR_ID.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("sokobanitron-{name}-{nanos}-{unique}"));
         fs::create_dir_all(&dir).expect("create temp dir");
         dir
     }

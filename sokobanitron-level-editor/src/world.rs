@@ -1,14 +1,12 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const INITIAL_PATCH_SIZE: i32 = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EditableTile {
+pub enum Tile {
     Void,
     Floor,
     Goal,
-    Box,
-    BoxOnGoal,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -21,7 +19,8 @@ pub struct NonVoidBounds {
 
 #[derive(Clone)]
 pub struct EditableWorld {
-    tiles: HashMap<(i32, i32), EditableTile>,
+    tiles: HashMap<(i32, i32), Tile>,
+    boxes: HashSet<(i32, i32)>,
     player: Option<(i32, i32)>,
 }
 
@@ -32,27 +31,29 @@ impl EditableWorld {
         let end = start + INITIAL_PATCH_SIZE;
         for y in start..end {
             for x in start..end {
-                tiles.insert((x, y), EditableTile::Floor);
+                tiles.insert((x, y), Tile::Floor);
             }
         }
 
         Self {
             tiles,
+            boxes: HashSet::new(),
             player: None,
         }
     }
 
-    pub fn tile(&self, world_x: i32, world_y: i32) -> EditableTile {
+    pub fn tile(&self, world_x: i32, world_y: i32) -> Tile {
         self.tiles
             .get(&(world_x, world_y))
             .copied()
-            .unwrap_or(EditableTile::Void)
+            .unwrap_or(Tile::Void)
     }
 
-    pub fn set_tile(&mut self, world_x: i32, world_y: i32, tile: EditableTile) {
+    pub fn set_tile(&mut self, world_x: i32, world_y: i32, tile: Tile) {
         let pos = (world_x, world_y);
-        if tile == EditableTile::Void {
+        if tile == Tile::Void {
             self.tiles.remove(&pos);
+            self.boxes.remove(&pos);
             if self.player == Some(pos) {
                 self.player = None;
             }
@@ -61,19 +62,30 @@ impl EditableWorld {
         }
     }
 
+    pub fn has_box(&self, world_x: i32, world_y: i32) -> bool {
+        self.boxes.contains(&(world_x, world_y))
+    }
+
+    pub fn set_box(&mut self, world_x: i32, world_y: i32, has_box: bool) {
+        let pos = (world_x, world_y);
+        if has_box {
+            assert_ne!(
+                self.tile(world_x, world_y),
+                Tile::Void,
+                "cannot place a box on void"
+            );
+            self.boxes.insert(pos);
+        } else {
+            self.boxes.remove(&pos);
+        }
+    }
+
     pub fn player(&self) -> Option<(i32, i32)> {
         self.player
     }
 
     pub fn box_positions(&self) -> Vec<(i32, i32)> {
-        let mut positions = self
-            .tiles
-            .iter()
-            .filter_map(|(pos, tile)| match tile {
-                EditableTile::Box | EditableTile::BoxOnGoal => Some(*pos),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
+        let mut positions = self.boxes.iter().copied().collect::<Vec<_>>();
         positions.sort_unstable();
         positions
     }
@@ -83,7 +95,7 @@ impl EditableWorld {
             .tiles
             .iter()
             .filter_map(|(pos, tile)| match tile {
-                EditableTile::Goal | EditableTile::BoxOnGoal => Some(*pos),
+                Tile::Goal => Some(*pos),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -92,6 +104,17 @@ impl EditableWorld {
     }
 
     pub fn set_player(&mut self, player: Option<(i32, i32)>) {
+        if let Some((world_x, world_y)) = player {
+            assert_ne!(
+                self.tile(world_x, world_y),
+                Tile::Void,
+                "cannot place the player on void"
+            );
+            assert!(
+                !self.has_box(world_x, world_y),
+                "cannot place the player on a box"
+            );
+        }
         self.player = player;
     }
 
@@ -135,7 +158,7 @@ impl Default for EditableWorld {
 
 #[cfg(test)]
 mod tests {
-    use super::{EditableTile, EditableWorld, INITIAL_PATCH_SIZE, NonVoidBounds};
+    use super::{EditableWorld, INITIAL_PATCH_SIZE, NonVoidBounds, Tile};
 
     #[test]
     fn seeded_world_starts_with_center_three_by_three_floor() {
@@ -145,19 +168,20 @@ mod tests {
         let mut floor_count = 0;
         for y in start..end {
             for x in start..end {
-                assert_eq!(world.tile(x, y), EditableTile::Floor);
+                assert_eq!(world.tile(x, y), Tile::Floor);
                 floor_count += 1;
             }
         }
         assert_eq!(floor_count, INITIAL_PATCH_SIZE * INITIAL_PATCH_SIZE);
-        assert_eq!(world.tile(end, 0), EditableTile::Void);
+        assert_eq!(world.tile(end, 0), Tile::Void);
     }
 
     #[test]
     fn non_void_bounds_track_insertions_and_removals() {
         let mut world = EditableWorld::new();
-        world.set_tile(10, -4, EditableTile::Goal);
-        world.set_tile(-8, 7, EditableTile::Box);
+        world.set_tile(10, -4, Tile::Goal);
+        world.set_tile(-8, 7, Tile::Floor);
+        world.set_box(-8, 7, true);
 
         let bounds = world.non_void_bounds().expect("bounds");
         assert_eq!(
@@ -170,8 +194,8 @@ mod tests {
             }
         );
 
-        world.set_tile(10, -4, EditableTile::Void);
-        world.set_tile(-8, 7, EditableTile::Void);
+        world.set_tile(10, -4, Tile::Void);
+        world.set_tile(-8, 7, Tile::Void);
 
         let bounds_after = world.non_void_bounds().expect("seed bounds");
         let start = -INITIAL_PATCH_SIZE / 2;
@@ -180,5 +204,16 @@ mod tests {
         assert_eq!(bounds_after.max_x, end_inclusive);
         assert_eq!(bounds_after.min_y, start);
         assert_eq!(bounds_after.max_y, end_inclusive);
+    }
+
+    #[test]
+    fn clearing_a_tile_also_clears_its_box() {
+        let mut world = EditableWorld::new();
+        world.set_tile(4, 2, Tile::Floor);
+        world.set_box(4, 2, true);
+
+        world.set_tile(4, 2, Tile::Void);
+
+        assert!(!world.has_box(4, 2));
     }
 }

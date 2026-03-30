@@ -1,14 +1,14 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EditorMode {
     Draw,
-    Manipulate,
+    Move,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DrawTool {
     Floor,
-    BoxOnGoal,
     Void,
+    GoalWithBox,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

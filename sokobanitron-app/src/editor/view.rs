@@ -8,7 +8,7 @@ use presentation::layout::{
     BoardViewport, ScreenRect, editor_bottom_left_button_rect, editor_bottom_right_button_rect,
 };
 use sokobanitron_gameplay::{BoardView, TileKind};
-use sokobanitron_level_editor::{EditableTile, EditorMode, LevelEditor, NonVoidBounds};
+use sokobanitron_level_editor::{EditorMode, LevelEditor, NonVoidBounds, Tile};
 
 use crate::shared::{DoubleTapTracker, PointerId, SinglePointerGestureState};
 
@@ -77,19 +77,11 @@ pub fn reset_editor_interaction_state(editor: &mut EditorUiState) {
 }
 
 pub(crate) fn can_save_editor_puzzle(editor: &LevelEditor) -> bool {
-    let Some(bounds) = editor.world().non_void_bounds() else {
-        return false;
-    };
-
-    for y in bounds.min_y..=bounds.max_y {
-        for x in bounds.min_x..=bounds.max_x {
-            if editor.world().tile(x, y) == EditableTile::Box {
-                return true;
-            }
-        }
-    }
-
-    false
+    editor
+        .world()
+        .box_positions()
+        .into_iter()
+        .any(|(x, y)| editor.world().tile(x, y) == Tile::Floor)
 }
 
 #[derive(Debug)]
@@ -132,40 +124,22 @@ pub(crate) fn build_visible_window(ui: &EditorUiState, editor: &LevelEditor) -> 
         for x in 0..board_cols {
             let world_x = world_origin_x + x as i32;
             let world_y = world_origin_y + y as i32;
+            let tile = editor.world().tile(world_x, world_y);
+            let has_box = editor.world().has_box(world_x, world_y);
             if !hide_player && editor.world().player() == Some((world_x, world_y)) {
                 player_local = Some((x, y));
             }
-            match editor.world().tile(world_x, world_y) {
-                sokobanitron_level_editor::EditableTile::Void => {
-                    tiles.push(TileKind::Void);
-                    boxes.push(false);
-                }
-                sokobanitron_level_editor::EditableTile::Floor => {
-                    tiles.push(TileKind::Floor);
-                    boxes.push(false);
-                }
-                sokobanitron_level_editor::EditableTile::Goal => {
-                    tiles.push(TileKind::Goal);
-                    boxes.push(false);
-                }
-                sokobanitron_level_editor::EditableTile::Box => {
-                    tiles.push(TileKind::Floor);
-                    boxes.push(true);
-                    if editor.selected_box() == Some((world_x, world_y))
-                        && matches!(editor.mode(), EditorMode::Manipulate)
-                    {
-                        selected_box_local = Some((x, y));
-                    }
-                }
-                sokobanitron_level_editor::EditableTile::BoxOnGoal => {
-                    tiles.push(TileKind::Goal);
-                    boxes.push(true);
-                    if editor.selected_box() == Some((world_x, world_y))
-                        && matches!(editor.mode(), EditorMode::Manipulate)
-                    {
-                        selected_box_local = Some((x, y));
-                    }
-                }
+            match tile {
+                sokobanitron_level_editor::Tile::Void => tiles.push(TileKind::Void),
+                sokobanitron_level_editor::Tile::Floor => tiles.push(TileKind::Floor),
+                sokobanitron_level_editor::Tile::Goal => tiles.push(TileKind::Goal),
+            }
+            boxes.push(has_box);
+            if has_box
+                && editor.selected_box() == Some((world_x, world_y))
+                && matches!(editor.mode(), EditorMode::Move)
+            {
+                selected_box_local = Some((x, y));
             }
         }
     }

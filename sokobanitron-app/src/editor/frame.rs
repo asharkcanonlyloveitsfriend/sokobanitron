@@ -23,7 +23,7 @@ pub fn build_current_editor_frame_request(
     if app_state.is_editor_menu_open() {
         FrameRequest::EditorMenu {
             screen: EditorMenuScreenRequest {
-                primary_action_icon: UiIcon::Manipulate,
+                primary_action_icon: UiIcon::Select,
                 show_save_button: can_save_editor_puzzle(editor),
             },
         }
@@ -91,7 +91,7 @@ fn build_hint_overlays(
     visible: &VisibleBoardWindow,
     snapshot: &EditorSnapshot,
 ) -> Vec<EditorHintOverlay> {
-    if !matches!(snapshot.mode, EditorMode::Manipulate) || snapshot.selected_box.is_none() {
+    if !matches!(snapshot.mode, EditorMode::Move) || snapshot.selected_box.is_none() {
         return Vec::new();
     }
 
@@ -160,9 +160,9 @@ mod tests {
         editor.apply_command(EditorCommand::PaintCell {
             cell_x: 0,
             cell_y: 0,
-            tool: DrawTool::BoxOnGoal,
+            tool: DrawTool::GoalWithBox,
         });
-        editor.apply_command(EditorCommand::SetMode(EditorMode::Manipulate));
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Move));
         editor.apply_command(EditorCommand::SelectBox {
             cell_x: 0,
             cell_y: 0,

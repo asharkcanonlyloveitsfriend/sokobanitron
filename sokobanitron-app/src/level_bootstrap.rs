@@ -70,7 +70,10 @@ mod tests {
     use std::fs;
     use std::io;
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    static NEXT_TEMP_DIR_ID: AtomicU64 = AtomicU64::new(0);
 
     #[test]
     fn empty_store_bootstraps_without_fallback_content() {
@@ -92,7 +95,10 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("clock before epoch")
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("sokobanitron-level-bootstrap-{name}-{nanos}"));
+        let unique = NEXT_TEMP_DIR_ID.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "sokobanitron-level-bootstrap-{name}-{nanos}-{unique}"
+        ));
         fs::create_dir_all(&dir).expect("create temp dir");
         dir
     }

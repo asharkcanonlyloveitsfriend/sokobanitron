@@ -3,7 +3,6 @@
 ## Near Term
 
 - Kindle: when the custom app sleep screen is disabled or the app hands control back, make sure the system screensaver module is restored without requiring a full device reboot; restarting `lab126_gui` may be an acceptable fallback.
-- Refactor the level editor tile model so it is closer to gameplay: keep base tiles and box occupancy aligned with gameplay semantics instead of treating boxes as part of `EditableTile`, while still preserving convenient authoring flows like drawing a box on a goal.
 
 ## Launch
 

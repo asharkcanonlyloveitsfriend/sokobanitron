@@ -9,4 +9,4 @@ pub use snapshot::{
     BoxMoveCountSnapshot, EditorBoardSnapshot, EditorCellSnapshot, EditorSnapshot,
     PullHintSnapshot, PullHintStatus,
 };
-pub use world::{EditableTile, EditableWorld, NonVoidBounds};
+pub use world::{EditableWorld, NonVoidBounds, Tile};

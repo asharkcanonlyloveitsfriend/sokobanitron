@@ -108,7 +108,7 @@ fn draw_editor_controls(frame: &mut [u8], width: u32, height: u32, controls: Edi
     let mode_icon = if controls.draw_mode_active {
         UiIcon::Draw
     } else {
-        UiIcon::Manipulate
+        UiIcon::Select
     };
     draw_ui_icon_in_rect(
         frame,

@@ -1,5 +1,5 @@
 use crate::command::EditorMode;
-use crate::world::{EditableTile, NonVoidBounds};
+use crate::world::{NonVoidBounds, Tile};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EditorSnapshot {
@@ -23,7 +23,8 @@ pub struct EditorBoardSnapshot {
 pub struct EditorCellSnapshot {
     pub world_x: i32,
     pub world_y: i32,
-    pub tile: EditableTile,
+    pub tile: Tile,
+    pub has_box: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

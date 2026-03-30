@@ -9,7 +9,7 @@ use crate::shared::{
     MOUSE_POINTER_ID, PointerContact, PointerEvent, PointerGesture, PointerId, PointerPhase,
 };
 use presentation::hit_test::ControlsButtonAction;
-use sokobanitron_level_editor::{EditableTile, EditorCommand, EditorMode, LevelEditor};
+use sokobanitron_level_editor::{EditorCommand, EditorMode, LevelEditor, Tile};
 use std::time::{Duration, Instant};
 
 use super::hit_test::{
@@ -224,7 +224,7 @@ fn apply_editor_control_slot(
             Some(ZoomAction::ZoomOut) => zoom_out(&mut app_state.editor),
             None => {}
         },
-        EditorMode::Manipulate => match resolve_manipulate_action(editor, slot) {
+        EditorMode::Move => match resolve_move_action(editor, slot) {
             Some(ControlsButtonAction::Undo) => {
                 editor.apply_command(EditorCommand::Undo);
             }
@@ -253,23 +253,21 @@ fn begin_editor_board_interaction(
                 mode,
             });
         }
-        EditorMode::Manipulate => match editor.world().tile(world_x, world_y) {
-            EditableTile::Box | EditableTile::BoxOnGoal => {
+        EditorMode::Move => {
+            if editor.world().has_box(world_x, world_y) {
                 editor.apply_command(EditorCommand::SelectBox {
                     cell_x: world_x,
                     cell_y: world_y,
                 });
-            }
-            EditableTile::Void => {
+            } else if matches!(editor.world().tile(world_x, world_y), Tile::Void) {
                 editor.apply_command(EditorCommand::ClearSelection);
-            }
-            _ => {
+            } else {
                 editor.apply_command(EditorCommand::MoveSelectedBoxTo {
                     cell_x: world_x,
                     cell_y: world_y,
                 });
             }
-        },
+        }
     }
 }
 
@@ -331,7 +329,7 @@ fn resolve_paint_mode(
     at: Instant,
 ) -> PaintMode {
     let current_tile = editor.world().tile(world_x, world_y);
-    if current_tile == EditableTile::BoxOnGoal {
+    if editor.world().has_box(world_x, world_y) {
         ui.interaction.double_tap.clear();
         return PaintMode::Void;
     }
@@ -341,7 +339,7 @@ fn resolve_paint_mode(
         .double_tap
         .register_tap((world_x, world_y), at, DOUBLE_TAP_WINDOW)
     {
-        PaintMode::BoxOnGoal
+        PaintMode::GoalWithBox
     } else {
         PaintMode::from_start_tile(current_tile)
     }
@@ -359,7 +357,7 @@ fn resolve_zoom_action(
     }
 }
 
-fn resolve_manipulate_action(
+fn resolve_move_action(
     editor: &LevelEditor,
     slot: EditorControlSlot,
 ) -> Option<ControlsButtonAction> {
@@ -399,9 +397,9 @@ mod tests {
         editor.apply_command(EditorCommand::PaintCell {
             cell_x: 0,
             cell_y: 0,
-            tool: DrawTool::BoxOnGoal,
+            tool: DrawTool::GoalWithBox,
         });
-        editor.apply_command(EditorCommand::SetMode(EditorMode::Manipulate));
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Move));
         editor.apply_command(EditorCommand::SelectBox {
             cell_x: 0,
             cell_y: 0,

@@ -7,14 +7,19 @@ use rusqlite::Connection;
 use sokobanitron_gameplay::OrientationPolicy;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+static NEXT_TEMP_DIR_ID: AtomicU64 = AtomicU64::new(0);
 
 fn temp_dir(name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("clock before epoch")
         .as_nanos();
-    let dir = std::env::temp_dir().join(format!("sokobanitron-persistence-{name}-{nanos}"));
+    let unique = NEXT_TEMP_DIR_ID.fetch_add(1, Ordering::Relaxed);
+    let dir =
+        std::env::temp_dir().join(format!("sokobanitron-persistence-{name}-{nanos}-{unique}"));
     fs::create_dir_all(&dir).expect("create temp dir");
     dir
 }

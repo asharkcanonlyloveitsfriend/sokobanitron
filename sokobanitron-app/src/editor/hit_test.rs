@@ -192,9 +192,9 @@ mod tests {
         editor.apply_command(EditorCommand::PaintCell {
             cell_x: 0,
             cell_y: 0,
-            tool: DrawTool::BoxOnGoal,
+            tool: DrawTool::GoalWithBox,
         });
-        editor.apply_command(EditorCommand::SetMode(EditorMode::Manipulate));
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Move));
         editor.apply_command(EditorCommand::SelectBox {
             cell_x: 0,
             cell_y: 0,
