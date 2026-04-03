@@ -1,8 +1,9 @@
-use crate::registry::{insert_app, remove_app, with_app, with_app_mut};
+use crate::native_window::NativeWindow;
+use crate::registry::{insert_app, remove_app, with_app_mut};
 use crate::runtime::AndroidApp;
 use jni::JNIEnv;
 use jni::objects::{JObject, JString};
-use jni::sys::{jfloat, jint, jintArray, jlong};
+use jni::sys::{JNI_FALSE, JNI_TRUE, jboolean, jfloat, jint, jlong};
 use sokobanitron_app::shared::PointerPhase;
 use std::path::PathBuf;
 
@@ -23,16 +24,6 @@ fn parse_pointer_phase(phase: jint) -> Option<PointerPhase> {
         PHASE_CANCELLED => Some(PointerPhase::Cancelled),
         _ => None,
     }
-}
-
-fn make_int_array(env: &mut JNIEnv, values: &[i32]) -> jintArray {
-    let Ok(array) = env.new_int_array(i32::try_from(values.len()).unwrap_or(0)) else {
-        return std::ptr::null_mut();
-    };
-    if env.set_int_array_region(&array, 0, values).is_err() {
-        return std::ptr::null_mut();
-    }
-    array.into_raw()
 }
 
 #[unsafe(no_mangle)]
@@ -95,6 +86,26 @@ pub extern "system" fn Java_com_sokobanitron_app_dev_NativeBridge_nativeResize(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_com_sokobanitron_app_dev_NativeBridge_nativeSetSurface(
+    env: JNIEnv,
+    _bridge: JObject,
+    handle: jlong,
+    surface: JObject,
+) {
+    let Some(id) = handle_to_id(handle) else {
+        return;
+    };
+    let native_window = if surface.as_raw().is_null() {
+        None
+    } else {
+        NativeWindow::from_surface(&env, &surface)
+    };
+    with_app_mut(id, (), |app| {
+        app.set_native_window(native_window);
+    });
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_sokobanitron_app_dev_NativeBridge_nativeOnPointerEvent(
     _env: JNIEnv,
     _bridge: JObject,
@@ -103,32 +114,36 @@ pub extern "system" fn Java_com_sokobanitron_app_dev_NativeBridge_nativeOnPointe
     phase: jint,
     x: jfloat,
     y: jfloat,
-) {
+) -> jboolean {
     let Some(id) = handle_to_id(handle) else {
-        return;
+        return JNI_FALSE;
     };
     let Some(phase) = parse_pointer_phase(phase) else {
-        return;
+        return JNI_FALSE;
     };
-    with_app_mut(id, (), |app| {
-        app.handle_pointer_event(
+    with_app_mut(id, JNI_FALSE, |app| {
+        if app.handle_pointer_event(
             u64::try_from(pointer_id).unwrap_or(0),
             phase,
             f64::from(x),
             f64::from(y),
-        );
-    });
+        ) {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_sokobanitron_app_dev_NativeBridge_nativeRenderFrame(
-    mut env: JNIEnv,
+pub extern "system" fn Java_com_sokobanitron_app_dev_NativeBridge_nativePresentFrame(
+    _env: JNIEnv,
     _bridge: JObject,
     handle: jlong,
-) -> jintArray {
+) -> jboolean {
     let Some(id) = handle_to_id(handle) else {
-        return make_int_array(&mut env, &[]);
+        return JNI_FALSE;
     };
-    let frame = with_app(id, Vec::new(), |app| app.frame_pixels().to_vec());
-    make_int_array(&mut env, &frame)
+    let success = with_app_mut(id, false, |app| app.present_frame());
+    if success { JNI_TRUE } else { JNI_FALSE }
 }

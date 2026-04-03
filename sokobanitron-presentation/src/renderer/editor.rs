@@ -30,8 +30,7 @@ impl Renderer {
         height: u32,
         request: &EditorScreenRequest,
     ) {
-        self.draw_background_only(frame, width, height);
-        self.draw_board_on_frame(
+        self.draw_board_scene_on_frame(
             frame,
             width,
             height,
@@ -41,36 +40,8 @@ impl Renderer {
             false,
             false,
         );
-        for count in &request.move_counts {
-            draw_count_label(
-                frame,
-                width,
-                height,
-                count.rect,
-                &count.count.to_string(),
-                BUTTON_TEXT_COLOR,
-            );
-        }
-        for hint in &request.pull_destination_hints {
-            let label = match hint.state {
-                PullHintStatus::Pending => "?".to_string(),
-                PullHintStatus::Ready(count) => count.min(99).to_string(),
-            };
-            draw_count_label(frame, width, height, hint.rect, &label, HINT_TEXT_COLOR);
-        }
-        draw_editor_controls(
-            frame,
-            width,
-            height,
-            EditorControlsState {
-                draw_mode_active: request.draw_mode_active,
-                can_zoom_out: request.can_zoom_out,
-                can_zoom_in: request.can_zoom_in,
-                can_undo: request.can_undo,
-                can_restart: request.can_restart,
-            },
-        );
-        draw_top_menu_toggle(frame, width, height, false);
+        self.draw_editor_overlays_on_frame(frame, width, height, request);
+        self.draw_editor_chrome_on_frame(frame, width, height, request);
     }
 
     pub fn draw_editor_menu(
@@ -101,6 +72,54 @@ impl Renderer {
                 BUTTON_TEXT_COLOR,
             );
         }
+    }
+
+    pub fn draw_editor_overlays_on_frame(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        request: &EditorScreenRequest,
+    ) {
+        for count in &request.move_counts {
+            draw_count_label(
+                frame,
+                width,
+                height,
+                count.rect,
+                &count.count.to_string(),
+                BUTTON_TEXT_COLOR,
+            );
+        }
+        for hint in &request.pull_destination_hints {
+            let label = match hint.state {
+                PullHintStatus::Pending => "?".to_string(),
+                PullHintStatus::Ready(count) => count.min(99).to_string(),
+            };
+            draw_count_label(frame, width, height, hint.rect, &label, HINT_TEXT_COLOR);
+        }
+    }
+
+    pub fn draw_editor_chrome_on_frame(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        request: &EditorScreenRequest,
+    ) {
+        draw_editor_controls(
+            frame,
+            width,
+            height,
+            EditorControlsState {
+                draw_mode_active: request.draw_mode_active,
+                can_zoom_out: request.can_zoom_out,
+                can_zoom_in: request.can_zoom_in,
+                can_undo: request.can_undo,
+                can_restart: request.can_restart,
+            },
+        );
+        draw_top_menu_toggle(frame, width, height, false);
     }
 }
 

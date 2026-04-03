@@ -20,10 +20,6 @@ impl AppRegistry {
         id
     }
 
-    fn get(&self, id: u64) -> Option<&AndroidApp> {
-        self.apps.get(&id)
-    }
-
     fn get_mut(&mut self, id: u64) -> Option<&mut AndroidApp> {
         self.apps.get_mut(&id)
     }
@@ -39,16 +35,6 @@ pub fn insert_app(app: AndroidApp) -> u64 {
 
 pub fn remove_app(id: u64) {
     REGISTRY.with(|registry| registry.borrow_mut().remove(id));
-}
-
-pub fn with_app<R>(id: u64, default: R, f: impl FnOnce(&AndroidApp) -> R) -> R {
-    REGISTRY.with(|registry| {
-        let registry = registry.borrow();
-        let Some(app) = registry.get(id) else {
-            return default;
-        };
-        f(app)
-    })
 }
 
 pub fn with_app_mut<R>(id: u64, default: R, f: impl FnOnce(&mut AndroidApp) -> R) -> R {

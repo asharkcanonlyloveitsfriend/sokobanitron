@@ -9,6 +9,48 @@ fn rgb_hex(color: [u8; 4]) -> String {
 }
 
 impl Renderer {
+    #[allow(clippy::too_many_arguments)]
+    fn draw_box_at(
+        &mut self,
+        frame: &mut [u8],
+        frame_width: u32,
+        frame_height: u32,
+        board: &BoardView,
+        viewport: &BoardViewport,
+        x: u32,
+        y: u32,
+    ) {
+        if !board.has_box(x, y) {
+            return;
+        }
+        let (cell_x, cell_y, cell_w, cell_h) = viewport.cell_to_screen_rect(x, y);
+        let inset = (cell_w / 24).max(1);
+        let box_x = cell_x + inset as i32;
+        let box_y = cell_y + inset as i32;
+        let box_w = cell_w.saturating_sub(inset * 2);
+        let box_h = cell_h.saturating_sub(inset * 2);
+        if box_w == 0 || box_h == 0 {
+            return;
+        }
+
+        let icon_size = box_w.min(box_h);
+        let icon = if board.selected_box() == Some((x, y)) {
+            self.selected_box_bitmap(icon_size)
+        } else {
+            self.box_bitmap(icon_size)
+        };
+        blit_rgba(
+            frame,
+            frame_width,
+            frame_height,
+            icon,
+            icon_size,
+            icon_size,
+            box_x,
+            box_y,
+        );
+    }
+
     pub(crate) fn draw_boxes(
         &mut self,
         frame: &mut [u8],
@@ -19,35 +61,7 @@ impl Renderer {
     ) {
         for y in 0..board.height() {
             for x in 0..board.width() {
-                if !board.has_box(x, y) {
-                    continue;
-                }
-                let (cell_x, cell_y, cell_w, cell_h) = viewport.cell_to_screen_rect(x, y);
-                let inset = (cell_w / 24).max(1);
-                let box_x = cell_x + inset as i32;
-                let box_y = cell_y + inset as i32;
-                let box_w = cell_w.saturating_sub(inset * 2);
-                let box_h = cell_h.saturating_sub(inset * 2);
-                if box_w == 0 || box_h == 0 {
-                    continue;
-                }
-
-                let icon_size = box_w.min(box_h);
-                let icon = if board.selected_box() == Some((x, y)) {
-                    self.selected_box_bitmap(icon_size)
-                } else {
-                    self.box_bitmap(icon_size)
-                };
-                blit_rgba(
-                    frame,
-                    frame_width,
-                    frame_height,
-                    icon,
-                    icon_size,
-                    icon_size,
-                    box_x,
-                    box_y,
-                );
+                self.draw_box_at(frame, frame_width, frame_height, board, viewport, x, y);
             }
         }
     }

@@ -1,5 +1,7 @@
 package com.sokobanitron.app.dev
 
+import android.view.Surface
+
 object NativeBridge {
     private const val LIB_NAME = "sokobanitron_android_jni"
 
@@ -34,20 +36,28 @@ object NativeBridge {
         nativeResize(handle, surfaceWidth, surfaceHeight)
     }
 
+    fun setSurface(
+        handle: Long,
+        surface: Surface?,
+    ) {
+        check(ensureLoaded()) { "Native library '$LIB_NAME' is not loaded." }
+        nativeSetSurface(handle, surface)
+    }
+
     fun onPointerEvent(
         handle: Long,
         pointerId: Long,
         phase: Int,
         x: Float,
         y: Float,
-    ) {
+    ): Boolean {
         check(ensureLoaded()) { "Native library '$LIB_NAME' is not loaded." }
-        nativeOnPointerEvent(handle, pointerId, phase, x, y)
+        return nativeOnPointerEvent(handle, pointerId, phase, x, y)
     }
 
-    fun renderFrame(handle: Long): IntArray {
+    fun presentFrame(handle: Long): Boolean {
         check(ensureLoaded()) { "Native library '$LIB_NAME' is not loaded." }
-        return nativeRenderFrame(handle)
+        return nativePresentFrame(handle)
     }
 
     private fun ensureLoaded(): Boolean {
@@ -82,13 +92,18 @@ object NativeBridge {
         surfaceHeight: Int,
     )
 
+    private external fun nativeSetSurface(
+        handle: Long,
+        surface: Surface?,
+    )
+
     private external fun nativeOnPointerEvent(
         handle: Long,
         pointerId: Long,
         phase: Int,
         x: Float,
         y: Float,
-    )
+    ): Boolean
 
-    private external fun nativeRenderFrame(handle: Long): IntArray
+    private external fun nativePresentFrame(handle: Long): Boolean
 }

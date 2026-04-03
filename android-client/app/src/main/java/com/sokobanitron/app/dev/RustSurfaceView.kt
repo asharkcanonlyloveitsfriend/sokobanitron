@@ -1,8 +1,6 @@
 package com.sokobanitron.app.dev
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.SurfaceHolder
@@ -13,7 +11,7 @@ class RustSurfaceView @JvmOverloads constructor(
     attrs: AttributeSet? = null,
 ) : SurfaceView(context, attrs), SurfaceHolder.Callback {
     private var nativeHandle: Long = 0L
-    private var frameBitmap: Bitmap? = null
+    private var presentRetryPending = false
 
     init {
         holder.addCallback(this)
@@ -38,49 +36,63 @@ class RustSurfaceView @JvmOverloads constructor(
             NativeBridge.resize(nativeHandle, width, height)
         }
 
-        frameBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        NativeBridge.setSurface(nativeHandle, holder.surface)
         render()
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
-        frameBitmap?.recycle()
-        frameBitmap = null
+        presentRetryPending = false
+        val handle = nativeHandle
+        if (handle != 0L) {
+            NativeBridge.setSurface(handle, null)
+        }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val handle = nativeHandle
         if (handle == 0L) return super.onTouchEvent(event)
 
-        when (event.actionMasked) {
+        val shouldRender =
+            when (event.actionMasked) {
             MotionEvent.ACTION_DOWN,
             MotionEvent.ACTION_POINTER_DOWN,
             -> dispatchPointerEvent(handle, event, event.actionIndex, PHASE_STARTED)
 
             MotionEvent.ACTION_MOVE -> {
+                var shouldRender = false
                 for (index in 0 until event.pointerCount) {
-                    dispatchPointerEvent(handle, event, index, PHASE_MOVED)
+                    shouldRender =
+                        dispatchPointerEvent(handle, event, index, PHASE_MOVED) || shouldRender
                 }
+                shouldRender
             }
 
             MotionEvent.ACTION_UP,
             MotionEvent.ACTION_POINTER_UP,
             -> {
-                dispatchPointerEvent(handle, event, event.actionIndex, PHASE_ENDED)
+                val shouldRender =
+                    dispatchPointerEvent(handle, event, event.actionIndex, PHASE_ENDED)
                 if (event.actionMasked == MotionEvent.ACTION_UP) {
                     performClick()
                 }
+                shouldRender
             }
 
             MotionEvent.ACTION_CANCEL -> {
+                var shouldRender = false
                 for (index in 0 until event.pointerCount) {
-                    dispatchPointerEvent(handle, event, index, PHASE_CANCELLED)
+                    shouldRender =
+                        dispatchPointerEvent(handle, event, index, PHASE_CANCELLED) || shouldRender
                 }
+                shouldRender
             }
 
             else -> return super.onTouchEvent(event)
         }
 
-        render()
+        if (shouldRender) {
+            render()
+        }
         return true
     }
 
@@ -90,12 +102,12 @@ class RustSurfaceView @JvmOverloads constructor(
     }
 
     fun release() {
+        presentRetryPending = false
         if (nativeHandle != 0L) {
+            NativeBridge.setSurface(nativeHandle, null)
             NativeBridge.destroy(nativeHandle)
             nativeHandle = 0L
         }
-        frameBitmap?.recycle()
-        frameBitmap = null
     }
 
     override fun onDetachedFromWindow() {
@@ -108,7 +120,7 @@ class RustSurfaceView @JvmOverloads constructor(
         event: MotionEvent,
         index: Int,
         phase: Int,
-    ) {
+    ): Boolean =
         NativeBridge.onPointerEvent(
             handle,
             event.getPointerId(index).toLong(),
@@ -116,31 +128,29 @@ class RustSurfaceView @JvmOverloads constructor(
             event.getX(index),
             event.getY(index),
         )
-    }
 
     private fun render() {
-        val handle = nativeHandle
-        val bitmap = frameBitmap
-        if (handle == 0L || bitmap == null || !holder.surface.isValid) return
-
-        val pixels = NativeBridge.renderFrame(handle)
-        if (pixels.size != bitmap.width * bitmap.height) return
-
-        bitmap.setPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-
-        val canvas = holder.lockCanvas() ?: return
-        try {
-            drawFrame(canvas, bitmap)
-        } finally {
-            holder.unlockCanvasAndPost(canvas)
-        }
+        render(allowRetry = true)
     }
 
-    private fun drawFrame(
-        canvas: Canvas,
-        bitmap: Bitmap,
-    ) {
-        canvas.drawBitmap(bitmap, 0f, 0f, null)
+    private fun render(allowRetry: Boolean) {
+        val handle = nativeHandle
+        if (handle == 0L || !holder.surface.isValid) {
+            presentRetryPending = false
+            return
+        }
+
+        if (NativeBridge.presentFrame(handle)) {
+            presentRetryPending = false
+            return
+        }
+        if (!allowRetry || presentRetryPending || !holder.surface.isValid) return
+
+        presentRetryPending = true
+        post {
+            presentRetryPending = false
+            render(allowRetry = false)
+        }
     }
 
     private companion object {

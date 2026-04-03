@@ -41,8 +41,7 @@ impl Renderer {
         height: u32,
         request: &GameplayScreenRequest,
     ) {
-        self.draw_background_only(frame, width, height);
-        self.draw_board_on_frame(
+        self.draw_board_scene_on_frame(
             frame,
             width,
             height,

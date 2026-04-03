@@ -1,3 +1,4 @@
+use crate::native_window::NativeWindow;
 use presentation::layout::ControlsUiMode;
 use presentation::renderer::{
     Renderer, draw_controls_ui, draw_gameplay_menu_level_set_button,
@@ -37,7 +38,8 @@ pub struct AndroidApp {
     renderer: GameplayRenderer,
     gameplay_presentation: GameplayPresentationState,
     rgba_frame: Vec<u8>,
-    argb_frame: Vec<i32>,
+    current_request: FrameRequest,
+    frame_dirty: bool,
     preview_boards: Vec<BoardView>,
     controller: GameplayController,
     app_state: AppState,
@@ -45,6 +47,11 @@ pub struct AndroidApp {
     surface_width: u32,
     surface_height: u32,
     editor: LevelEditor,
+    native_window: Option<NativeWindow>,
+    // Tracks presentation-relevant invalidation observed by the Android host. Today we only bump
+    // this when the built frame request changes, which is a deliberate current limitation rather
+    // than a claim that request equality always implies identical pixels.
+    presentation_generation: u64,
 }
 
 impl AndroidApp {
@@ -77,48 +84,80 @@ impl AndroidApp {
             initial_levels.level_set_catalog,
             Some(initial_levels.active_level_set_index),
         );
+        let editor = LevelEditor::new();
+        let current_request = build_android_frame_request(&controller, &app_state, &editor);
 
-        let mut app = Self {
+        Ok(Self {
             renderer: Renderer::new(),
             gameplay_presentation: GameplayPresentationState::new(),
             rgba_frame: allocate_rgba_frame(surface_width, surface_height),
-            argb_frame: allocate_argb_frame(surface_width, surface_height),
+            current_request,
+            frame_dirty: true,
             preview_boards,
             controller,
             app_state,
             level_persistence: initial_levels.persistence,
             surface_width,
             surface_height,
-            editor: LevelEditor::new(),
-        };
-        app.render_current();
-        Ok(app)
+            editor,
+            native_window: None,
+            presentation_generation: 0,
+        })
     }
 
     pub fn resize(&mut self, surface_width: u32, surface_height: u32) {
         self.surface_width = surface_width.max(1);
         self.surface_height = surface_height.max(1);
         self.rgba_frame = allocate_rgba_frame(self.surface_width, self.surface_height);
-        self.argb_frame = allocate_argb_frame(self.surface_width, self.surface_height);
         resize_gameplay_surface(
             &mut self.app_state.gameplay,
             self.surface_width,
             self.surface_height,
         );
         resize_editor_surface(&mut self.app_state, self.surface_width, self.surface_height);
+        self.configure_native_window();
         self.render_current();
     }
 
-    pub fn handle_pointer_event(&mut self, id: u64, phase: PointerPhase, x: f64, y: f64) {
+    pub fn handle_pointer_event(&mut self, id: u64, phase: PointerPhase, x: f64, y: f64) -> bool {
+        let presentation_generation_before = self.presentation_generation;
         match self.app_state.interaction_mode() {
             AppInteractionMode::Gameplay => self.on_gameplay_pointer_event(id, phase, x, y),
             AppInteractionMode::Editor => self.on_editor_touch(id, phase, x, y),
             AppInteractionMode::Overlay(_) => self.on_overlay_pointer_event(id, phase, x, y),
         }
+        self.presentation_generation != presentation_generation_before
     }
 
-    pub fn frame_pixels(&self) -> &[i32] {
-        &self.argb_frame
+    pub fn set_native_window(&mut self, native_window: Option<NativeWindow>) {
+        self.native_window = native_window;
+        self.configure_native_window();
+        if self.native_window.is_some() {
+            self.frame_dirty = true;
+        }
+    }
+
+    pub fn present_frame(&mut self) -> bool {
+        if !self.frame_dirty {
+            return true;
+        }
+        let Some(mut window) = self.native_window.take() else {
+            return false;
+        };
+        // Temporarily move the window out so we can render into app-owned buffers and then present
+        // through the window without holding overlapping borrows on `self`.
+        let request = self.current_request.clone();
+        let surface_width = self.surface_width;
+        let surface_height = self.surface_height;
+        let mut frame = std::mem::take(&mut self.rgba_frame);
+        self.render_request_into(&request, &mut frame, surface_width, surface_height);
+        let presented = window.present_rgba(&frame, surface_width, surface_height);
+        self.rgba_frame = frame;
+        self.native_window = Some(window);
+        if presented {
+            self.frame_dirty = false;
+        }
+        presented
     }
 
     fn apply_app_input(&mut self, input: AppInput) -> Option<AppliedUpdate> {
@@ -164,6 +203,7 @@ impl AndroidApp {
     }
 
     fn on_editor_touch(&mut self, id: u64, phase: PointerPhase, x: f64, y: f64) {
+        let before_request = self.build_current_request();
         let action = editor_touch(&mut self.app_state, &mut self.editor, id, phase, x, y);
         let runtime = AppRuntimeMut {
             controller: &mut self.controller,
@@ -172,7 +212,10 @@ impl AndroidApp {
             preview_boards: &mut self.preview_boards,
         };
         apply_editor_ui_action(action, runtime.with_editor(&mut self.editor));
-        self.render_current();
+        let after_request = self.build_current_request();
+        if after_request != before_request {
+            self.queue_request(after_request);
+        }
     }
 
     fn on_overlay_pointer_event(&mut self, id: u64, phase: PointerPhase, x: f64, y: f64) {
@@ -186,134 +229,122 @@ impl AndroidApp {
     }
 
     fn render_current(&mut self) {
-        let request = match self.app_state.active_screen() {
-            AppScreen::Gameplay => build_current_frame_request(&self.controller, &self.app_state),
-            AppScreen::Editor => build_current_editor_frame_request(&self.app_state, &self.editor),
-        };
-        let _ = self.render_request(&request);
+        let request = self.build_current_request();
+        self.queue_request(request);
+    }
+
+    fn build_current_request(&self) -> FrameRequest {
+        build_android_frame_request(&self.controller, &self.app_state, &self.editor)
     }
 
     fn render_active_gameplay_screen(&mut self) {
         let request = build_current_frame_request(&self.controller, &self.app_state);
-        let _ = self.render_request(&request);
+        self.queue_request(request);
     }
 
-    fn render_request(&mut self, request: &FrameRequest) -> Result<(), ()> {
+    // Current invalidation policy: only queue a presentable update when the rebuilt frame request
+    // changes. Future shared presentation work may need additional invalidation paths even when the
+    // request shape stays the same.
+    fn queue_request(&mut self, request: FrameRequest) {
+        if self.current_request != request {
+            self.current_request = request;
+            self.frame_dirty = true;
+            self.presentation_generation = self.presentation_generation.wrapping_add(1);
+        }
+    }
+
+    fn configure_native_window(&mut self) {
+        if let Some(window) = self.native_window.as_mut()
+            && !window.configure(self.surface_width, self.surface_height)
+        {
+            #[cfg(debug_assertions)]
+            eprintln!(
+                "warning: failed to configure Android native window for {}x{}",
+                self.surface_width, self.surface_height
+            );
+        }
+    }
+
+    fn render_request_into(
+        &mut self,
+        request: &FrameRequest,
+        frame: &mut [u8],
+        surface_width: u32,
+        surface_height: u32,
+    ) {
         match request {
             FrameRequest::Gameplay { screen, .. } => {
                 self.gameplay_presentation.replace_scene(screen.clone());
                 self.gameplay_presentation.draw(
                     &mut self.renderer,
-                    &mut self.rgba_frame,
-                    self.surface_width,
-                    self.surface_height,
+                    frame,
+                    surface_width,
+                    surface_height,
                 );
             }
             FrameRequest::GameplayMenu { screen } => {
-                self.renderer.draw_background_only(
-                    &mut self.rgba_frame,
-                    self.surface_width,
-                    self.surface_height,
-                );
-                draw_top_menu_toggle(
-                    &mut self.rgba_frame,
-                    self.surface_width,
-                    self.surface_height,
-                    true,
-                );
+                self.renderer
+                    .draw_background_only(frame, surface_width, surface_height);
+                draw_top_menu_toggle(frame, surface_width, surface_height, true);
                 if screen.show_change_level_set {
-                    draw_gameplay_menu_level_set_button(
-                        &mut self.rgba_frame,
-                        self.surface_width,
-                        self.surface_height,
-                    );
+                    draw_gameplay_menu_level_set_button(frame, surface_width, surface_height);
                 }
                 if let Some(icon) = screen.primary_action_icon {
                     draw_overlay_primary_action_button(
-                        &mut self.rgba_frame,
-                        self.surface_width,
-                        self.surface_height,
+                        frame,
+                        surface_width,
+                        surface_height,
                         icon,
                         BUTTON_TEXT_COLOR,
                     );
                 }
             }
             FrameRequest::LevelSelect { screen, .. } => {
-                self.renderer.draw_background_only(
-                    &mut self.rgba_frame,
-                    self.surface_width,
-                    self.surface_height,
-                );
+                self.renderer
+                    .draw_background_only(frame, surface_width, surface_height);
                 self.renderer.draw_level_select_menu_contents(
-                    &mut self.rgba_frame,
-                    self.surface_width,
-                    self.surface_height,
+                    frame,
+                    surface_width,
+                    surface_height,
                     &self.preview_boards,
                     screen.resume_level,
                     screen.page_start,
                 );
                 draw_controls_ui(
-                    &mut self.rgba_frame,
-                    self.surface_width,
-                    self.surface_height,
+                    frame,
+                    surface_width,
+                    surface_height,
                     ControlsUiMode::MenuOpen,
                     false,
                     false,
                 );
             }
             FrameRequest::LevelSetSelect { screen, .. } => {
-                self.renderer.draw_background_only(
-                    &mut self.rgba_frame,
-                    self.surface_width,
-                    self.surface_height,
-                );
+                self.renderer
+                    .draw_background_only(frame, surface_width, surface_height);
                 self.renderer.draw_level_set_select_menu_contents(
-                    &mut self.rgba_frame,
-                    self.surface_width,
-                    self.surface_height,
+                    frame,
+                    surface_width,
+                    surface_height,
                     screen,
                 );
                 draw_controls_ui(
-                    &mut self.rgba_frame,
-                    self.surface_width,
-                    self.surface_height,
+                    frame,
+                    surface_width,
+                    surface_height,
                     ControlsUiMode::MenuOpen,
                     false,
                     false,
                 );
             }
             FrameRequest::Editor { screen } => {
-                self.renderer.draw_editor_screen(
-                    &mut self.rgba_frame,
-                    self.surface_width,
-                    self.surface_height,
-                    screen,
-                );
+                self.renderer
+                    .draw_editor_screen(frame, surface_width, surface_height, screen);
             }
             FrameRequest::EditorMenu { screen } => {
-                self.renderer.draw_editor_menu(
-                    &mut self.rgba_frame,
-                    self.surface_width,
-                    self.surface_height,
-                    screen,
-                );
+                self.renderer
+                    .draw_editor_menu(frame, surface_width, surface_height, screen);
             }
-        }
-        self.sync_argb_frame();
-        Ok(())
-    }
-
-    fn sync_argb_frame(&mut self) {
-        for (argb, rgba) in self
-            .argb_frame
-            .iter_mut()
-            .zip(self.rgba_frame.chunks_exact(4))
-        {
-            let red = i32::from(rgba[0]);
-            let green = i32::from(rgba[1]);
-            let blue = i32::from(rgba[2]);
-            let alpha = i32::from(rgba[3]);
-            *argb = (alpha << 24) | (red << 16) | (green << 8) | blue;
         }
     }
 }
@@ -338,16 +369,24 @@ impl FrameSink for AndroidApp {
         if !self.app_state.is_gameplay_screen() {
             return Ok(());
         }
-        self.render_request(request)
+        self.queue_request(request.clone());
+        Ok(())
+    }
+}
+
+fn build_android_frame_request(
+    controller: &GameplayController,
+    app_state: &AppState,
+    editor: &LevelEditor,
+) -> FrameRequest {
+    match app_state.active_screen() {
+        AppScreen::Gameplay => build_current_frame_request(controller, app_state),
+        AppScreen::Editor => build_current_editor_frame_request(app_state, editor),
     }
 }
 
 fn allocate_rgba_frame(surface_width: u32, surface_height: u32) -> Vec<u8> {
     vec![0; frame_len(surface_width, surface_height, 4)]
-}
-
-fn allocate_argb_frame(surface_width: u32, surface_height: u32) -> Vec<i32> {
-    vec![0; frame_len(surface_width, surface_height, 1)]
 }
 
 fn frame_len(surface_width: u32, surface_height: u32, channels: usize) -> usize {

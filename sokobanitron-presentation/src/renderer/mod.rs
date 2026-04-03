@@ -37,6 +37,16 @@ pub type Rgba = [u8; 4];
 const BG_SPACE_PNG: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/bg_space.png"));
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BoardSceneCacheKey {
+    pub surface_width: u32,
+    pub surface_height: u32,
+    pub viewport: BoardViewport,
+    pub board_width: u32,
+    pub board_height: u32,
+    pub tile_signature: u64,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct RendererTheme {
     pub floor_fill: Rgba,
@@ -160,6 +170,8 @@ pub struct Renderer {
     pub(crate) cached_background: Vec<u8>,
     pub(crate) cached_width: u32,
     pub(crate) cached_height: u32,
+    pub(crate) cached_board_scene: Vec<u8>,
+    pub(crate) cached_board_scene_key: Option<BoardSceneCacheKey>,
     pub(crate) box_bitmap_cache: HashMap<u32, Vec<u8>>,
     pub(crate) selected_box_bitmap_cache: HashMap<u32, Vec<u8>>,
     pub(crate) player_bitmap_cache: HashMap<u32, Vec<u8>>,
@@ -186,6 +198,8 @@ impl Renderer {
             cached_background: Vec::new(),
             cached_width: 0,
             cached_height: 0,
+            cached_board_scene: Vec::new(),
+            cached_board_scene_key: None,
             box_bitmap_cache: HashMap::new(),
             selected_box_bitmap_cache: HashMap::new(),
             player_bitmap_cache: HashMap::new(),
@@ -201,8 +215,7 @@ impl Renderer {
         board: &BoardView,
         viewport: &BoardViewport,
     ) {
-        self.draw_background_only(frame, width, height);
-        self.draw_board_on_frame(frame, width, height, board, viewport, true, true, false);
+        self.draw_board_scene_on_frame(frame, width, height, board, viewport, true, true, false);
     }
 
     pub fn draw_background_only(&mut self, frame: &mut [u8], width: u32, height: u32) {
@@ -211,6 +224,32 @@ impl Renderer {
         }
         self.ensure_cached_background(width, height);
         frame.copy_from_slice(&self.cached_background);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn draw_board_scene_on_frame(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        board: &BoardView,
+        viewport: &BoardViewport,
+        draw_player: bool,
+        draw_win_overlay: bool,
+        sleeping_player: bool,
+    ) {
+        if width == 0 || height == 0 {
+            return;
+        }
+        self.ensure_cached_board_scene(width, height, board, viewport);
+        frame.copy_from_slice(&self.cached_board_scene);
+        self.draw_boxes(frame, width, height, board, viewport);
+        if draw_player {
+            self.draw_player(frame, width, height, board, viewport, sleeping_player);
+        }
+        if draw_win_overlay && board.is_solved() {
+            self.draw_win_overlay(frame, width, height);
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -236,6 +275,32 @@ impl Renderer {
         if draw_win_overlay && board.is_solved() {
             self.draw_win_overlay(frame, width, height);
         }
+    }
+
+    fn ensure_cached_board_scene(
+        &mut self,
+        width: u32,
+        height: u32,
+        board: &BoardView,
+        viewport: &BoardViewport,
+    ) {
+        let key = BoardSceneCacheKey {
+            surface_width: width,
+            surface_height: height,
+            viewport: *viewport,
+            board_width: board.width(),
+            board_height: board.height(),
+            tile_signature: tile_signature(board),
+        };
+        if self.cached_board_scene_key == Some(key) {
+            return;
+        }
+
+        self.ensure_cached_background(width, height);
+        let mut cached_board_scene = self.cached_background.clone();
+        self.draw_floor_tiles(&mut cached_board_scene, width, height, board, viewport);
+        self.cached_board_scene = cached_board_scene;
+        self.cached_board_scene_key = Some(key);
     }
 
     // Internal composition helper used by chrome overlays that need to reveal the cached
@@ -292,4 +357,24 @@ fn copy_rect_rgba(
         let src_row_end = src_row_start + row_bytes;
         dst[dst_row_start..dst_row_end].copy_from_slice(&src[src_row_start..src_row_end]);
     }
+}
+
+fn tile_signature(board: &BoardView) -> u64 {
+    let mut hash = 0xcbf29ce484222325_u64;
+    hash ^= u64::from(board.width());
+    hash = hash.wrapping_mul(0x100000001b3);
+    hash ^= u64::from(board.height());
+    hash = hash.wrapping_mul(0x100000001b3);
+    for y in 0..board.height() {
+        for x in 0..board.width() {
+            let tile = match board.tile(x, y) {
+                sokobanitron_gameplay::TileKind::Void => 0_u64,
+                sokobanitron_gameplay::TileKind::Floor => 1_u64,
+                sokobanitron_gameplay::TileKind::Goal => 2_u64,
+            };
+            hash ^= tile;
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+    }
+    hash
 }
