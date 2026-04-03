@@ -172,7 +172,9 @@ pub struct Region {
 
 pub struct Display {
     fb: File,
-    previous_frame: Option<Vec<u8>>,
+    previous_rgba: Vec<u8>,
+    has_previous_rgba: bool,
+    framebuffer: Vec<u8>,
     update_marker: u32,
     update_abi: Option<UpdateAbi>,
     logged_ioctl_failure: bool,
@@ -186,10 +188,14 @@ impl Display {
 
         let _ = configure_update_mode(&fb);
         let update_abi = probe_update_abi(&fb);
+        let blank_frame = vec![0xFFu8; config::STRIDE * config::HEIGHT];
+        let blank_rgba = vec![0xFFu8; config::WIDTH * config::HEIGHT * 4];
 
         Ok(Self {
             fb,
-            previous_frame: None,
+            previous_rgba: blank_rgba,
+            has_previous_rgba: false,
+            framebuffer: blank_frame,
             update_marker: 1,
             update_abi,
             logged_ioctl_failure: false,
@@ -205,29 +211,41 @@ impl Display {
     }
 
     pub fn force_full_refresh_next(&mut self) {
-        self.previous_frame = None;
+        self.has_previous_rgba = false;
     }
 
     fn present_rgba_inner(&mut self, rgba: &[u8], partial_waveform: Option<u32>) -> Result<()> {
-        let next = rgba_to_grayscale_framebuffer(rgba);
-        let previous = self.previous_frame.as_ref();
-        let dirty = previous.and_then(|prev| compute_dirty_rect(prev, &next));
+        let dirty = if self.has_previous_rgba {
+            update_grayscale_framebuffer_from_rgba_diff(
+                rgba,
+                self.previous_rgba.as_slice(),
+                &mut self.framebuffer,
+            )
+        } else {
+            rgba_to_grayscale_framebuffer_full(rgba, &mut self.framebuffer);
+            None
+        };
+
+        if self.has_previous_rgba && dirty.is_none() {
+            return Ok(());
+        }
 
         // Keep kernel framebuffer memory fully synchronized with current app frame.
         // Dirty-rect is used for EPDC update region, not for framebuffer write scope.
-        write_full_framebuffer(&self.fb, &next)?;
+        write_full_framebuffer(&self.fb, &self.framebuffer)?;
 
         match dirty {
-            None if previous.is_some() => {}
             None => {
                 self.request_full_refresh()?;
+                self.previous_rgba.copy_from_slice(rgba);
             }
             Some(region) => {
                 self.request_partial_refresh(region, partial_waveform)?;
+                copy_rgba_region(rgba, &mut self.previous_rgba, region);
             }
         }
 
-        self.previous_frame = Some(next);
+        self.has_previous_rgba = true;
         Ok(())
     }
 
@@ -801,29 +819,23 @@ fn send_update_ioctl(
     Ok(())
 }
 
-fn rgba_to_grayscale_framebuffer(rgba: &[u8]) -> Vec<u8> {
-    let mut framebuffer = vec![0xFFu8; config::STRIDE * config::HEIGHT];
+fn rgba_to_grayscale_framebuffer_full(rgba: &[u8], framebuffer: &mut [u8]) {
     for y in 0..config::HEIGHT {
         let src_row = y * config::WIDTH * 4;
         let dst_row = y * config::STRIDE;
         for x in 0..config::WIDTH {
             let i = src_row + x * 4;
-            let r = rgba[i] as u16;
-            let g = rgba[i + 1] as u16;
-            let b = rgba[i + 2] as u16;
-            let gray = ((77 * r + 150 * g + 29 * b) >> 8) as u8;
-            framebuffer[dst_row + x] = gray;
+            framebuffer[dst_row + x] = rgb_to_gray(rgba[i], rgba[i + 1], rgba[i + 2]);
         }
+        framebuffer[dst_row + config::WIDTH..dst_row + config::STRIDE].fill(0xFF);
     }
-    framebuffer
 }
 
-fn write_full_framebuffer(fb: &File, frame: &[u8]) -> Result<()> {
-    fb.write_all_at(frame, 0)?;
-    Ok(())
-}
-
-fn compute_dirty_rect(previous: &[u8], next: &[u8]) -> Option<Region> {
+fn update_grayscale_framebuffer_from_rgba_diff(
+    rgba: &[u8],
+    previous_rgba: &[u8],
+    framebuffer: &mut [u8],
+) -> Option<Region> {
     let mut min_x = config::WIDTH;
     let mut min_y = config::HEIGHT;
     let mut max_x = 0usize;
@@ -831,14 +843,19 @@ fn compute_dirty_rect(previous: &[u8], next: &[u8]) -> Option<Region> {
     let mut found = false;
 
     for y in 0..config::HEIGHT {
-        let row = y * config::STRIDE;
+        let src_row = y * config::WIDTH * 4;
+        let dst_row = y * config::STRIDE;
         for x in 0..config::WIDTH {
-            if previous[row + x] != next[row + x] {
+            let i = src_row + x * 4;
+            let previous = &previous_rgba[i..i + 4];
+            let current = &rgba[i..i + 4];
+            if current != previous {
                 found = true;
                 min_x = min_x.min(x);
                 min_y = min_y.min(y);
                 max_x = max_x.max(x);
                 max_y = max_y.max(y);
+                framebuffer[dst_row + x] = rgb_to_gray(rgba[i], rgba[i + 1], rgba[i + 2]);
             }
         }
     }
@@ -853,6 +870,32 @@ fn compute_dirty_rect(previous: &[u8], next: &[u8]) -> Option<Region> {
         width: max_x - min_x + 1,
         height: max_y - min_y + 1,
     })
+}
+
+fn copy_rgba_region(rgba: &[u8], previous_rgba: &mut [u8], region: Region) {
+    let left = region.left.min(config::WIDTH);
+    let top = region.top.min(config::HEIGHT);
+    let right = (region.left + region.width).min(config::WIDTH);
+    let bottom = (region.top + region.height).min(config::HEIGHT);
+
+    for y in top..bottom {
+        let row_start = (y * config::WIDTH + left) * 4;
+        let row_end = (y * config::WIDTH + right) * 4;
+        previous_rgba[row_start..row_end].copy_from_slice(&rgba[row_start..row_end]);
+    }
+}
+
+#[inline]
+fn rgb_to_gray(r: u8, g: u8, b: u8) -> u8 {
+    let r = r as u16;
+    let g = g as u16;
+    let b = b as u16;
+    ((77 * r + 150 * g + 29 * b) >> 8) as u8
+}
+
+fn write_full_framebuffer(fb: &File, frame: &[u8]) -> Result<()> {
+    fb.write_all_at(frame, 0)?;
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
