@@ -36,10 +36,10 @@ impl KindleApp {
     fn render_request(&mut self, request: &FrameRequest) -> Result<()> {
         match request {
             FrameRequest::Gameplay {
-                screen,
+                update,
                 present_mode,
             } => {
-                self.gameplay_presentation.replace_scene(screen.clone());
+                self.gameplay_presentation.replace_update(update.clone());
                 let (renderer, rgba, display) =
                     (&mut self.renderer, &mut self.rgba_frame, &mut self.display);
                 self.gameplay_presentation.draw(

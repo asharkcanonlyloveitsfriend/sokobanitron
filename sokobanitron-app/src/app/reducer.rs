@@ -1,7 +1,11 @@
 use super::action::AppAction;
-use super::presentation::{PresentationPlan, build_presentation_plan};
+use super::presentation::{
+    PresentationPlan, build_presentation_plan, gameplay_presentation_plan,
+    solved_state_change_for_scene_change,
+};
 use super::state::{AppOverlay, AppScreen, AppState};
 use presentation::layout::{level_select_menu_start_index, level_set_select_start_index};
+use presentation::screen_requests::GameplayPresentationCause;
 use sokobanitron_gameplay::{GameplayController, GameplayControllerChanges, GameplayTapEffect};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -29,12 +33,12 @@ pub fn apply_action(
     match action {
         AppAction::Restart => {
             if matches!(app_state.ui.screen, AppScreen::Gameplay) {
-                update.changes = controller.restart_with_changes();
+                apply_restart_command(controller, app_state, &mut update);
             }
         }
         AppAction::Undo => {
             if matches!(app_state.ui.screen, AppScreen::Gameplay) {
-                update.changes = controller.undo_with_changes();
+                apply_undo_command(controller, app_state, &mut update);
             }
         }
         AppAction::ToggleOverlay => {
@@ -131,6 +135,38 @@ pub fn apply_action(
     update
 }
 
+fn apply_restart_command(
+    controller: &mut GameplayController,
+    app_state: &AppState,
+    update: &mut AppUpdate,
+) {
+    let was_solved = controller.board().is_solved();
+    update.changes = controller.restart_with_changes();
+    update.presentation_plan = Some(gameplay_presentation_plan(
+        controller,
+        app_state,
+        GameplayPresentationCause::Restarted,
+        solved_state_change_for_scene_change(was_solved, controller.board().is_solved()),
+        super::presentation::PresentMode::Full,
+    ));
+}
+
+fn apply_undo_command(
+    controller: &mut GameplayController,
+    app_state: &AppState,
+    update: &mut AppUpdate,
+) {
+    let was_solved = controller.board().is_solved();
+    update.changes = controller.undo_with_changes();
+    update.presentation_plan = Some(gameplay_presentation_plan(
+        controller,
+        app_state,
+        GameplayPresentationCause::UndoApplied,
+        solved_state_change_for_scene_change(was_solved, controller.board().is_solved()),
+        super::presentation::PresentMode::Full,
+    ));
+}
+
 fn apply_board_tap(
     controller: &mut GameplayController,
     app_state: &mut AppState,
@@ -175,7 +211,7 @@ fn apply_board_double_tap(
     }
 
     if controller.can_restart() && controller.board().player() == Some((x, y)) {
-        update.changes = controller.restart_with_changes();
+        apply_restart_command(controller, app_state, update);
         return;
     }
 
@@ -184,7 +220,7 @@ fn apply_board_double_tap(
     }
 
     if controller.can_undo() && controller.last_box_move_destination() == Some((x, y)) {
-        update.changes = controller.undo_with_changes();
+        apply_undo_command(controller, app_state, update);
         return;
     }
 
@@ -195,7 +231,9 @@ fn apply_board_double_tap(
 mod tests {
     use super::apply_action;
     use crate::app::action::AppAction;
+    use crate::app::presentation::{FrameRequest, PresentationStep};
     use crate::app::state::{AppOverlay, AppScreen, AppState};
+    use presentation::screen_requests::{GameplayPresentationCause, SolvedStateChange};
     use sokobanitron_gameplay::GameplayController;
 
     fn test_controller() -> GameplayController {
@@ -450,7 +488,7 @@ mod tests {
         let mut app_state = AppState::default();
         let _ = controller.click_cell_with_outcome(2, 1);
 
-        apply_action(
+        let update = apply_action(
             &mut controller,
             &mut app_state,
             AppAction::DoubleTapBoardCell { x: 2, y: 1 },
@@ -458,6 +496,19 @@ mod tests {
 
         assert_eq!(controller.board().player(), Some((1, 1)));
         assert!(!controller.can_restart());
+        let Some(plan) = update.presentation_plan else {
+            panic!("expected restart gameplay render");
+        };
+        let [
+            PresentationStep::Render(FrameRequest::Gameplay {
+                update: render_update,
+                ..
+            }),
+        ] = plan.steps.as_slice()
+        else {
+            panic!("expected one gameplay render step");
+        };
+        assert_eq!(render_update.cause, GameplayPresentationCause::Restarted);
     }
 
     #[test]
@@ -468,7 +519,7 @@ mod tests {
         let _ = controller.click_cell_with_outcome(3, 1);
         let _ = controller.click_cell_with_outcome(4, 1);
 
-        apply_action(
+        let update = apply_action(
             &mut controller,
             &mut app_state,
             AppAction::DoubleTapBoardCell { x: 4, y: 1 },
@@ -476,6 +527,19 @@ mod tests {
 
         assert!(controller.board().has_box(3, 1));
         assert_eq!(controller.last_box_move_destination(), None);
+        let Some(plan) = update.presentation_plan else {
+            panic!("expected undo gameplay render");
+        };
+        let [
+            PresentationStep::Render(FrameRequest::Gameplay {
+                update: render_update,
+                ..
+            }),
+        ] = plan.steps.as_slice()
+        else {
+            panic!("expected one gameplay render step");
+        };
+        assert_eq!(render_update.cause, GameplayPresentationCause::UndoApplied);
     }
 
     #[test]
@@ -670,5 +734,54 @@ mod tests {
         assert!(!controller.board().is_solved());
         assert!(controller.board().has_box(2, 2));
         assert_eq!(controller.last_box_move_destination(), None);
+    }
+
+    #[test]
+    fn restart_marks_became_unsolved_after_restarting_solved_board() {
+        let level = "#####\n#@$.#\n#####".to_string();
+        let mut controller = GameplayController::new(vec![level], None);
+        let mut app_state = AppState::default();
+
+        let _ = apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::TapBoardCell { x: 2, y: 1 },
+        );
+        let solved_move = apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::TapBoardCell { x: 3, y: 1 },
+        );
+        let Some(solved_plan) = solved_move.presentation_plan else {
+            panic!("expected solved gameplay render");
+        };
+        let [PresentationStep::Render(FrameRequest::Gameplay { update, .. })] =
+            solved_plan.steps.as_slice()
+        else {
+            panic!("expected one gameplay render step");
+        };
+        assert_eq!(
+            update.cause,
+            GameplayPresentationCause::BoxMoved {
+                path: vec![(2, 1), (3, 1)]
+            }
+        );
+        assert_eq!(update.solved_state_change, SolvedStateChange::BecameSolved);
+
+        let restart = apply_action(&mut controller, &mut app_state, AppAction::Restart);
+        let Some(restart_plan) = restart.presentation_plan else {
+            panic!("expected restart gameplay render");
+        };
+        let [PresentationStep::Render(FrameRequest::Gameplay { update, .. })] =
+            restart_plan.steps.as_slice()
+        else {
+            panic!("expected one gameplay render step");
+        };
+
+        assert_eq!(update.cause, GameplayPresentationCause::Restarted);
+        assert_eq!(
+            update.solved_state_change,
+            SolvedStateChange::BecameUnsolved
+        );
     }
 }

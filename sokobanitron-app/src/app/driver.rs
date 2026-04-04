@@ -457,10 +457,10 @@ mod tests {
         assert_eq!(context.controller.level_count(), 2);
         assert_eq!(context.preview_boards.len(), 2);
         assert_eq!(context.rendered_frames.len(), 1);
-        let FrameRequest::Gameplay { screen, .. } = &context.rendered_frames[0] else {
+        let FrameRequest::Gameplay { update, .. } = &context.rendered_frames[0] else {
             panic!("expected gameplay frame");
         };
-        assert_eq!(screen.board, context.controller.board().clone());
+        assert_eq!(update.scene.board, context.controller.board().clone());
     }
 
     #[test]

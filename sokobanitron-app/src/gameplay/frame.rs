@@ -13,8 +13,9 @@ use crate::app::presentation::{FrameRequest, PresentMode};
 use crate::app::state::AppState;
 use presentation::assets::UiIcon;
 use presentation::screen_requests::{
-    GameplayMenuScreenRequest, GameplayScreenMode, GameplayScreenRequest, LevelSelectScreenRequest,
-    LevelSetListEntry, LevelSetSelectScreenRequest,
+    GameplayMenuScreenRequest, GameplayPresentationCause, GameplayPresentationUpdate,
+    GameplayScreenMode, GameplayScreenRequest, LevelSelectScreenRequest, LevelSetListEntry,
+    LevelSetSelectScreenRequest, SolvedStateChange,
 };
 use sokobanitron_gameplay::GameplayController;
 
@@ -24,7 +25,13 @@ pub fn build_gameplay_frame_request(
     present_mode: PresentMode,
 ) -> FrameRequest {
     FrameRequest::Gameplay {
-        screen: build_gameplay_screen_request(controller, app_state, GameplayScreenMode::Normal),
+        update: build_gameplay_presentation_update(
+            controller,
+            app_state,
+            GameplayScreenMode::Normal,
+            GameplayPresentationCause::CurrentState,
+            SolvedStateChange::Unchanged,
+        ),
         present_mode,
     }
 }
@@ -34,8 +41,33 @@ pub fn build_sleep_gameplay_frame_request(
     app_state: &AppState,
 ) -> FrameRequest {
     FrameRequest::Gameplay {
-        screen: build_gameplay_screen_request(controller, app_state, GameplayScreenMode::Sleep),
+        update: build_gameplay_presentation_update(
+            controller,
+            app_state,
+            GameplayScreenMode::Sleep,
+            GameplayPresentationCause::CurrentState,
+            SolvedStateChange::Unchanged,
+        ),
         present_mode: PresentMode::Full,
+    }
+}
+
+pub(crate) fn build_gameplay_frame_request_with_cause(
+    controller: &GameplayController,
+    app_state: &AppState,
+    cause: GameplayPresentationCause,
+    solved_state_change: SolvedStateChange,
+    present_mode: PresentMode,
+) -> FrameRequest {
+    FrameRequest::Gameplay {
+        update: build_gameplay_presentation_update(
+            controller,
+            app_state,
+            GameplayScreenMode::Normal,
+            cause,
+            solved_state_change,
+        ),
+        present_mode,
     }
 }
 
@@ -118,12 +150,29 @@ fn build_gameplay_screen_request(
     }
 }
 
+fn build_gameplay_presentation_update(
+    controller: &GameplayController,
+    app_state: &AppState,
+    mode: GameplayScreenMode,
+    cause: GameplayPresentationCause,
+    solved_state_change: SolvedStateChange,
+) -> GameplayPresentationUpdate {
+    GameplayPresentationUpdate {
+        scene: build_gameplay_screen_request(controller, app_state, mode),
+        cause,
+        solved_state_change,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{build_current_frame_request, build_level_select_frame_request};
     use crate::app::presentation::{FrameRequest, PresentMode};
     use crate::app::state::{AppOverlay, AppState};
-    use presentation::screen_requests::{GameplayMenuScreenRequest, GameplayScreenRequest};
+    use presentation::screen_requests::{
+        GameplayMenuScreenRequest, GameplayPresentationCause, GameplayScreenRequest,
+        SolvedStateChange,
+    };
     use sokobanitron_gameplay::GameplayController;
 
     fn controller() -> GameplayController {
@@ -182,7 +231,12 @@ mod tests {
         let app_state = AppState::default();
 
         let FrameRequest::Gameplay {
-            screen: GameplayScreenRequest { level_number, .. },
+            update:
+                presentation::screen_requests::GameplayPresentationUpdate {
+                    scene: GameplayScreenRequest { level_number, .. },
+                    cause,
+                    solved_state_change,
+                },
             present_mode,
         } = build_current_frame_request(&controller, &app_state)
         else {
@@ -191,5 +245,7 @@ mod tests {
 
         assert_eq!(present_mode, PresentMode::Full);
         assert_eq!(level_number, 1);
+        assert_eq!(cause, GameplayPresentationCause::CurrentState);
+        assert_eq!(solved_state_change, SolvedStateChange::Unchanged);
     }
 }

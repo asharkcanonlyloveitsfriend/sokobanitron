@@ -35,23 +35,25 @@ The shared Rust presentation layer now has an explicit gameplay composition path
 Current behavior is unchanged. The under-entity and over-entity hooks are structural seams only.
 They are intentionally empty except for the existing solved overlay placement.
 
-## Remaining passes
+## Rust status after Pass 2
 
-### Pass 2: semantic presentation updates
+Pass 2 still does not add animation behavior.
 
-Add a presentation-facing gameplay update type that carries both:
+Gameplay presentation now carries a richer shared update model with:
 
 - the new gameplay scene
 - the cause of the change
 
-This should cover taps, undo, restart, solved transitions, and other gameplay outcomes in one
-place instead of flattening everything to "render the latest snapshot now".
+The current Rust code now stores a shared gameplay presentation update rather than only a raw
+scene snapshot, and taps, undo, and restart now all produce gameplay render requests through the
+same semantic update path.
 
-Goal:
+This is still deliberately non-animated. The renderer still draws the same scene content, and the
+presentation state still does not own clocks or queued playback. The main change is that the
+shared presentation layer now has enough semantic context to decide what kind of animation would be
+appropriate in a future pass.
 
-- keep animation selection logic out of clients
-- give shared presentation state enough information to decide what kind of animation would apply
-- still stop short of timers or queued animated playback
+## Remaining pass
 
 ### Pass 3: shared animation runner
 

@@ -27,9 +27,9 @@ impl App {
 
     fn render_request(&mut self, request: &FrameRequest) -> Result<(), ()> {
         match request {
-            FrameRequest::Gameplay { screen, .. } => {
+            FrameRequest::Gameplay { update, .. } => {
                 if let Some(pixels) = &mut self.pixels {
-                    self.gameplay_presentation.replace_scene(screen.clone());
+                    self.gameplay_presentation.replace_update(update.clone());
                     let frame = pixels.frame_mut();
                     self.gameplay_presentation.draw(
                         &mut self.renderer,

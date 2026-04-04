@@ -272,8 +272,8 @@ impl AndroidApp {
         surface_height: u32,
     ) {
         match request {
-            FrameRequest::Gameplay { screen, .. } => {
-                self.gameplay_presentation.replace_scene(screen.clone());
+            FrameRequest::Gameplay { update, .. } => {
+                self.gameplay_presentation.replace_update(update.clone());
                 self.gameplay_presentation.draw(
                     &mut self.renderer,
                     frame,

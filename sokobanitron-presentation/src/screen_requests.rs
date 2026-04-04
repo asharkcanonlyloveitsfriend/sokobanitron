@@ -18,6 +18,48 @@ pub struct GameplayScreenRequest {
     pub mode: GameplayScreenMode,
 }
 
+/// Records the primary reason this gameplay presentation update was produced.
+///
+/// It is not a complete semantic delta. Future animation selection can combine this cause with
+/// scene comparison and prior presentation state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GameplayPresentationCause {
+    /// Render the current gameplay scene without attributing it to a specific gameplay action.
+    CurrentState,
+    SelectionChanged {
+        selected_box: Option<(u32, u32)>,
+    },
+    PlayerMoved {
+        to_x: u32,
+        to_y: u32,
+    },
+    BoxMoved {
+        path: Vec<(u32, u32)>,
+    },
+    BoxRemoved {
+        to_x: u32,
+        to_y: u32,
+    },
+    MoveRejected,
+    UndoApplied,
+    Restarted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SolvedStateChange {
+    #[default]
+    Unchanged,
+    BecameSolved,
+    BecameUnsolved,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GameplayPresentationUpdate {
+    pub scene: GameplayScreenRequest,
+    pub cause: GameplayPresentationCause,
+    pub solved_state_change: SolvedStateChange,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameplayMenuScreenRequest {
     pub primary_action_icon: Option<UiIcon>,
