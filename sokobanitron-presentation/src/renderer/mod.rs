@@ -33,6 +33,72 @@ pub use pixel_ui::{
 
 pub type Rgba = [u8; 4];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PlayerSceneComposition {
+    pub visible: bool,
+    pub sleeping: bool,
+}
+
+impl Default for PlayerSceneComposition {
+    fn default() -> Self {
+        Self {
+            visible: true,
+            sleeping: false,
+        }
+    }
+}
+
+// Keep under/over layers distinct even before they have behavior so future animation work can
+// grow them independently without smuggling over-entity concerns into the under-entity seam.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct UnderEntitySceneComposition;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct OverEntitySceneComposition {
+    pub entity_visual_style: EntityVisualStyle,
+}
+
+impl Default for OverEntitySceneComposition {
+    fn default() -> Self {
+        Self {
+            entity_visual_style: EntityVisualStyle::Standard,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct BoardSceneComposition {
+    pub player: PlayerSceneComposition,
+    pub under_entities: UnderEntitySceneComposition,
+    pub over_entities: OverEntitySceneComposition,
+}
+
+impl BoardSceneComposition {
+    pub(crate) fn static_scene() -> Self {
+        Self {
+            player: PlayerSceneComposition::default(),
+            under_entities: UnderEntitySceneComposition,
+            over_entities: OverEntitySceneComposition::default(),
+        }
+    }
+
+    pub(crate) fn gameplay_snapshot(
+        entity_visual_style: EntityVisualStyle,
+        sleeping_player: bool,
+    ) -> Self {
+        Self {
+            player: PlayerSceneComposition {
+                visible: true,
+                sleeping: sleeping_player,
+            },
+            under_entities: UnderEntitySceneComposition,
+            over_entities: OverEntitySceneComposition {
+                entity_visual_style,
+            },
+        }
+    }
+}
+
 const BG_SPACE_PNG: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/bg_space.png"));
 pub(crate) const WHITE: Rgba = [255, 255, 255, 255];
@@ -191,9 +257,7 @@ impl Renderer {
             height,
             board,
             viewport,
-            true,
-            EntityVisualStyle::Standard,
-            false,
+            BoardSceneComposition::static_scene(),
         );
     }
 
@@ -213,27 +277,38 @@ impl Renderer {
         height: u32,
         board: &BoardView,
         viewport: &BoardViewport,
-        draw_player: bool,
-        entity_visual_style: EntityVisualStyle,
-        sleeping_player: bool,
+        composition: BoardSceneComposition,
     ) {
-        if width == 0 || height == 0 {
-            return;
-        }
-        self.ensure_cached_board_scene(width, height, board, viewport);
-        frame.copy_from_slice(&self.cached_board_scene);
-        self.draw_boxes(frame, width, height, board, viewport, entity_visual_style);
-        if draw_player {
-            self.draw_player(
-                frame,
-                width,
-                height,
-                board,
-                viewport,
-                entity_visual_style,
-                sleeping_player,
-            );
-        }
+        self.draw_board_layers_on_frame(
+            frame,
+            width,
+            height,
+            board,
+            viewport,
+            composition,
+            BoardBaseLayer::CachedScene,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn draw_board_on_frame_with_composition(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        board: &BoardView,
+        viewport: &BoardViewport,
+        composition: BoardSceneComposition,
+    ) {
+        self.draw_board_layers_on_frame(
+            frame,
+            width,
+            height,
+            board,
+            viewport,
+            composition,
+            BoardBaseLayer::Tiles,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -248,22 +323,17 @@ impl Renderer {
         entity_visual_style: EntityVisualStyle,
         sleeping_player: bool,
     ) {
-        if width == 0 || height == 0 {
-            return;
-        }
-        self.draw_floor_tiles(frame, width, height, board, viewport);
-        self.draw_boxes(frame, width, height, board, viewport, entity_visual_style);
-        if draw_player {
-            self.draw_player(
-                frame,
-                width,
-                height,
-                board,
-                viewport,
-                entity_visual_style,
-                sleeping_player,
-            );
-        }
+        let mut composition =
+            BoardSceneComposition::gameplay_snapshot(entity_visual_style, sleeping_player);
+        composition.player.visible = draw_player;
+        self.draw_board_on_frame_with_composition(
+            frame,
+            width,
+            height,
+            board,
+            viewport,
+            composition,
+        );
     }
 
     fn ensure_cached_board_scene(
@@ -290,6 +360,123 @@ impl Renderer {
         self.draw_floor_tiles(&mut cached_board_scene, width, height, board, viewport);
         self.cached_board_scene = cached_board_scene;
         self.cached_board_scene_key = Some(key);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_board_layers_on_frame(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        board: &BoardView,
+        viewport: &BoardViewport,
+        composition: BoardSceneComposition,
+        base_layer: BoardBaseLayer,
+    ) {
+        if width == 0 || height == 0 {
+            return;
+        }
+        self.draw_board_base_layer_on_frame(frame, width, height, board, viewport, base_layer);
+        self.draw_board_under_entity_layer_on_frame(
+            frame,
+            width,
+            height,
+            board,
+            viewport,
+            composition.under_entities,
+        );
+        self.draw_board_entity_layer_on_frame(
+            frame,
+            width,
+            height,
+            board,
+            viewport,
+            composition.player,
+            composition.over_entities,
+        );
+        self.draw_board_over_entity_layer_on_frame(
+            frame,
+            width,
+            height,
+            board,
+            viewport,
+            composition.over_entities,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_board_base_layer_on_frame(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        board: &BoardView,
+        viewport: &BoardViewport,
+        base_layer: BoardBaseLayer,
+    ) {
+        match base_layer {
+            BoardBaseLayer::CachedScene => {
+                self.ensure_cached_board_scene(width, height, board, viewport);
+                frame.copy_from_slice(&self.cached_board_scene);
+            }
+            BoardBaseLayer::Tiles => self.draw_floor_tiles(frame, width, height, board, viewport),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_board_under_entity_layer_on_frame(
+        &mut self,
+        _frame: &mut [u8],
+        _width: u32,
+        _height: u32,
+        _board: &BoardView,
+        _viewport: &BoardViewport,
+        _composition: UnderEntitySceneComposition,
+    ) {
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_board_entity_layer_on_frame(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        board: &BoardView,
+        viewport: &BoardViewport,
+        player: PlayerSceneComposition,
+        over_entities: OverEntitySceneComposition,
+    ) {
+        self.draw_boxes(
+            frame,
+            width,
+            height,
+            board,
+            viewport,
+            over_entities.entity_visual_style,
+        );
+        if player.visible {
+            self.draw_player(
+                frame,
+                width,
+                height,
+                board,
+                viewport,
+                over_entities.entity_visual_style,
+                player.sleeping,
+            );
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_board_over_entity_layer_on_frame(
+        &mut self,
+        _frame: &mut [u8],
+        _width: u32,
+        _height: u32,
+        _board: &BoardView,
+        _viewport: &BoardViewport,
+        _composition: OverEntitySceneComposition,
+    ) {
     }
 
     // Internal composition helper used by chrome overlays that need to reveal the cached
@@ -320,6 +507,12 @@ impl Default for Renderer {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BoardBaseLayer {
+    CachedScene,
+    Tiles,
 }
 
 fn copy_rect_rgba(

@@ -6,7 +6,7 @@ use crate::layout::{
     level_select_scrollbar::ScrollbarState,
 };
 
-use super::{EntityVisualStyle, Renderer, level_select_scrollbar, pixels::fill_rect};
+use super::{BoardSceneComposition, Renderer, level_select_scrollbar, pixels::fill_rect};
 
 impl Renderer {
     pub fn draw_level_select_menu_contents(
@@ -44,15 +44,13 @@ impl Renderer {
             );
             viewport.origin_x += sx + pad as i32;
             viewport.origin_y += sy + pad as i32;
-            self.draw_board_on_frame(
+            self.draw_board_on_frame_with_composition(
                 frame,
                 width,
                 height,
                 board,
                 &viewport,
-                true,
-                EntityVisualStyle::Standard,
-                false,
+                BoardSceneComposition::static_scene(),
             );
             if level_idx == resume_level {
                 draw_selection_brackets(frame, width, height, sx, sy, sw, sh);

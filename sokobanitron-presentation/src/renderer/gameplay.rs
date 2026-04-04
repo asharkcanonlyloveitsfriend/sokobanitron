@@ -7,7 +7,41 @@
 use crate::layout::{ScreenRect, UI_BUTTON_MARGIN, UI_BUTTON_SIZE};
 use crate::screen_requests::{GameplayScreenMode, GameplayScreenRequest};
 
-use super::{EntityVisualStyle, Renderer, chrome};
+use super::{BoardSceneComposition, EntityVisualStyle, Renderer, chrome};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GameplaySceneComposition {
+    board: BoardSceneComposition,
+    chrome: GameplayChromePhase,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GameplayChromePhase {
+    GameplayControls { level_number: usize },
+    Sleep,
+}
+
+impl GameplaySceneComposition {
+    fn from_request(request: &GameplayScreenRequest) -> Self {
+        let entity_visual_style = if request.board.is_solved() {
+            EntityVisualStyle::Solved
+        } else {
+            EntityVisualStyle::Standard
+        };
+        Self {
+            board: BoardSceneComposition::gameplay_snapshot(
+                entity_visual_style,
+                matches!(request.mode, GameplayScreenMode::Sleep),
+            ),
+            chrome: match request.mode {
+                GameplayScreenMode::Normal => GameplayChromePhase::GameplayControls {
+                    level_number: request.level_number,
+                },
+                GameplayScreenMode::Sleep => GameplayChromePhase::Sleep,
+            },
+        }
+    }
+}
 
 impl Renderer {
     pub(crate) fn draw_gameplay_scene(
@@ -17,13 +51,14 @@ impl Renderer {
         height: u32,
         request: &GameplayScreenRequest,
     ) {
-        self.draw_gameplay_board_scene(frame, width, height, request);
-        match request.mode {
-            GameplayScreenMode::Normal => {
+        let composition = GameplaySceneComposition::from_request(request);
+        self.draw_gameplay_board_scene(frame, width, height, request, composition.board);
+        match composition.chrome {
+            GameplayChromePhase::GameplayControls { level_number } => {
                 chrome::draw_controls_ui(frame, width, height, false);
-                chrome::draw_top_left_level_button(frame, width, height, request.level_number);
+                chrome::draw_top_left_level_button(frame, width, height, level_number);
             }
-            GameplayScreenMode::Sleep => self.draw_gameplay_sleep_chrome(frame, width, height),
+            GameplayChromePhase::Sleep => self.draw_gameplay_sleep_chrome(frame, width, height),
         }
     }
 
@@ -33,21 +68,15 @@ impl Renderer {
         width: u32,
         height: u32,
         request: &GameplayScreenRequest,
+        composition: BoardSceneComposition,
     ) {
-        let entity_visual_style = if request.board.is_solved() {
-            EntityVisualStyle::Solved
-        } else {
-            EntityVisualStyle::Standard
-        };
         self.draw_board_scene_on_frame(
             frame,
             width,
             height,
             &request.board,
             &request.viewport,
-            true,
-            entity_visual_style,
-            matches!(request.mode, GameplayScreenMode::Sleep),
+            composition,
         );
     }
 

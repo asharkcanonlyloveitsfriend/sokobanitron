@@ -8,7 +8,7 @@ use sokobanitron_level_editor::PullHintStatus;
 
 use super::chrome::{draw_overlay_primary_action_button, draw_top_menu_toggle};
 use super::pixel_ui::{PIXEL_FONT_HEIGHT, draw_centered_text_in_rect, measure_text_width};
-use super::{EntityVisualStyle, Renderer};
+use super::{BoardSceneComposition, Renderer};
 
 const BUTTON_TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
 const HINT_TEXT_COLOR: [u8; 4] = [172, 172, 172, 255];
@@ -36,9 +36,7 @@ impl Renderer {
             height,
             &request.board,
             &request.viewport,
-            true,
-            EntityVisualStyle::Standard,
-            false,
+            BoardSceneComposition::static_scene(),
         );
         self.draw_editor_overlays_on_frame(frame, width, height, request);
         self.draw_editor_chrome_on_frame(frame, width, height, request);
