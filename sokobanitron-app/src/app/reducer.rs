@@ -2,7 +2,7 @@ use super::action::AppAction;
 use super::presentation::{PresentationPlan, build_presentation_plan};
 use super::state::{AppOverlay, AppScreen, AppState};
 use presentation::layout::{level_select_menu_start_index, level_set_select_start_index};
-use sokobanitron_gameplay::{GameplayController, GameplayControllerChanges};
+use sokobanitron_gameplay::{GameplayController, GameplayControllerChanges, GameplayTapEffect};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PersistenceUpdate {
@@ -15,6 +15,7 @@ pub struct AppUpdate {
     pub changes: GameplayControllerChanges,
     pub persistence: PersistenceUpdate,
     pub level_set_selected: Option<usize>,
+    pub gameplay_effect: Option<GameplayTapEffect>,
     pub presentation_plan: Option<PresentationPlan>,
 }
 
@@ -119,7 +120,12 @@ pub fn apply_action(
             {
                 let outcome = controller.click_cell_with_outcome(x, y);
                 update.changes = outcome.changes;
-                update.persistence.resume_level_changed = update.changes.resume_level_changed;
+                update.gameplay_effect = Some(outcome.effect.clone());
+                update.persistence.resume_level_changed = if outcome.started_now {
+                    Some(controller.current_level())
+                } else {
+                    update.changes.resume_level_changed
+                };
                 if outcome.became_solved {
                     update.persistence.solved_level = Some(controller.current_level());
                 }
@@ -350,5 +356,25 @@ mod tests {
 
         assert_eq!(update.level_set_selected, Some(1));
         assert_eq!(app_state.ui.overlay, None);
+    }
+
+    #[test]
+    fn starting_a_level_persists_active_set_even_when_resume_level_was_already_current() {
+        let level = "#######\n#@ $. #\n#######".to_string();
+        let mut preview_controller =
+            GameplayController::new_at_level(vec![level.clone()], 0, Some(0));
+        let preview_outcome = preview_controller.click_cell_with_outcome(2, 1);
+        assert!(preview_outcome.started_now);
+
+        let mut controller = GameplayController::new_at_level(vec![level], 0, Some(0));
+        let mut app_state = AppState::default();
+
+        let update = apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::TapBoardCell { x: 2, y: 1 },
+        );
+
+        assert_eq!(update.persistence.resume_level_changed, Some(0));
     }
 }
