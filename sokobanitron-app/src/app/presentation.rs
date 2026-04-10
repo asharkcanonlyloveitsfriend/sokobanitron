@@ -161,7 +161,6 @@ mod tests {
                         can_undo,
                         can_restart,
                         level_number,
-                        show_solved_overlay,
                         ..
                     },
                 present_mode,
@@ -175,11 +174,10 @@ mod tests {
         assert!(!can_undo);
         assert!(!can_restart);
         assert_eq!(*level_number, 1);
-        assert!(!show_solved_overlay);
     }
 
     #[test]
-    fn solved_overlay_follows_controller_state() {
+    fn solved_outcome_keeps_standard_gameplay_request_shape() {
         let (controller, app_state) = controller_and_state();
         let plan = build_presentation_plan(
             &outcome(GameplayTapEffect::BoxRemoved { to_x: 4, to_y: 7 }, true),
@@ -189,12 +187,7 @@ mod tests {
 
         let [
             PresentationStep::Render(FrameRequest::Gameplay {
-                screen:
-                    GameplayScreenRequest {
-                        level_number,
-                        show_solved_overlay,
-                        ..
-                    },
+                screen: GameplayScreenRequest { level_number, .. },
                 present_mode,
             }),
         ] = plan.steps.as_slice()
@@ -204,11 +197,10 @@ mod tests {
 
         assert_eq!(*present_mode, PresentMode::Full);
         assert_eq!(*level_number, 1);
-        assert!(!show_solved_overlay);
     }
 
     #[test]
-    fn solved_overlay_is_shown_when_board_is_solved() {
+    fn solved_board_still_renders_as_gameplay() {
         let (controller, app_state) = solved_controller_and_state();
         let plan = build_presentation_plan(
             &outcome(GameplayTapEffect::PlayerMoved { to_x: 1, to_y: 1 }, false),
@@ -218,12 +210,7 @@ mod tests {
 
         let [
             PresentationStep::Render(FrameRequest::Gameplay {
-                screen:
-                    GameplayScreenRequest {
-                        level_number,
-                        show_solved_overlay,
-                        ..
-                    },
+                screen: GameplayScreenRequest { level_number, .. },
                 present_mode,
             }),
         ] = plan.steps.as_slice()
@@ -233,7 +220,6 @@ mod tests {
 
         assert_eq!(*present_mode, PresentMode::Full);
         assert_eq!(*level_number, 1);
-        assert!(*show_solved_overlay);
     }
 
     #[test]
@@ -247,12 +233,7 @@ mod tests {
 
         let [
             PresentationStep::Render(FrameRequest::Gameplay {
-                screen:
-                    GameplayScreenRequest {
-                        level_number,
-                        show_solved_overlay,
-                        ..
-                    },
+                screen: GameplayScreenRequest { level_number, .. },
                 present_mode,
             }),
         ] = plan.steps.as_slice()
@@ -262,7 +243,6 @@ mod tests {
 
         assert_eq!(*present_mode, PresentMode::Full);
         assert_eq!(*level_number, 1);
-        assert!(!show_solved_overlay);
     }
 
     #[derive(Default)]

@@ -17,7 +17,6 @@ pub struct GameplayScreenRequest {
     pub can_undo: bool,
     pub can_restart: bool,
     pub level_number: usize,
-    pub show_solved_overlay: bool,
     pub mode: GameplayScreenMode,
 }
 

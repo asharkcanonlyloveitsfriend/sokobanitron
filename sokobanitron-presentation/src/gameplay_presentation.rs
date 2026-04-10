@@ -66,7 +66,6 @@ mod tests {
             can_undo: false,
             can_restart: false,
             level_number,
-            show_solved_overlay: false,
             mode: GameplayScreenMode::Normal,
         }
     }

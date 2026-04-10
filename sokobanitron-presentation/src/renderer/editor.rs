@@ -38,7 +38,6 @@ impl Renderer {
             &request.viewport,
             true,
             false,
-            false,
         );
         self.draw_editor_overlays_on_frame(frame, width, height, request);
         self.draw_editor_chrome_on_frame(frame, width, height, request);

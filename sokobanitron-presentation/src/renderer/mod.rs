@@ -12,7 +12,6 @@ mod gameplay;
 mod level_select;
 mod level_select_scrollbar;
 mod level_set_select;
-mod overlay;
 mod pixel_ui;
 mod pixels;
 mod tiles;
@@ -62,9 +61,6 @@ pub struct RendererTheme {
     pub player_highlight: Rgba,
     pub player_eye: Rgba,
     pub player_limb: Rgba,
-    pub win_panel_fill: Rgba,
-    pub win_panel_stroke: Rgba,
-    pub win_text: Rgba,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -82,9 +78,6 @@ pub struct RendererOverrides {
     pub player_highlight: Option<Rgba>,
     pub player_eye: Option<Rgba>,
     pub player_limb: Option<Rgba>,
-    pub win_panel_fill: Option<Rgba>,
-    pub win_panel_stroke: Option<Rgba>,
-    pub win_text: Option<Rgba>,
 }
 
 impl Default for RendererTheme {
@@ -103,9 +96,6 @@ impl Default for RendererTheme {
             player_highlight: [249, 250, 251, 255],
             player_eye: [2, 6, 23, 255],
             player_limb: [107, 114, 128, 255],
-            win_panel_fill: [8, 12, 20, 220],
-            win_panel_stroke: [255, 255, 255, 255],
-            win_text: [255, 255, 255, 255],
         }
     }
 }
@@ -151,15 +141,6 @@ impl RendererTheme {
         if let Some(v) = overrides.player_limb {
             self.player_limb = v;
         }
-        if let Some(v) = overrides.win_panel_fill {
-            self.win_panel_fill = v;
-        }
-        if let Some(v) = overrides.win_panel_stroke {
-            self.win_panel_stroke = v;
-        }
-        if let Some(v) = overrides.win_text {
-            self.win_text = v;
-        }
         self
     }
 }
@@ -173,8 +154,10 @@ pub struct Renderer {
     pub(crate) cached_board_scene: Vec<u8>,
     pub(crate) cached_board_scene_key: Option<BoardSceneCacheKey>,
     pub(crate) box_bitmap_cache: HashMap<u32, Vec<u8>>,
+    pub(crate) solved_box_bitmap_cache: HashMap<u32, Vec<u8>>,
     pub(crate) selected_box_bitmap_cache: HashMap<u32, Vec<u8>>,
     pub(crate) player_bitmap_cache: HashMap<u32, Vec<u8>>,
+    pub(crate) squint_player_bitmap_cache: HashMap<u32, Vec<u8>>,
     pub(crate) sleeping_player_bitmap_cache: HashMap<u32, Vec<u8>>,
 }
 
@@ -201,8 +184,10 @@ impl Renderer {
             cached_board_scene: Vec::new(),
             cached_board_scene_key: None,
             box_bitmap_cache: HashMap::new(),
+            solved_box_bitmap_cache: HashMap::new(),
             selected_box_bitmap_cache: HashMap::new(),
             player_bitmap_cache: HashMap::new(),
+            squint_player_bitmap_cache: HashMap::new(),
             sleeping_player_bitmap_cache: HashMap::new(),
         }
     }
@@ -215,7 +200,7 @@ impl Renderer {
         board: &BoardView,
         viewport: &BoardViewport,
     ) {
-        self.draw_board_scene_on_frame(frame, width, height, board, viewport, true, true, false);
+        self.draw_board_scene_on_frame(frame, width, height, board, viewport, true, false);
     }
 
     pub fn draw_background_only(&mut self, frame: &mut [u8], width: u32, height: u32) {
@@ -235,7 +220,6 @@ impl Renderer {
         board: &BoardView,
         viewport: &BoardViewport,
         draw_player: bool,
-        draw_win_overlay: bool,
         sleeping_player: bool,
     ) {
         if width == 0 || height == 0 {
@@ -246,9 +230,6 @@ impl Renderer {
         self.draw_boxes(frame, width, height, board, viewport);
         if draw_player {
             self.draw_player(frame, width, height, board, viewport, sleeping_player);
-        }
-        if draw_win_overlay && board.is_solved() {
-            self.draw_win_overlay(frame, width, height);
         }
     }
 
@@ -261,7 +242,6 @@ impl Renderer {
         board: &BoardView,
         viewport: &BoardViewport,
         draw_player: bool,
-        draw_win_overlay: bool,
         sleeping_player: bool,
     ) {
         if width == 0 || height == 0 {
@@ -271,9 +251,6 @@ impl Renderer {
         self.draw_boxes(frame, width, height, board, viewport);
         if draw_player {
             self.draw_player(frame, width, height, board, viewport, sleeping_player);
-        }
-        if draw_win_overlay && board.is_solved() {
-            self.draw_win_overlay(frame, width, height);
         }
     }
 

@@ -48,7 +48,6 @@ impl Renderer {
             &request.board,
             &request.viewport,
             true,
-            request.show_solved_overlay,
             matches!(request.mode, GameplayScreenMode::Sleep),
         );
     }

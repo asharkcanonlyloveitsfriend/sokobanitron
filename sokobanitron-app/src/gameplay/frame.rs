@@ -116,7 +116,6 @@ fn build_gameplay_screen_request(
         can_undo: controller.can_undo(),
         can_restart: controller.can_restart(),
         level_number: controller.current_level() + 1,
-        show_solved_overlay: board.is_solved(),
         mode,
     }
 }
@@ -185,12 +184,7 @@ mod tests {
         let app_state = AppState::default();
 
         let FrameRequest::Gameplay {
-            screen:
-                GameplayScreenRequest {
-                    level_number,
-                    show_solved_overlay,
-                    ..
-                },
+            screen: GameplayScreenRequest { level_number, .. },
             present_mode,
         } = build_current_frame_request(&controller, &app_state)
         else {
@@ -199,6 +193,5 @@ mod tests {
 
         assert_eq!(present_mode, PresentMode::Full);
         assert_eq!(level_number, 1);
-        assert!(!show_solved_overlay);
     }
 }
