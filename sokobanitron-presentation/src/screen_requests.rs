@@ -14,8 +14,6 @@ pub enum GameplayScreenMode {
 pub struct GameplayScreenRequest {
     pub board: BoardView,
     pub viewport: BoardViewport,
-    pub can_undo: bool,
-    pub can_restart: bool,
     pub level_number: usize,
     pub mode: GameplayScreenMode,
 }

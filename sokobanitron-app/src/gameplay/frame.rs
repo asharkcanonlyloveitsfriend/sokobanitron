@@ -113,8 +113,6 @@ fn build_gameplay_screen_request(
     GameplayScreenRequest {
         board: board.clone(),
         viewport: build_gameplay_viewport(&app_state.gameplay, board),
-        can_undo: controller.can_undo(),
-        can_restart: controller.can_restart(),
         level_number: controller.current_level() + 1,
         mode,
     }

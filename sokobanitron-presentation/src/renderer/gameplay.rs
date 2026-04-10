@@ -4,7 +4,7 @@
 //! gameplay composition order in one place while delegating low-level drawing primitives to the
 //! rest of the renderer.
 
-use crate::layout::{ControlsUiMode, ScreenRect, UI_BUTTON_MARGIN, UI_BUTTON_SIZE};
+use crate::layout::{ScreenRect, UI_BUTTON_MARGIN, UI_BUTTON_SIZE};
 use crate::screen_requests::{GameplayScreenMode, GameplayScreenRequest};
 
 use super::{EntityVisualStyle, Renderer, chrome};
@@ -20,14 +20,7 @@ impl Renderer {
         self.draw_gameplay_board_scene(frame, width, height, request);
         match request.mode {
             GameplayScreenMode::Normal => {
-                chrome::draw_controls_ui(
-                    frame,
-                    width,
-                    height,
-                    ControlsUiMode::Gameplay,
-                    request.can_undo,
-                    request.can_restart,
-                );
+                chrome::draw_controls_ui(frame, width, height, false);
                 chrome::draw_top_left_level_button(frame, width, height, request.level_number);
             }
             GameplayScreenMode::Sleep => self.draw_gameplay_sleep_chrome(frame, width, height),

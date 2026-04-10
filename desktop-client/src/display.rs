@@ -1,5 +1,4 @@
 use crate::app_driver::App;
-use presentation::layout::ControlsUiMode;
 use presentation::renderer::{
     draw_controls_ui, draw_gameplay_menu_level_set_button, draw_overlay_primary_action_button,
     draw_top_menu_toggle,
@@ -85,14 +84,7 @@ impl App {
                         screen.resume_level,
                         screen.page_start,
                     );
-                    draw_controls_ui(
-                        frame,
-                        self.surface_width,
-                        self.surface_height,
-                        ControlsUiMode::MenuOpen,
-                        false,
-                        false,
-                    );
+                    draw_controls_ui(frame, self.surface_width, self.surface_height, true);
                     pixels.render().expect("render");
                 }
             }
@@ -110,14 +102,7 @@ impl App {
                         self.surface_height,
                         screen,
                     );
-                    draw_controls_ui(
-                        frame,
-                        self.surface_width,
-                        self.surface_height,
-                        ControlsUiMode::MenuOpen,
-                        false,
-                        false,
-                    );
+                    draw_controls_ui(frame, self.surface_width, self.surface_height, true);
                     pixels.render().expect("render");
                 }
             }

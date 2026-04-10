@@ -407,11 +407,11 @@ mod tests {
         let mut context = TestContext::new();
 
         let applied =
-            apply_input_and_render_in_context(&mut context, AppInput::SolvedAdvance).unwrap();
+            apply_input_and_render_in_context(&mut context, AppInput::BoardTap { x: 1, y: 1 })
+                .unwrap();
 
-        assert_eq!(applied.persistence.resume_level_changed, Some(1));
-        assert!(applied.presentation_plan.is_none());
-        assert!(!applied.rendered_frame);
+        assert!(applied.presentation_plan.is_some());
+        assert!(applied.rendered_frame);
     }
 
     #[test]

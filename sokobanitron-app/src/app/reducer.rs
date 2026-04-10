@@ -116,22 +116,10 @@ pub fn apply_action(
             }
         }
         AppAction::TapBoardCell { x, y } => {
-            if matches!(app_state.ui.screen, AppScreen::Gameplay) && app_state.ui.overlay.is_none()
-            {
-                let outcome = controller.click_cell_with_outcome(x, y);
-                update.changes = outcome.changes;
-                update.gameplay_effect = Some(outcome.effect.clone());
-                update.persistence.resume_level_changed = if outcome.started_now {
-                    Some(controller.current_level())
-                } else {
-                    update.changes.resume_level_changed
-                };
-                if outcome.became_solved {
-                    update.persistence.solved_level = Some(controller.current_level());
-                }
-                update.presentation_plan =
-                    Some(build_presentation_plan(&outcome, controller, app_state));
-            }
+            apply_board_tap(controller, app_state, &mut update, x, y);
+        }
+        AppAction::DoubleTapBoardCell { x, y } => {
+            apply_board_double_tap(controller, app_state, &mut update, x, y);
         }
         AppAction::NoOp => {}
     }
@@ -141,6 +129,66 @@ pub fn apply_action(
     }
 
     update
+}
+
+fn apply_board_tap(
+    controller: &mut GameplayController,
+    app_state: &mut AppState,
+    update: &mut AppUpdate,
+    x: u32,
+    y: u32,
+) {
+    if !matches!(app_state.ui.screen, AppScreen::Gameplay) || app_state.ui.overlay.is_some() {
+        return;
+    }
+
+    if controller.board().is_solved() {
+        if let Some(next_level) = controller.peek_level(1) {
+            update.changes = controller.advance_after_win(next_level);
+        }
+        return;
+    }
+
+    let outcome = controller.click_cell_with_outcome(x, y);
+    update.changes = outcome.changes;
+    update.gameplay_effect = Some(outcome.effect.clone());
+    update.persistence.resume_level_changed = if outcome.started_now {
+        Some(controller.current_level())
+    } else {
+        update.changes.resume_level_changed
+    };
+    if outcome.became_solved {
+        update.persistence.solved_level = Some(controller.current_level());
+    }
+    update.presentation_plan = Some(build_presentation_plan(&outcome, controller, app_state));
+}
+
+fn apply_board_double_tap(
+    controller: &mut GameplayController,
+    app_state: &mut AppState,
+    update: &mut AppUpdate,
+    x: u32,
+    y: u32,
+) {
+    if !matches!(app_state.ui.screen, AppScreen::Gameplay) || app_state.ui.overlay.is_some() {
+        return;
+    }
+
+    if controller.can_restart() && controller.board().player() == Some((x, y)) {
+        update.changes = controller.restart_with_changes();
+        return;
+    }
+
+    if controller.board().is_solved() {
+        return;
+    }
+
+    if controller.can_undo() && controller.last_box_move_destination() == Some((x, y)) {
+        update.changes = controller.undo_with_changes();
+        return;
+    }
+
+    apply_board_tap(controller, app_state, update, x, y);
 }
 
 #[cfg(test)]
@@ -376,5 +424,251 @@ mod tests {
         );
 
         assert_eq!(update.persistence.resume_level_changed, Some(0));
+    }
+
+    #[test]
+    fn board_tap_action_advances_when_board_is_solved() {
+        let solved_level = "###\n#@#\n###".to_string();
+        let mut controller =
+            GameplayController::new(vec![solved_level.clone(), solved_level], None);
+        let mut app_state = AppState::default();
+
+        let update = apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::TapBoardCell { x: 1, y: 1 },
+        );
+
+        assert_eq!(controller.current_level(), 1);
+        assert_eq!(update.persistence.resume_level_changed, Some(1));
+    }
+
+    #[test]
+    fn board_double_tap_on_started_player_maps_to_restart() {
+        let level = "#######\n#@ $. #\n#######".to_string();
+        let mut controller = GameplayController::new(vec![level], None);
+        let mut app_state = AppState::default();
+        let _ = controller.click_cell_with_outcome(2, 1);
+
+        apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::DoubleTapBoardCell { x: 2, y: 1 },
+        );
+
+        assert_eq!(controller.board().player(), Some((1, 1)));
+        assert!(!controller.can_restart());
+    }
+
+    #[test]
+    fn board_double_tap_on_last_move_destination_maps_to_undo() {
+        let level = "#######\n#@ $ .#\n#######".to_string();
+        let mut controller = GameplayController::new(vec![level], None);
+        let mut app_state = AppState::default();
+        let _ = controller.click_cell_with_outcome(3, 1);
+        let _ = controller.click_cell_with_outcome(4, 1);
+
+        apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::DoubleTapBoardCell { x: 4, y: 1 },
+        );
+
+        assert!(controller.board().has_box(3, 1));
+        assert_eq!(controller.last_box_move_destination(), None);
+    }
+
+    #[test]
+    fn board_double_tap_on_void_destination_maps_to_undo() {
+        let level = "#######\n# @ . #\n# $ $ #\n#######".to_string();
+        let mut controller = GameplayController::new(vec![level], None);
+        let mut app_state = AppState::default();
+        let _ = controller.click_cell_with_outcome(2, 2);
+        let _ = controller.click_cell_with_outcome(2, 3);
+
+        assert_eq!(controller.last_box_move_destination(), Some((2, 3)));
+        assert!(!controller.board().has_box(2, 3));
+        assert!(!controller.board().is_solved());
+
+        apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::DoubleTapBoardCell { x: 2, y: 3 },
+        );
+
+        assert!(controller.board().has_box(2, 2));
+        assert_eq!(controller.board().player(), Some((2, 1)));
+        assert_eq!(controller.last_box_move_destination(), None);
+    }
+
+    #[test]
+    fn board_double_tap_undo_uses_latest_remaining_destination_after_undo() {
+        let level = "########\n#@ $   #\n#  $ . #\n########".to_string();
+        let mut controller = GameplayController::new(vec![level], None);
+        let mut app_state = AppState::default();
+        let _ = controller.click_cell_with_outcome(3, 1);
+        let _ = controller.click_cell_with_outcome(4, 1);
+        let _ = controller.click_cell_with_outcome(3, 2);
+        let _ = controller.click_cell_with_outcome(4, 2);
+
+        assert_eq!(controller.last_box_move_destination(), Some((4, 2)));
+
+        apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::DoubleTapBoardCell { x: 4, y: 2 },
+        );
+
+        assert_eq!(controller.last_box_move_destination(), Some((4, 1)));
+
+        apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::DoubleTapBoardCell { x: 4, y: 1 },
+        );
+
+        assert!(controller.board().has_box(3, 1));
+        assert!(controller.board().has_box(3, 2));
+        assert_eq!(controller.last_box_move_destination(), None);
+    }
+
+    #[test]
+    fn board_double_tap_on_solved_player_still_maps_to_restart() {
+        let level = "#####\n# @ #\n# $.#\n#####".to_string();
+        let mut controller = GameplayController::new(vec![level], None);
+        let mut app_state = AppState::default();
+        let _ = controller.click_cell_with_outcome(2, 2);
+        let _ = controller.click_cell_with_outcome(3, 2);
+
+        assert!(controller.board().is_solved());
+
+        apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::DoubleTapBoardCell { x: 2, y: 2 },
+        );
+
+        assert!(
+            !controller.board().is_solved(),
+            "restart should leave solved state"
+        );
+        assert_eq!(controller.board().player(), Some((2, 1)));
+        assert!(controller.board().has_box(2, 2));
+        assert_eq!(controller.last_box_move_destination(), None);
+    }
+
+    #[test]
+    fn board_double_tap_on_solved_last_destination_is_noop() {
+        let level = "#####\n# @ #\n# $.#\n#####".to_string();
+        let mut controller = GameplayController::new(vec![level], None);
+        let mut app_state = AppState::default();
+        let _ = controller.click_cell_with_outcome(2, 2);
+        let _ = controller.click_cell_with_outcome(3, 2);
+
+        assert!(controller.board().is_solved());
+        assert_eq!(controller.last_box_move_destination(), Some((3, 2)));
+
+        let update = apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::DoubleTapBoardCell { x: 3, y: 2 },
+        );
+
+        assert!(controller.board().is_solved());
+        assert!(controller.board().has_box(3, 2));
+        assert_eq!(controller.last_box_move_destination(), Some((3, 2)));
+        assert_eq!(update.changes, Default::default());
+        assert!(update.presentation_plan.is_none());
+    }
+
+    #[test]
+    fn board_double_tap_on_non_last_box_falls_back_to_board_tap() {
+        let level = "########\n#@ $   #\n#  $ . #\n########".to_string();
+        let mut controller = GameplayController::new(vec![level], None);
+        let mut app_state = AppState::default();
+        let _ = controller.click_cell_with_outcome(3, 1);
+        let _ = controller.click_cell_with_outcome(4, 1);
+        let _ = controller.click_cell_with_outcome(3, 2);
+
+        let update = apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::DoubleTapBoardCell { x: 3, y: 2 },
+        );
+
+        assert_eq!(controller.board().selected_box(), None);
+        assert!(update.presentation_plan.is_some());
+    }
+
+    #[test]
+    fn board_double_tap_is_ignored_when_overlay_is_open() {
+        let level = "#######\n#@ $. #\n#######".to_string();
+        let mut controller = GameplayController::new(vec![level], None);
+        let mut app_state = AppState::default();
+        app_state.ui.overlay = Some(AppOverlay::GameplayMenu);
+        let _ = controller.click_cell_with_outcome(2, 1);
+
+        let update = apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::DoubleTapBoardCell { x: 2, y: 1 },
+        );
+
+        assert_eq!(controller.board().player(), Some((2, 1)));
+        assert_eq!(update.changes, Default::default());
+        assert!(update.presentation_plan.is_none());
+    }
+
+    #[test]
+    fn board_double_tap_is_ignored_outside_gameplay_screen() {
+        let level = "#######\n#@ $. #\n#######".to_string();
+        let mut controller = GameplayController::new(vec![level], None);
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        let _ = controller.click_cell_with_outcome(2, 1);
+
+        let update = apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::DoubleTapBoardCell { x: 2, y: 1 },
+        );
+
+        assert_eq!(controller.board().player(), Some((2, 1)));
+        assert_eq!(update.changes, Default::default());
+        assert!(update.presentation_plan.is_none());
+    }
+
+    #[test]
+    fn board_double_tap_is_noop_when_board_is_solved() {
+        let solved_level = "###\n#@#\n###".to_string();
+        let mut controller = GameplayController::new(vec![solved_level], None);
+        let mut app_state = AppState::default();
+
+        let update = apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::DoubleTapBoardCell { x: 1, y: 1 },
+        );
+
+        assert_eq!(controller.current_level(), 0);
+        assert_eq!(update.changes, Default::default());
+        assert!(update.presentation_plan.is_none());
+    }
+
+    #[test]
+    fn undo_action_works_when_history_exists_after_level_is_solved() {
+        let level = "#####\n# @ #\n# $.#\n#####".to_string();
+        let mut controller = GameplayController::new(vec![level], None);
+        let mut app_state = AppState::default();
+        let _ = controller.click_cell_with_outcome(2, 2);
+        let _ = controller.click_cell_with_outcome(3, 2);
+
+        assert!(controller.board().is_solved());
+
+        apply_action(&mut controller, &mut app_state, AppAction::Undo);
+
+        assert!(!controller.board().is_solved());
+        assert!(controller.board().has_box(2, 2));
+        assert_eq!(controller.last_box_move_destination(), None);
     }
 }

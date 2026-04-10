@@ -1,5 +1,4 @@
 use crate::native_window::NativeWindow;
-use presentation::layout::ControlsUiMode;
 use presentation::renderer::{
     Renderer, draw_controls_ui, draw_gameplay_menu_level_set_button,
     draw_overlay_primary_action_button, draw_top_menu_toggle,
@@ -310,14 +309,7 @@ impl AndroidApp {
                     screen.resume_level,
                     screen.page_start,
                 );
-                draw_controls_ui(
-                    frame,
-                    surface_width,
-                    surface_height,
-                    ControlsUiMode::MenuOpen,
-                    false,
-                    false,
-                );
+                draw_controls_ui(frame, surface_width, surface_height, true);
             }
             FrameRequest::LevelSetSelect { screen, .. } => {
                 self.renderer
@@ -328,14 +320,7 @@ impl AndroidApp {
                     surface_height,
                     screen,
                 );
-                draw_controls_ui(
-                    frame,
-                    surface_width,
-                    surface_height,
-                    ControlsUiMode::MenuOpen,
-                    false,
-                    false,
-                );
+                draw_controls_ui(frame, surface_width, surface_height, true);
             }
             FrameRequest::Editor { screen } => {
                 self.renderer

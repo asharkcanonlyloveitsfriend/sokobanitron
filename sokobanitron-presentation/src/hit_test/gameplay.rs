@@ -2,9 +2,9 @@ use crate::layout::{
     BoardViewport, gameplay_menu_level_set_button_rect, top_left_level_button_rect,
 };
 use crate::{
-    ControlsButtonAction, MenuNavAction, controls_button_action_at,
-    level_select_menu_nav_action_at, level_select_menu_target_at, level_set_select_nav_action_at,
-    level_set_select_target_at, overlay_primary_action_button_contains,
+    MenuNavAction, level_select_menu_nav_action_at, level_select_menu_target_at,
+    level_set_select_nav_action_at, level_set_select_target_at,
+    overlay_primary_action_button_contains, top_menu_toggle_button_contains,
 };
 use sokobanitron_gameplay::BoardView;
 
@@ -46,8 +46,6 @@ pub struct GameplaySurfaceModel<'a> {
     pub level_set_count: usize,
     pub active_level_set: Option<usize>,
     pub can_change_level_set: bool,
-    pub can_undo: bool,
-    pub can_restart: bool,
     pub board_viewport: BoardViewport,
     pub board: &'a BoardView,
 }
@@ -69,7 +67,7 @@ pub enum GameplaySurfaceTarget {
     OverlayPrimaryAction,
     LevelButton,
     LevelSetButton,
-    Control(ControlsButtonAction),
+    MenuToggle,
     LevelSelect(LevelSelectSurfaceTarget),
     LevelSetSelect(LevelSetSelectSurfaceTarget),
     BoardCell { x: u32, y: u32 },
@@ -98,15 +96,8 @@ pub fn gameplay_surface_target_at(
     {
         return Some(GameplaySurfaceTarget::LevelSetButton);
     }
-    if let Some(action) = controls_button_action_at(
-        tap_x,
-        tap_y,
-        surface.surface_width,
-        surface.surface_height,
-        surface.can_undo,
-        surface.can_restart,
-    ) {
-        return Some(GameplaySurfaceTarget::Control(action));
+    if top_menu_toggle_button_contains(tap_x, tap_y, surface.surface_width) {
+        return Some(GameplaySurfaceTarget::MenuToggle);
     }
     if let Some(page_start) = surface.layer.level_select_page_start() {
         if let Some(nav_action) = level_select_menu_nav_action_at(
@@ -199,8 +190,6 @@ mod tests {
             level_set_count: 0,
             active_level_set: None,
             can_change_level_set: false,
-            can_undo: controller.can_undo(),
-            can_restart: controller.can_restart(),
             board_viewport: fit_board_viewport_for_controls(670, 891, board),
             board,
         }

@@ -1,10 +1,4 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ControlsUiMode {
-    Gameplay,
-    MenuOpen,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ScreenRect {
     pub x: u32,
     pub y: u32,
@@ -26,13 +20,6 @@ impl ScreenRect {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ControlsButtonRects {
-    pub menu: ScreenRect,
-    pub restart: ScreenRect,
-    pub undo: ScreenRect,
-}
-
 pub const UI_BUTTON_SIZE: u32 = 76;
 pub const UI_BUTTON_MARGIN: u32 = 16;
 pub const UI_MENU_BUTTON_HEIGHT: u32 = UI_BUTTON_SIZE / 2;
@@ -41,14 +28,6 @@ pub const BOARD_VERTICAL_MARGIN: u32 = UI_BUTTON_MARGIN + UI_MENU_BUTTON_HEIGHT;
 
 pub fn board_viewport_margins() -> (u32, u32) {
     (BOARD_HORIZONTAL_MARGIN, BOARD_VERTICAL_MARGIN)
-}
-
-pub fn controls_button_rects(width: u32, height: u32) -> ControlsButtonRects {
-    ControlsButtonRects {
-        menu: top_menu_toggle_button_rect(width),
-        undo: bottom_left_corner_button_rect(height),
-        restart: bottom_right_corner_button_rect(width, height),
-    }
 }
 
 pub fn top_menu_toggle_button_rect(width: u32) -> ScreenRect {

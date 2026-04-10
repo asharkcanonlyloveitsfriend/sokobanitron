@@ -156,13 +156,7 @@ mod tests {
 
         let [
             PresentationStep::Render(FrameRequest::Gameplay {
-                screen:
-                    GameplayScreenRequest {
-                        can_undo,
-                        can_restart,
-                        level_number,
-                        ..
-                    },
+                screen: GameplayScreenRequest { level_number, .. },
                 present_mode,
             }),
         ] = plan.steps.as_slice()
@@ -171,8 +165,6 @@ mod tests {
         };
 
         assert_eq!(*present_mode, PresentMode::Full);
-        assert!(!can_undo);
-        assert!(!can_restart);
         assert_eq!(*level_number, 1);
     }
 

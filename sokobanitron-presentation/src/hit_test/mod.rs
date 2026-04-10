@@ -6,9 +6,7 @@ mod level_select;
 mod level_set_select;
 mod overlay;
 
-pub use controls::{
-    ControlsButtonAction, controls_button_action_at, top_menu_toggle_button_contains,
-};
+pub use controls::{ControlsButtonAction, top_menu_toggle_button_contains};
 pub use gameplay::{
     GameplaySurfaceLayer, GameplaySurfaceModel, GameplaySurfaceTarget, LevelSelectSurfaceTarget,
     LevelSetSelectSurfaceTarget, gameplay_surface_target_at,

@@ -338,8 +338,6 @@ mod tests {
         GameplayScreenRequest {
             viewport: fit_board_viewport_for_controls(64, 64, &board),
             board,
-            can_undo: false,
-            can_restart: false,
             level_number: 1,
             mode,
         }

@@ -11,10 +11,10 @@ mod viewport;
 use sokobanitron_gameplay::{BoardView, TileKind};
 
 pub use controls::{
-    BOARD_HORIZONTAL_MARGIN, BOARD_VERTICAL_MARGIN, ControlsButtonRects, ControlsUiMode,
-    ScreenRect, UI_BUTTON_MARGIN, UI_BUTTON_SIZE, UI_MENU_BUTTON_HEIGHT, board_viewport_margins,
-    bottom_left_corner_button_rect, bottom_right_corner_button_rect, controls_button_rects,
-    top_left_level_button_rect, top_menu_toggle_button_hit_rect, top_menu_toggle_button_rect,
+    BOARD_HORIZONTAL_MARGIN, BOARD_VERTICAL_MARGIN, ScreenRect, UI_BUTTON_MARGIN, UI_BUTTON_SIZE,
+    UI_MENU_BUTTON_HEIGHT, board_viewport_margins, bottom_left_corner_button_rect,
+    bottom_right_corner_button_rect, top_left_level_button_rect, top_menu_toggle_button_hit_rect,
+    top_menu_toggle_button_rect,
 };
 pub use editor::{
     editor_bottom_left_button_rect, editor_bottom_right_button_rect, editor_viewport_size,
@@ -43,13 +43,7 @@ pub fn fit_board_viewport_for_controls(
     let board_cols = board.width().max(1);
     let board_rows = board.height().max(1);
     let top_safe_margin = BOARD_VERTICAL_MARGIN;
-    let side_margin_cap = UI_BUTTON_SIZE;
-    let controls: ControlsButtonRects = controls_button_rects(width, height);
-    let forbidden = [
-        to_pixel_rect(top_left_level_button_rect()),
-        to_pixel_rect(controls.restart),
-        to_pixel_rect(controls.undo),
-    ];
+    let forbidden = [to_pixel_rect(top_left_level_button_rect())];
     let visible_cells = non_void_cells(board);
 
     let max_cell_w = width / board_cols;
@@ -57,11 +51,10 @@ pub fn fit_board_viewport_for_controls(
     let max_cell_size = max_cell_w.min(max_cell_h).max(1);
 
     for cell_size in (1..=max_cell_size).rev() {
-        let side_margin = side_margin_cap.min(cell_size);
         let board_pixel_width = board_cols * cell_size;
         let board_pixel_height = board_rows * cell_size;
 
-        if board_pixel_width > width.saturating_sub(side_margin * 2) {
+        if board_pixel_width > width {
             continue;
         }
         if board_pixel_height > height.saturating_sub(top_safe_margin) {
@@ -180,8 +173,8 @@ fn overlaps_forbidden_buttons(
 #[cfg(test)]
 mod tests {
     use super::{
-        PixelRect, UI_BUTTON_SIZE, controls_button_rects, fit_board_viewport_for_controls,
-        overlaps_forbidden_buttons, to_pixel_rect,
+        PixelRect, fit_board_viewport_for_controls, overlaps_forbidden_buttons, to_pixel_rect,
+        top_left_level_button_rect,
     };
     use sokobanitron_gameplay::{BoardView, TileKind};
 
@@ -199,14 +192,10 @@ mod tests {
     }
 
     #[test]
-    fn fitted_viewport_avoids_bottom_button_overlap_for_non_void_tiles() {
+    fn fitted_viewport_avoids_level_button_overlap_for_non_void_tiles() {
         let board = board_with_tile(12, 10, TileKind::Floor);
         let viewport = fit_board_viewport_for_controls(670, 905, &board);
-        let controls = controls_button_rects(670, 905);
-        let forbidden: [PixelRect; 2] = [
-            to_pixel_rect(controls.restart),
-            to_pixel_rect(controls.undo),
-        ];
+        let forbidden: [PixelRect; 1] = [to_pixel_rect(top_left_level_button_rect())];
         let solid_cells = (0..board.height())
             .flat_map(|y| (0..board.width()).map(move |x| (x, y)))
             .collect::<Vec<_>>();
@@ -221,9 +210,9 @@ mod tests {
     }
 
     #[test]
-    fn small_boards_keep_capped_side_margin() {
-        let board = board_with_tile(4, 4, TileKind::Floor);
+    fn wide_boards_can_use_side_space_when_only_top_ui_matters() {
+        let board = board_with_tile(8, 8, TileKind::Floor);
         let viewport = fit_board_viewport_for_controls(670, 905, &board);
-        assert!((viewport.origin_x as u32) >= UI_BUTTON_SIZE);
+        assert!((viewport.origin_x as u32) < 76);
     }
 }

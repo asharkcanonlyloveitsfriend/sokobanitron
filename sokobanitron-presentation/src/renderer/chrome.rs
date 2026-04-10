@@ -1,7 +1,6 @@
 use crate::assets::{UiIcon, draw_ui_icon_in_rect};
 use crate::layout::{
-    ControlsUiMode, ScreenRect, bottom_left_corner_button_rect, bottom_right_corner_button_rect,
-    gameplay_menu_level_set_button_rect, overlay_primary_action_button_rect,
+    ScreenRect, gameplay_menu_level_set_button_rect, overlay_primary_action_button_rect,
     top_left_level_button_rect, top_menu_toggle_button_rect,
 };
 
@@ -22,46 +21,12 @@ pub fn draw_top_left_level_button(frame: &mut [u8], width: u32, height: u32, lev
     );
 }
 
-pub fn draw_controls_ui(
-    frame: &mut [u8],
-    width: u32,
-    height: u32,
-    mode: ControlsUiMode,
-    can_undo: bool,
-    can_restart: bool,
-) {
+pub fn draw_controls_ui(frame: &mut [u8], width: u32, height: u32, menu_open: bool) {
     if width == 0 || height == 0 {
         return;
     }
 
-    draw_top_menu_toggle(
-        frame,
-        width,
-        height,
-        matches!(mode, ControlsUiMode::MenuOpen),
-    );
-    if matches!(mode, ControlsUiMode::Gameplay) {
-        if can_undo {
-            draw_ui_icon_in_rect(
-                frame,
-                width,
-                height,
-                bottom_left_corner_button_rect(height),
-                UiIcon::Undo,
-                BUTTON_TEXT_COLOR,
-            );
-        }
-        if can_restart {
-            draw_ui_icon_in_rect(
-                frame,
-                width,
-                height,
-                bottom_right_corner_button_rect(width, height),
-                UiIcon::Restart,
-                BUTTON_TEXT_COLOR,
-            );
-        }
-    }
+    draw_top_menu_toggle(frame, width, height, menu_open);
 }
 
 pub fn draw_top_menu_toggle(frame: &mut [u8], width: u32, height: u32, open: bool) {

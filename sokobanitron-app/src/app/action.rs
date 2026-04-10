@@ -15,5 +15,6 @@ pub enum AppAction {
     SelectLevelSet(usize),
     AdvanceAfterSolved,
     TapBoardCell { x: u32, y: u32 },
+    DoubleTapBoardCell { x: u32, y: u32 },
     NoOp,
 }

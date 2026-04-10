@@ -12,7 +12,6 @@ pub struct GameEngine {
     player: Position,
     boxes: HashSet<Position>,
     box_move_history: Vec<Vec<Position>>,
-    has_undone_once: bool,
 }
 
 impl GameEngine {
@@ -73,7 +72,6 @@ impl GameEngine {
             player: initial_player,
             boxes,
             box_move_history: Vec::new(),
-            has_undone_once: false,
         })
     }
 
@@ -87,6 +85,13 @@ impl GameEngine {
 
     pub fn box_move_history(&self) -> &[Vec<Position>] {
         &self.box_move_history
+    }
+
+    pub fn last_box_move_destination(&self) -> Option<Position> {
+        self.box_move_history
+            .last()
+            .and_then(|path| path.last())
+            .copied()
     }
 
     pub fn is_level_solved(&self) -> bool {
@@ -108,7 +113,7 @@ impl GameEngine {
     }
 
     pub fn can_undo(&self) -> bool {
-        !self.is_level_solved() && !self.has_undone_once && !self.box_move_history.is_empty()
+        !self.box_move_history.is_empty()
     }
 
     pub fn move_player_to(&mut self, to: Position) -> bool {
@@ -152,7 +157,6 @@ impl GameEngine {
         self.boxes.insert(to);
         self.player = final_player_pos;
         self.box_move_history.push(box_path.clone());
-        self.has_undone_once = false;
         Some(box_path)
     }
 
@@ -187,14 +191,10 @@ impl GameEngine {
         self.boxes.remove(&from);
         self.player = from;
         self.box_move_history.push(vec![from, to]);
-        self.has_undone_once = false;
         true
     }
 
     pub fn undo(&mut self) -> Option<Vec<Position>> {
-        if self.has_undone_once {
-            return None;
-        }
         let path = self.box_move_history.pop()?;
         if path.len() < 2 {
             return None;
@@ -212,7 +212,6 @@ impl GameEngine {
         self.boxes.remove(&box_to);
         self.boxes.insert(box_from);
         self.player = new_player;
-        self.has_undone_once = true;
         Some(path)
     }
 
@@ -237,7 +236,7 @@ mod tests {
     use sokobanitron_core::pathfinder::Position;
 
     #[test]
-    fn push_box_into_void_then_single_undo() {
+    fn push_box_into_void_then_undo_restores_box() {
         let ascii = "#####\n# @ #\n# $ #\n#####";
         let mut engine = GameEngine::from_ascii(ascii).expect("expected valid level");
 
@@ -251,7 +250,10 @@ mod tests {
         assert_eq!(engine.player(), Position::new(1, 2));
         assert!(engine.boxes().contains(&Position::new(2, 2)));
 
-        assert!(engine.undo().is_none(), "second undo should fail");
+        assert!(
+            engine.undo().is_none(),
+            "second undo should fail once history is empty"
+        );
     }
 
     #[test]
@@ -274,7 +276,7 @@ mod tests {
     }
 
     #[test]
-    fn can_undo_is_false_after_level_is_solved() {
+    fn can_undo_is_true_after_level_is_solved_when_history_exists() {
         let ascii = "#####\n# @ #\n# $.#\n#####";
         let mut engine = GameEngine::from_ascii(ascii).expect("expected valid level");
 
@@ -286,12 +288,65 @@ mod tests {
         );
         assert!(engine.is_level_solved(), "expected level to be solved");
         assert!(
-            !engine.can_undo(),
-            "undo should be unavailable once level is solved"
+            engine.can_undo(),
+            "undo should remain available while move history exists"
         );
         assert!(
             engine.can_restart(),
             "restart should remain available after solving"
         );
+    }
+
+    #[test]
+    fn last_box_move_destination_tracks_latest_remaining_history() {
+        let ascii = "########\n#@ $   #\n#  $ . #\n########";
+        let mut engine = GameEngine::from_ascii(ascii).expect("expected valid level");
+
+        let first_path = engine
+            .move_box_to(Position::new(1, 3), Position::new(1, 4))
+            .expect("expected first box move");
+        assert_eq!(
+            engine.last_box_move_destination(),
+            first_path.last().copied()
+        );
+
+        let second_path = engine
+            .move_box_to(Position::new(2, 3), Position::new(2, 4))
+            .expect("expected second box move");
+        assert_eq!(
+            engine.last_box_move_destination(),
+            second_path.last().copied()
+        );
+
+        let _ = engine.undo().expect("expected undo to succeed");
+        assert_eq!(
+            engine.last_box_move_destination(),
+            first_path.last().copied()
+        );
+    }
+
+    #[test]
+    fn undo_can_be_applied_until_history_is_empty() {
+        let ascii = "########\n#@ $   #\n#  $ . #\n########";
+        let mut engine = GameEngine::from_ascii(ascii).expect("expected valid level");
+
+        let first_path = engine
+            .move_box_to(Position::new(1, 3), Position::new(1, 4))
+            .expect("expected first box move");
+        let second_path = engine
+            .move_box_to(Position::new(2, 3), Position::new(2, 4))
+            .expect("expected second box move");
+
+        assert_eq!(engine.undo().expect("expected first undo"), second_path);
+        assert!(
+            engine.can_undo(),
+            "history should still permit undo while earlier moves remain"
+        );
+        assert_eq!(engine.undo().expect("expected second undo"), first_path);
+        assert!(
+            !engine.can_undo(),
+            "undo should become unavailable once history is empty"
+        );
+        assert_eq!(engine.last_box_move_destination(), None);
     }
 }

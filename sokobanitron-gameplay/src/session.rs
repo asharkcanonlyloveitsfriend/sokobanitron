@@ -84,6 +84,12 @@ impl GameplaySession {
             .collect()
     }
 
+    pub fn last_box_move_destination(&self) -> Option<(u32, u32)> {
+        self.engine
+            .last_box_move_destination()
+            .map(|pos| (pos.col as u32, pos.row as u32))
+    }
+
     pub fn click_cell_with_events(&mut self, x: u32, y: u32) -> Vec<GameplayEvent> {
         let mut events = Vec::new();
         if self.board.is_solved() {
@@ -165,14 +171,6 @@ impl GameplaySession {
 
     pub fn on_key_with_events(&mut self, key: GameplayKey) -> Vec<GameplayEvent> {
         let mut events = Vec::new();
-        if self.board.is_solved() {
-            if key == GameplayKey::Escape {
-                self.restart();
-                events.push(GameplayEvent::Restarted);
-            }
-            return events;
-        }
-
         match key {
             GameplayKey::Backspace => {
                 if self.engine.undo().is_some() {

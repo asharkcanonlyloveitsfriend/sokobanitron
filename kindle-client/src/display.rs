@@ -1,5 +1,4 @@
 use crate::{app_driver::KindleApp, config};
-use presentation::layout::ControlsUiMode;
 use presentation::renderer::{
     Renderer, RendererOverrides, draw_controls_ui, draw_gameplay_menu_level_set_button,
     draw_overlay_primary_action_button, draw_top_menu_toggle,
@@ -99,14 +98,7 @@ impl KindleApp {
                     screen.resume_level,
                     screen.page_start,
                 );
-                draw_controls_ui(
-                    rgba,
-                    config::WIDTH as u32,
-                    config::HEIGHT as u32,
-                    ControlsUiMode::MenuOpen,
-                    false,
-                    false,
-                );
+                draw_controls_ui(rgba, config::WIDTH as u32, config::HEIGHT as u32, true);
                 if matches!(present_mode, PresentMode::FastPartial) {
                     display.present_rgba_fast_partial(rgba)
                 } else {
@@ -126,14 +118,7 @@ impl KindleApp {
                     config::HEIGHT as u32,
                     screen,
                 );
-                draw_controls_ui(
-                    rgba,
-                    config::WIDTH as u32,
-                    config::HEIGHT as u32,
-                    ControlsUiMode::MenuOpen,
-                    false,
-                    false,
-                );
+                draw_controls_ui(rgba, config::WIDTH as u32, config::HEIGHT as u32, true);
                 if matches!(present_mode, PresentMode::FastPartial) {
                     display.present_rgba_fast_partial(rgba)
                 } else {

@@ -3,9 +3,8 @@ use super::state::AppState;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppInput {
-    // Control-style gameplay inputs.
-    ControlRestart,
-    ControlUndo,
+    Restart,
+    Undo,
     // Semantic navigation inputs.
     OverlayToggle,
     OpenLevelSelect,
@@ -18,17 +17,15 @@ pub enum AppInput {
     LevelSelectSelect(usize),
     LevelSetSelectNavigate { page_start: usize },
     LevelSetSelectSelect(usize),
-    SolvedAdvance,
     BoardTap { x: u32, y: u32 },
-    KeyRestart,
-    KeyUndo,
+    BoardDoubleTap { x: u32, y: u32 },
     NoOp,
 }
 
 pub fn interpret_input(_app_state: &AppState, input: AppInput) -> AppAction {
     match input {
-        AppInput::ControlRestart => AppAction::Restart,
-        AppInput::ControlUndo => AppAction::Undo,
+        AppInput::Restart => AppAction::Restart,
+        AppInput::Undo => AppAction::Undo,
         AppInput::OverlayToggle => AppAction::ToggleOverlay,
         AppInput::OpenLevelSelect => AppAction::OpenLevelSelect,
         AppInput::OpenLevelSetSelect => AppAction::OpenLevelSetSelect,
@@ -44,10 +41,8 @@ pub fn interpret_input(_app_state: &AppState, input: AppInput) -> AppAction {
             AppAction::SetLevelSetSelectPageStart(page_start)
         }
         AppInput::LevelSetSelectSelect(level_set) => AppAction::SelectLevelSet(level_set),
-        AppInput::SolvedAdvance => AppAction::AdvanceAfterSolved,
         AppInput::BoardTap { x, y } => AppAction::TapBoardCell { x, y },
-        AppInput::KeyRestart => AppAction::Restart,
-        AppInput::KeyUndo => AppAction::Undo,
+        AppInput::BoardDoubleTap { x, y } => AppAction::DoubleTapBoardCell { x, y },
         AppInput::NoOp => AppAction::NoOp,
     }
 }
@@ -59,10 +54,10 @@ mod tests {
     use crate::app::state::AppState;
 
     #[test]
-    fn interpret_control_restart_maps_to_restart_action() {
+    fn interpret_restart_maps_to_restart_action() {
         let app_state = AppState::default();
         assert_eq!(
-            interpret_input(&app_state, AppInput::ControlRestart),
+            interpret_input(&app_state, AppInput::Restart),
             AppAction::Restart
         );
     }
@@ -100,6 +95,15 @@ mod tests {
         assert_eq!(
             interpret_input(&app_state, AppInput::OpenLevelSetSelect),
             AppAction::OpenLevelSetSelect
+        );
+    }
+
+    #[test]
+    fn interpret_board_double_tap_maps_to_double_tap_board_cell_action() {
+        let app_state = AppState::default();
+        assert_eq!(
+            interpret_input(&app_state, AppInput::BoardDoubleTap { x: 3, y: 4 }),
+            AppAction::DoubleTapBoardCell { x: 3, y: 4 }
         );
     }
 

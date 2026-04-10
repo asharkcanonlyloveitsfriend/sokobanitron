@@ -347,10 +347,10 @@ impl ApplicationHandler for App {
                 }
                 match event.logical_key {
                     Key::Named(NamedKey::Escape) => {
-                        let _ = self.apply_app_input(AppInput::KeyRestart);
+                        let _ = self.apply_app_input(AppInput::Restart);
                     }
                     Key::Named(NamedKey::Backspace) => {
-                        let _ = self.apply_app_input(AppInput::KeyUndo);
+                        let _ = self.apply_app_input(AppInput::Undo);
                     }
                     _ => {}
                 }

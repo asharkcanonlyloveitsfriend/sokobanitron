@@ -158,6 +158,10 @@ impl GameplayController {
         self.session.box_move_history()
     }
 
+    pub fn last_box_move_destination(&self) -> Option<(u32, u32)> {
+        self.session.last_box_move_destination()
+    }
+
     fn set_resume_level_to_current_if_needed(&mut self) -> Option<usize> {
         if self.resume_level_persisted && self.resume_level == self.current_level {
             return None;

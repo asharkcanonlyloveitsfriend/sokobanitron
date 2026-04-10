@@ -4,9 +4,10 @@
 //! and rendering can use the same device-agnostic viewport computation.
 
 use crate::persistence::LevelSetCatalogEntry;
-use crate::shared::SinglePointerGestureState;
+use crate::shared::{DoubleTapTracker, SinglePointerGestureState};
 use presentation::layout::{BoardViewport, fit_board_viewport_for_controls};
 use sokobanitron_gameplay::BoardView;
+use std::time::Duration;
 
 const DEFAULT_GAMEPLAY_WIDTH: u32 = 670;
 const DEFAULT_GAMEPLAY_HEIGHT: u32 = 891;
@@ -20,9 +21,21 @@ pub struct GameplayUiState {
     pub(crate) interaction: GameplayInteractionState,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GameplayInteractionState {
     pub(crate) pointer: SinglePointerGestureState,
+    pub(crate) double_tap: DoubleTapTracker<(u32, u32)>,
+    pub(crate) double_tap_window: Duration,
+}
+
+impl Default for GameplayInteractionState {
+    fn default() -> Self {
+        Self {
+            pointer: SinglePointerGestureState::default(),
+            double_tap: DoubleTapTracker::default(),
+            double_tap_window: Duration::from_millis(325),
+        }
+    }
 }
 
 impl Default for GameplayUiState {
@@ -44,6 +57,10 @@ pub fn resize_gameplay_surface(gameplay: &mut GameplayUiState, width: u32, heigh
 
 pub fn set_gameplay_touch_slop(gameplay: &mut GameplayUiState, tap_slop_px: i32) {
     gameplay.interaction.pointer.set_tap_slop(tap_slop_px);
+}
+
+pub fn set_gameplay_double_tap_window(gameplay: &mut GameplayUiState, window: Duration) {
+    gameplay.interaction.double_tap_window = window;
 }
 
 pub fn set_gameplay_level_sets(
