@@ -35,6 +35,15 @@ pub type Rgba = [u8; 4];
 
 const BG_SPACE_PNG: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/bg_space.png"));
+pub(crate) const WHITE: Rgba = [255, 255, 255, 255];
+pub(crate) const BLACK: Rgba = [0, 0, 0, 255];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum EntityVisualStyle {
+    #[default]
+    Standard,
+    Solved,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct BoardSceneCacheKey {
@@ -48,98 +57,74 @@ pub(crate) struct BoardSceneCacheKey {
 
 #[derive(Debug, Clone, Copy)]
 pub struct RendererTheme {
-    pub floor_fill: Rgba,
-    pub floor_stroke: Rgba,
-    pub goal_fill: Rgba,
-    pub box_primary: Rgba,
-    pub box_highlight: Rgba,
-    pub box_shadow: Rgba,
-    pub selected_box_primary: Rgba,
-    pub selected_box_highlight: Rgba,
-    pub selected_box_shadow: Rgba,
-    pub player_body: Rgba,
-    pub player_highlight: Rgba,
-    pub player_eye: Rgba,
-    pub player_limb: Rgba,
+    pub light_1: Rgba,
+    pub light_2: Rgba,
+    pub mid_1: Rgba,
+    pub mid_2: Rgba,
+    pub mid_3: Rgba,
+    pub mid_4: Rgba,
+    pub mid_5: Rgba,
+    pub dark_1: Rgba,
+    pub dark_2: Rgba,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RendererOverrides {
-    pub floor_fill: Option<Rgba>,
-    pub floor_stroke: Option<Rgba>,
-    pub goal_fill: Option<Rgba>,
-    pub box_primary: Option<Rgba>,
-    pub box_highlight: Option<Rgba>,
-    pub box_shadow: Option<Rgba>,
-    pub selected_box_primary: Option<Rgba>,
-    pub selected_box_highlight: Option<Rgba>,
-    pub selected_box_shadow: Option<Rgba>,
-    pub player_body: Option<Rgba>,
-    pub player_highlight: Option<Rgba>,
-    pub player_eye: Option<Rgba>,
-    pub player_limb: Option<Rgba>,
+    pub light_1: Option<Rgba>,
+    pub light_2: Option<Rgba>,
+    pub mid_1: Option<Rgba>,
+    pub mid_2: Option<Rgba>,
+    pub mid_3: Option<Rgba>,
+    pub mid_4: Option<Rgba>,
+    pub mid_5: Option<Rgba>,
+    pub dark_1: Option<Rgba>,
+    pub dark_2: Option<Rgba>,
 }
 
 impl Default for RendererTheme {
     fn default() -> Self {
         Self {
-            floor_fill: [255, 255, 255, 255],
-            floor_stroke: [240, 240, 240, 255],
-            goal_fill: [224, 224, 224, 255],
-            box_primary: [120, 129, 144, 255],
-            box_highlight: [156, 163, 175, 255],
-            box_shadow: [75, 85, 99, 255],
-            selected_box_primary: [95, 103, 117, 255],
-            selected_box_highlight: [123, 133, 150, 255],
-            selected_box_shadow: [74, 81, 96, 255],
-            player_body: [156, 163, 175, 255],
-            player_highlight: [249, 250, 251, 255],
-            player_eye: [2, 6, 23, 255],
-            player_limb: [107, 114, 128, 255],
+            light_1: [240, 240, 240, 255],
+            light_2: [224, 224, 224, 255],
+            mid_1: [156, 163, 175, 255],
+            mid_2: [123, 133, 150, 255],
+            mid_3: [120, 129, 144, 255],
+            mid_4: [107, 114, 128, 255],
+            mid_5: [95, 103, 117, 255],
+            dark_1: [75, 85, 99, 255],
+            dark_2: [74, 81, 96, 255],
         }
     }
 }
 
 impl RendererTheme {
     pub fn apply_overrides(mut self, overrides: RendererOverrides) -> Self {
-        if let Some(v) = overrides.floor_fill {
-            self.floor_fill = v;
+        if let Some(v) = overrides.light_1 {
+            self.light_1 = v;
         }
-        if let Some(v) = overrides.floor_stroke {
-            self.floor_stroke = v;
+        if let Some(v) = overrides.light_2 {
+            self.light_2 = v;
         }
-        if let Some(v) = overrides.goal_fill {
-            self.goal_fill = v;
+        if let Some(v) = overrides.mid_1 {
+            self.mid_1 = v;
         }
-        if let Some(v) = overrides.box_primary {
-            self.box_primary = v;
+        if let Some(v) = overrides.mid_2 {
+            self.mid_2 = v;
         }
-        if let Some(v) = overrides.box_highlight {
-            self.box_highlight = v;
+        if let Some(v) = overrides.mid_3 {
+            self.mid_3 = v;
         }
-        if let Some(v) = overrides.box_shadow {
-            self.box_shadow = v;
+        if let Some(v) = overrides.mid_4 {
+            self.mid_4 = v;
         }
-        if let Some(v) = overrides.selected_box_primary {
-            self.selected_box_primary = v;
+        if let Some(v) = overrides.mid_5 {
+            self.mid_5 = v;
         }
-        if let Some(v) = overrides.selected_box_highlight {
-            self.selected_box_highlight = v;
+        if let Some(v) = overrides.dark_1 {
+            self.dark_1 = v;
         }
-        if let Some(v) = overrides.selected_box_shadow {
-            self.selected_box_shadow = v;
-        }
-        if let Some(v) = overrides.player_body {
-            self.player_body = v;
-        }
-        if let Some(v) = overrides.player_highlight {
-            self.player_highlight = v;
-        }
-        if let Some(v) = overrides.player_eye {
-            self.player_eye = v;
-        }
-        if let Some(v) = overrides.player_limb {
-            self.player_limb = v;
+        if let Some(v) = overrides.dark_2 {
+            self.dark_2 = v;
         }
         self
     }
@@ -200,7 +185,16 @@ impl Renderer {
         board: &BoardView,
         viewport: &BoardViewport,
     ) {
-        self.draw_board_scene_on_frame(frame, width, height, board, viewport, true, false);
+        self.draw_board_scene_on_frame(
+            frame,
+            width,
+            height,
+            board,
+            viewport,
+            true,
+            EntityVisualStyle::Standard,
+            false,
+        );
     }
 
     pub fn draw_background_only(&mut self, frame: &mut [u8], width: u32, height: u32) {
@@ -220,6 +214,7 @@ impl Renderer {
         board: &BoardView,
         viewport: &BoardViewport,
         draw_player: bool,
+        entity_visual_style: EntityVisualStyle,
         sleeping_player: bool,
     ) {
         if width == 0 || height == 0 {
@@ -227,9 +222,17 @@ impl Renderer {
         }
         self.ensure_cached_board_scene(width, height, board, viewport);
         frame.copy_from_slice(&self.cached_board_scene);
-        self.draw_boxes(frame, width, height, board, viewport);
+        self.draw_boxes(frame, width, height, board, viewport, entity_visual_style);
         if draw_player {
-            self.draw_player(frame, width, height, board, viewport, sleeping_player);
+            self.draw_player(
+                frame,
+                width,
+                height,
+                board,
+                viewport,
+                entity_visual_style,
+                sleeping_player,
+            );
         }
     }
 
@@ -242,15 +245,24 @@ impl Renderer {
         board: &BoardView,
         viewport: &BoardViewport,
         draw_player: bool,
+        entity_visual_style: EntityVisualStyle,
         sleeping_player: bool,
     ) {
         if width == 0 || height == 0 {
             return;
         }
         self.draw_floor_tiles(frame, width, height, board, viewport);
-        self.draw_boxes(frame, width, height, board, viewport);
+        self.draw_boxes(frame, width, height, board, viewport, entity_visual_style);
         if draw_player {
-            self.draw_player(frame, width, height, board, viewport, sleeping_player);
+            self.draw_player(
+                frame,
+                width,
+                height,
+                board,
+                viewport,
+                entity_visual_style,
+                sleeping_player,
+            );
         }
     }
 

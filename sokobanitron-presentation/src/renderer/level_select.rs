@@ -6,7 +6,7 @@ use crate::layout::{
     level_select_scrollbar::ScrollbarState,
 };
 
-use super::{Renderer, level_select_scrollbar, pixels::fill_rect};
+use super::{EntityVisualStyle, Renderer, level_select_scrollbar, pixels::fill_rect};
 
 impl Renderer {
     pub fn draw_level_select_menu_contents(
@@ -44,7 +44,16 @@ impl Renderer {
             );
             viewport.origin_x += sx + pad as i32;
             viewport.origin_y += sy + pad as i32;
-            self.draw_board_on_frame(frame, width, height, board, &viewport, true, false);
+            self.draw_board_on_frame(
+                frame,
+                width,
+                height,
+                board,
+                &viewport,
+                true,
+                EntityVisualStyle::Standard,
+                false,
+            );
             if level_idx == resume_level {
                 draw_selection_brackets(frame, width, height, sx, sy, sw, sh);
             }
@@ -156,4 +165,43 @@ fn draw_selection_brackets(
         len as u32,
         color,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Renderer;
+    use sokobanitron_gameplay::{BoardView, TileKind};
+
+    fn solved_board() -> BoardView {
+        BoardView::new(
+            3,
+            3,
+            vec![
+                TileKind::Void,
+                TileKind::Floor,
+                TileKind::Void,
+                TileKind::Floor,
+                TileKind::Goal,
+                TileKind::Floor,
+                TileKind::Void,
+                TileKind::Floor,
+                TileKind::Void,
+            ],
+            vec![false, false, false, false, true, false, false, false, false],
+            Some((1, 1)),
+            None,
+            true,
+        )
+    }
+
+    #[test]
+    fn level_select_thumbnails_do_not_opt_into_solved_visuals() {
+        let mut renderer = Renderer::new();
+        let mut frame = vec![0; 128 * 128 * 4];
+
+        renderer.draw_level_select_menu_contents(&mut frame, 128, 128, &[solved_board()], 0, 0);
+
+        assert!(renderer.solved_box_bitmap_cache.is_empty());
+        assert!(renderer.squint_player_bitmap_cache.is_empty());
+    }
 }

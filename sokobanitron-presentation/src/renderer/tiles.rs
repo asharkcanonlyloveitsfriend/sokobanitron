@@ -1,7 +1,7 @@
 use crate::layout::BoardViewport;
 use sokobanitron_gameplay::{BoardView, TileKind};
 
-use super::{Renderer, pixels::fill_rect};
+use super::{Renderer, WHITE, pixels::fill_rect};
 
 impl Renderer {
     pub(crate) fn draw_floor_tiles(
@@ -20,8 +20,8 @@ impl Renderer {
                 }
                 let (rect_x, rect_y, rect_w, rect_h) = viewport.cell_to_screen_rect(x, y);
                 let (fill, stroke) = match tile {
-                    TileKind::Floor => (self.theme.floor_fill, self.theme.floor_stroke),
-                    TileKind::Goal => (self.theme.goal_fill, [255, 255, 255, 255]),
+                    TileKind::Floor => (WHITE, self.theme.light_1),
+                    TileKind::Goal => (self.theme.light_2, WHITE),
                     TileKind::Void => continue,
                 };
                 fill_rect(

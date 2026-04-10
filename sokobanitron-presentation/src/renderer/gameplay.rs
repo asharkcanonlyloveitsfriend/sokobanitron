@@ -7,7 +7,7 @@
 use crate::layout::{ControlsUiMode, ScreenRect, UI_BUTTON_MARGIN, UI_BUTTON_SIZE};
 use crate::screen_requests::{GameplayScreenMode, GameplayScreenRequest};
 
-use super::{Renderer, chrome};
+use super::{EntityVisualStyle, Renderer, chrome};
 
 impl Renderer {
     pub(crate) fn draw_gameplay_scene(
@@ -41,6 +41,11 @@ impl Renderer {
         height: u32,
         request: &GameplayScreenRequest,
     ) {
+        let entity_visual_style = if request.board.is_solved() {
+            EntityVisualStyle::Solved
+        } else {
+            EntityVisualStyle::Standard
+        };
         self.draw_board_scene_on_frame(
             frame,
             width,
@@ -48,6 +53,7 @@ impl Renderer {
             &request.board,
             &request.viewport,
             true,
+            entity_visual_style,
             matches!(request.mode, GameplayScreenMode::Sleep),
         );
     }

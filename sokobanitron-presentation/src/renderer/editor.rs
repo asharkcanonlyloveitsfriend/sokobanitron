@@ -6,9 +6,9 @@ use crate::layout::{
 use crate::screen_requests::{EditorMenuScreenRequest, EditorScreenRequest};
 use sokobanitron_level_editor::PullHintStatus;
 
-use super::Renderer;
 use super::chrome::{draw_overlay_primary_action_button, draw_top_menu_toggle};
 use super::pixel_ui::{PIXEL_FONT_HEIGHT, draw_centered_text_in_rect, measure_text_width};
+use super::{EntityVisualStyle, Renderer};
 
 const BUTTON_TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
 const HINT_TEXT_COLOR: [u8; 4] = [172, 172, 172, 255];
@@ -37,6 +37,7 @@ impl Renderer {
             &request.board,
             &request.viewport,
             true,
+            EntityVisualStyle::Standard,
             false,
         );
         self.draw_editor_overlays_on_frame(frame, width, height, request);
@@ -200,4 +201,57 @@ fn draw_count_label(
     let max_fit_scale = scale_x.min(scale_y).max(1);
     let scale = ((max_fit_scale * 5) / 25).max(1);
     draw_centered_text_in_rect(frame, width, height, rect, text, scale, 0, color);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Renderer;
+    use crate::layout::fit_board_viewport_for_controls;
+    use crate::screen_requests::EditorScreenRequest;
+    use sokobanitron_gameplay::{BoardView, TileKind};
+
+    fn solved_board() -> BoardView {
+        BoardView::new(
+            3,
+            3,
+            vec![
+                TileKind::Void,
+                TileKind::Floor,
+                TileKind::Void,
+                TileKind::Floor,
+                TileKind::Goal,
+                TileKind::Floor,
+                TileKind::Void,
+                TileKind::Floor,
+                TileKind::Void,
+            ],
+            vec![false, false, false, false, true, false, false, false, false],
+            Some((1, 1)),
+            None,
+            true,
+        )
+    }
+
+    #[test]
+    fn editor_render_does_not_opt_into_solved_visuals() {
+        let board = solved_board();
+        let request = EditorScreenRequest {
+            viewport: fit_board_viewport_for_controls(64, 64, &board),
+            board,
+            move_counts: Vec::new(),
+            pull_destination_hints: Vec::new(),
+            draw_mode_active: false,
+            can_zoom_out: false,
+            can_zoom_in: false,
+            can_undo: false,
+            can_restart: false,
+        };
+        let mut renderer = Renderer::new();
+        let mut frame = vec![0; 64 * 64 * 4];
+
+        renderer.draw_editor_screen(&mut frame, 64, 64, &request);
+
+        assert!(renderer.solved_box_bitmap_cache.is_empty());
+        assert!(renderer.squint_player_bitmap_cache.is_empty());
+    }
 }

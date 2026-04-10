@@ -2,7 +2,7 @@ use crate::assets::rasterize_svg;
 use crate::layout::BoardViewport;
 use sokobanitron_gameplay::BoardView;
 
-use super::{Renderer, pixels::blit_rgba};
+use super::{BLACK, EntityVisualStyle, Renderer, WHITE, pixels::blit_rgba};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BoxSpriteVariant {
@@ -31,6 +31,7 @@ impl Renderer {
         frame_height: u32,
         board: &BoardView,
         viewport: &BoardViewport,
+        entity_visual_style: EntityVisualStyle,
         x: u32,
         y: u32,
     ) {
@@ -48,7 +49,7 @@ impl Renderer {
         }
 
         let icon_size = box_w.min(box_h);
-        let icon = if board.is_solved() {
+        let icon = if entity_visual_style == EntityVisualStyle::Solved && board.is_solved() {
             self.box_bitmap(icon_size, BoxSpriteVariant::Solved)
         } else if board.selected_box() == Some((x, y)) {
             self.box_bitmap(icon_size, BoxSpriteVariant::Selected)
@@ -74,14 +75,25 @@ impl Renderer {
         frame_height: u32,
         board: &BoardView,
         viewport: &BoardViewport,
+        entity_visual_style: EntityVisualStyle,
     ) {
         for y in 0..board.height() {
             for x in 0..board.width() {
-                self.draw_box_at(frame, frame_width, frame_height, board, viewport, x, y);
+                self.draw_box_at(
+                    frame,
+                    frame_width,
+                    frame_height,
+                    board,
+                    viewport,
+                    entity_visual_style,
+                    x,
+                    y,
+                );
             }
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn draw_player(
         &mut self,
         frame: &mut [u8],
@@ -89,15 +101,16 @@ impl Renderer {
         frame_height: u32,
         board: &BoardView,
         viewport: &BoardViewport,
+        entity_visual_style: EntityVisualStyle,
         sleeping: bool,
     ) {
         let Some((player_x, player_y, icon_size)) = self.player_sprite_rect(board, viewport) else {
             return;
         };
-        let variant = if board.is_solved() {
-            PlayerSpriteVariant::Squint
-        } else if sleeping {
+        let variant = if sleeping {
             PlayerSpriteVariant::Sleeping
+        } else if entity_visual_style == EntityVisualStyle::Solved && board.is_solved() {
+            PlayerSpriteVariant::Squint
         } else {
             PlayerSpriteVariant::Standard
         };
@@ -138,9 +151,9 @@ impl Renderer {
             BoxSpriteVariant::Standard => self.box_bitmap_cache.entry(size).or_insert_with(|| {
                 Self::rasterize_box_bitmap(
                     size,
-                    self.theme.box_primary,
-                    self.theme.box_highlight,
-                    self.theme.box_shadow,
+                    self.theme.mid_3,
+                    self.theme.mid_1,
+                    self.theme.dark_1,
                 )
             }),
             BoxSpriteVariant::Selected => self
@@ -149,20 +162,20 @@ impl Renderer {
                 .or_insert_with(|| {
                     Self::rasterize_box_bitmap(
                         size,
-                        self.theme.selected_box_primary,
-                        self.theme.selected_box_highlight,
-                        self.theme.selected_box_shadow,
+                        self.theme.mid_5,
+                        self.theme.mid_2,
+                        self.theme.dark_2,
                     )
                 }),
             BoxSpriteVariant::Solved => {
                 self.solved_box_bitmap_cache.entry(size).or_insert_with(|| {
                     Self::rasterize_solved_box_bitmap(
                         size,
-                        self.theme.player_eye,
-                        self.theme.player_highlight,
-                        self.theme.box_primary,
-                        self.theme.player_highlight,
-                        self.theme.box_shadow,
+                        BLACK,
+                        WHITE,
+                        self.theme.mid_3,
+                        WHITE,
+                        self.theme.dark_1,
                     )
                 })
             }
@@ -206,6 +219,7 @@ impl Renderer {
         let body = rgb_hex(body);
         let sparkle = rgb_hex(sparkle);
         let shadow = rgb_hex(shadow);
+        let black = rgb_hex(BLACK);
         let svg = format!(
             "<svg xmlns='http://www.w3.org/2000/svg' width='{s}' height='{s}' viewBox='0 0 100 100' aria-label='Stylized bordered square preview'>\
              <path d='M25,8L75,8A17,15 0,0 1,92 25L92,75A17,15 0,0 1,75 92L25,92A17,15 0,0 1,8 75L8,25A17,15 0,0 1,25 8z' fill='{outer}'/>\
@@ -213,7 +227,7 @@ impl Renderer {
              <path d='M29,14L71,14A15,15 0,0 1,86 29L86,71A15,15 0,0 1,71 86L29,86A15,15 0,0 1,14 71L14,29A15,15 0,0 1,29 14z' fill='{body}'/>\
              <path d='M32 19C35.3 25.1 39 26.9 45.2 27.9C39 28.9 35.3 30.7 32 36.8C28.7 30.7 25 28.9 18.8 27.9C25 26.9 28.7 25.1 32 19z' fill='{sparkle}'/>\
              <ellipse cx='69' cy='69' rx='12' ry='4.2' fill='none' stroke='{shadow}' stroke-width='2.2' transform='rotate(-18 69 69)'/>\
-             <path d='M67,60L71,60A7,7 0,0 1,78 67L78,71A7,7 0,0 1,71 78L67,78A7,7 0,0 1,60 71L60,67A7,7 0,0 1,67 60z' fill='{shadow}'/>\
+             <path d='M67,60L71,60A7,7 0,0 1,78 67L78,71A7,7 0,0 1,71 78L67,78A7,7 0,0 1,60 71L60,67A7,7 0,0 1,67 60z' fill='{black}'/>\
              </svg>",
             s = size,
             outer = outer,
@@ -221,16 +235,17 @@ impl Renderer {
             body = body,
             sparkle = sparkle,
             shadow = shadow,
+            black = black,
         );
 
         rasterize_svg(&svg, size)
     }
 
     fn player_bitmap(&mut self, size: u32, variant: PlayerSpriteVariant) -> &[u8] {
-        let body = self.theme.player_body;
-        let shine = self.theme.player_highlight;
-        let eye = self.theme.player_eye;
-        let limb = self.theme.player_limb;
+        let body = self.theme.mid_1;
+        let shine = WHITE;
+        let eye = BLACK;
+        let limb = self.theme.mid_4;
         let cache = match variant {
             PlayerSpriteVariant::Standard => &mut self.player_bitmap_cache,
             PlayerSpriteVariant::Sleeping => &mut self.sleeping_player_bitmap_cache,
@@ -292,6 +307,43 @@ impl Renderer {
 #[cfg(test)]
 mod tests {
     use super::{BoxSpriteVariant, PlayerSpriteVariant, Renderer};
+    use crate::layout::fit_board_viewport_for_controls;
+    use crate::renderer::EntityVisualStyle;
+    use crate::screen_requests::{GameplayScreenMode, GameplayScreenRequest};
+    use sokobanitron_gameplay::{BoardView, TileKind};
+
+    fn board(is_solved: bool) -> BoardView {
+        BoardView::new(
+            3,
+            3,
+            vec![
+                TileKind::Void,
+                TileKind::Floor,
+                TileKind::Void,
+                TileKind::Floor,
+                TileKind::Goal,
+                TileKind::Floor,
+                TileKind::Void,
+                TileKind::Floor,
+                TileKind::Void,
+            ],
+            vec![false, false, false, false, true, false, false, false, false],
+            Some((1, 1)),
+            None,
+            is_solved,
+        )
+    }
+
+    fn gameplay_request(board: BoardView, mode: GameplayScreenMode) -> GameplayScreenRequest {
+        GameplayScreenRequest {
+            viewport: fit_board_viewport_for_controls(64, 64, &board),
+            board,
+            can_undo: false,
+            can_restart: false,
+            level_number: 1,
+            mode,
+        }
+    }
 
     #[test]
     fn solved_box_bitmap_differs_from_standard_box_bitmap() {
@@ -313,5 +365,65 @@ mod tests {
             .to_vec();
 
         assert_ne!(standard, squint);
+    }
+
+    #[test]
+    fn generic_board_render_does_not_opt_into_solved_visuals() {
+        let solved_board = board(true);
+        let unsolved_board = board(false);
+        let solved_viewport = fit_board_viewport_for_controls(64, 64, &solved_board);
+        let unsolved_viewport = fit_board_viewport_for_controls(64, 64, &unsolved_board);
+        let mut solved_renderer = Renderer::new();
+        let mut unsolved_renderer = Renderer::new();
+        let mut solved_frame = vec![0; 64 * 64 * 4];
+        let mut unsolved_frame = vec![0; 64 * 64 * 4];
+
+        solved_renderer.draw_board_on_frame(
+            &mut solved_frame,
+            64,
+            64,
+            &solved_board,
+            &solved_viewport,
+            true,
+            EntityVisualStyle::Standard,
+            false,
+        );
+        unsolved_renderer.draw_board_on_frame(
+            &mut unsolved_frame,
+            64,
+            64,
+            &unsolved_board,
+            &unsolved_viewport,
+            true,
+            EntityVisualStyle::Standard,
+            false,
+        );
+
+        assert_eq!(solved_frame, unsolved_frame);
+    }
+
+    #[test]
+    fn gameplay_scene_uses_solved_visuals_when_opted_in() {
+        let request = gameplay_request(board(true), GameplayScreenMode::Normal);
+        let mut renderer = Renderer::new();
+        let mut frame = vec![0; 64 * 64 * 4];
+
+        renderer.draw_gameplay_scene(&mut frame, 64, 64, &request);
+
+        assert!(!renderer.solved_box_bitmap_cache.is_empty());
+        assert!(!renderer.squint_player_bitmap_cache.is_empty());
+    }
+
+    #[test]
+    fn sleep_mode_keeps_sleeping_player_on_solved_gameplay_board() {
+        let request = gameplay_request(board(true), GameplayScreenMode::Sleep);
+        let mut renderer = Renderer::new();
+        let mut frame = vec![0; 64 * 64 * 4];
+
+        renderer.draw_gameplay_scene(&mut frame, 64, 64, &request);
+
+        assert!(!renderer.solved_box_bitmap_cache.is_empty());
+        assert!(!renderer.sleeping_player_bitmap_cache.is_empty());
+        assert!(renderer.squint_player_bitmap_cache.is_empty());
     }
 }

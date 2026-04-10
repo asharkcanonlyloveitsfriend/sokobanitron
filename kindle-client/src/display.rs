@@ -10,21 +10,21 @@ use sokobanitron_app::{
 };
 use std::io::Result;
 
-const KINDLE_BOX_PRIMARY: [u8; 4] = [60, 63, 66, 255];
-const KINDLE_BOX_SHADOW: [u8; 4] = [30, 31, 33, 255];
-const KINDLE_PLAYER_BODY: [u8; 4] = [117, 117, 117, 255];
-const KINDLE_PLAYER_LIMB: [u8; 4] = [80, 80, 80, 255];
+const KINDLE_MID_1: [u8; 4] = [117, 117, 117, 255];
+const KINDLE_MID_3: [u8; 4] = [60, 63, 66, 255];
+const KINDLE_MID_4: [u8; 4] = [80, 80, 80, 255];
+const KINDLE_DARK_1: [u8; 4] = [30, 31, 33, 255];
 
 impl KindleApp {
     pub(crate) fn build_renderer() -> Renderer {
         Renderer::with_overrides(RendererOverrides {
-            box_primary: Some(KINDLE_BOX_PRIMARY),
-            box_shadow: Some(KINDLE_BOX_SHADOW),
-            player_body: Some(KINDLE_PLAYER_BODY),
-            player_limb: Some(KINDLE_PLAYER_LIMB),
-            selected_box_primary: Some(config::KINDLE_SELECTED_BOX_PRIMARY),
-            selected_box_highlight: Some(config::KINDLE_SELECTED_BOX_HIGHLIGHT),
-            selected_box_shadow: Some(config::KINDLE_SELECTED_BOX_SHADOW),
+            mid_1: Some(KINDLE_MID_1),
+            mid_2: Some(config::KINDLE_MID_2),
+            mid_3: Some(KINDLE_MID_3),
+            mid_4: Some(KINDLE_MID_4),
+            mid_5: Some(config::KINDLE_MID_5),
+            dark_1: Some(KINDLE_DARK_1),
+            dark_2: Some(config::KINDLE_DARK_2),
             ..RendererOverrides::default()
         })
     }

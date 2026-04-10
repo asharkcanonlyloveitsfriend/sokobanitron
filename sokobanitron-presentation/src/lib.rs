@@ -42,7 +42,7 @@ pub use layout::{
     top_menu_toggle_button_hit_rect, top_menu_toggle_button_rect,
 };
 pub use renderer::{
-    PIXEL_FONT_HEIGHT, Renderer, RendererOverrides, RendererTheme, Rgba,
+    EntityVisualStyle, PIXEL_FONT_HEIGHT, Renderer, RendererOverrides, RendererTheme, Rgba,
     draw_centered_text_in_rect, draw_controls_ui, draw_gameplay_menu_level_set_button,
     draw_icon_bits_in_rect, draw_overlay_primary_action_button, draw_text,
     draw_top_left_level_button, draw_top_menu_toggle, measure_text_width,
