@@ -550,16 +550,14 @@ fn tile_signature(board: &BoardView) -> u64 {
     hash = hash.wrapping_mul(0x100000001b3);
     hash ^= u64::from(board.height());
     hash = hash.wrapping_mul(0x100000001b3);
-    for y in 0..board.height() {
-        for x in 0..board.width() {
-            let tile = match board.tile(x, y) {
-                sokobanitron_gameplay::TileKind::Void => 0_u64,
-                sokobanitron_gameplay::TileKind::Floor => 1_u64,
-                sokobanitron_gameplay::TileKind::Goal => 2_u64,
-            };
-            hash ^= tile;
-            hash = hash.wrapping_mul(0x100000001b3);
-        }
+    for cell in board.cells() {
+        let tile = match board.tile(cell) {
+            sokobanitron_gameplay::TileKind::Void => 0_u64,
+            sokobanitron_gameplay::TileKind::Floor => 1_u64,
+            sokobanitron_gameplay::TileKind::Goal => 2_u64,
+        };
+        hash ^= tile;
+        hash = hash.wrapping_mul(0x100000001b3);
     }
     hash
 }

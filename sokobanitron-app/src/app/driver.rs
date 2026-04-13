@@ -164,7 +164,7 @@ mod tests {
     use crate::editor::{EditorUiAction, editor_mouse_pressed};
     use crate::level_bootstrap::{build_preview_boards, load_initial_levels_for_app};
     use crate::persistence::LevelPersistence;
-    use sokobanitron_gameplay::GameplayController;
+    use sokobanitron_gameplay::{BoardCell, GameplayController};
     use sokobanitron_level_editor::{
         DrawTool, EditorCommand, EditorMode, ExportPuzzleError, LevelEditor,
     };
@@ -383,7 +383,8 @@ mod tests {
         let mut context = TestContext::new();
 
         let applied =
-            apply_action_in_context(&mut context, AppAction::TapBoardCell { x: 1, y: 1 }).unwrap();
+            apply_action_in_context(&mut context, AppAction::TapBoardCell(BoardCell::new(1, 1)))
+                .unwrap();
 
         assert!(applied.presentation_plan.is_some());
         assert!(!applied.rendered_frame);
@@ -406,9 +407,11 @@ mod tests {
     fn apply_input_and_render_interprets_before_applying() {
         let mut context = TestContext::new();
 
-        let applied =
-            apply_input_and_render_in_context(&mut context, AppInput::BoardTap { x: 1, y: 1 })
-                .unwrap();
+        let applied = apply_input_and_render_in_context(
+            &mut context,
+            AppInput::BoardTap(BoardCell::new(1, 1)),
+        )
+        .unwrap();
 
         assert!(applied.presentation_plan.is_some());
         assert!(applied.rendered_frame);
@@ -433,7 +436,7 @@ mod tests {
 
         let applied = apply_action_and_render_in_context(
             &mut context,
-            AppAction::TapBoardCell { x: 1, y: 1 },
+            AppAction::TapBoardCell(BoardCell::new(1, 1)),
         )
         .unwrap();
 

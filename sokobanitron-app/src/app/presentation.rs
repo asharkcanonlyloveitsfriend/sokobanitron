@@ -132,20 +132,14 @@ fn gameplay_presentation_cause_for_effect(
                 selected_box: *selected_box,
             })
         }
-        GameplayTapEffect::PlayerMoved { to_x, to_y } => {
-            Some(GameplayPresentationCause::PlayerMoved {
-                to_x: *to_x,
-                to_y: *to_y,
-            })
+        GameplayTapEffect::PlayerMoved { to } => {
+            Some(GameplayPresentationCause::PlayerMoved { to: *to })
         }
         GameplayTapEffect::BoxMoved { path } => {
             Some(GameplayPresentationCause::BoxMoved { path: path.clone() })
         }
-        GameplayTapEffect::BoxRemoved { to_x, to_y } => {
-            Some(GameplayPresentationCause::BoxRemoved {
-                to_x: *to_x,
-                to_y: *to_y,
-            })
+        GameplayTapEffect::BoxRemoved { to } => {
+            Some(GameplayPresentationCause::BoxRemoved { to: *to })
         }
         GameplayTapEffect::BoxMoveRejected => Some(GameplayPresentationCause::BoxMoveRejected),
     }
@@ -162,8 +156,12 @@ mod tests {
         GameplayMenuScreenRequest, GameplayPresentationCause, GameplayPresentationUpdate,
         LevelSelectScreenRequest,
     };
-    use sokobanitron_gameplay::GameplayController;
+    use sokobanitron_gameplay::{BoardCell, GameplayController};
     use sokobanitron_gameplay::{GameplayControllerChanges, GameplayTapEffect, GameplayTapOutcome};
+
+    fn cell(x: u32, y: u32) -> BoardCell {
+        BoardCell::new(x, y)
+    }
 
     fn outcome(effect: GameplayTapEffect, became_solved: bool) -> GameplayTapOutcome {
         GameplayTapOutcome {
@@ -208,7 +206,7 @@ mod tests {
     fn player_move_renders_once() {
         let (controller, app_state) = controller_and_state();
         let plan = build_presentation_plan(
-            &outcome(GameplayTapEffect::PlayerMoved { to_x: 1, to_y: 2 }, false),
+            &outcome(GameplayTapEffect::PlayerMoved { to: cell(1, 2) }, false),
             &controller,
             &app_state,
         );
@@ -218,7 +216,7 @@ mod tests {
         assert_eq!(update.scene.level_number, 1);
         assert_eq!(
             update.cause,
-            GameplayPresentationCause::PlayerMoved { to_x: 1, to_y: 2 }
+            GameplayPresentationCause::PlayerMoved { to: cell(1, 2) }
         );
     }
 
@@ -226,7 +224,7 @@ mod tests {
     fn solved_outcome_keeps_standard_gameplay_request_shape() {
         let (controller, app_state) = controller_and_state();
         let plan = build_presentation_plan(
-            &outcome(GameplayTapEffect::BoxRemoved { to_x: 4, to_y: 7 }, false),
+            &outcome(GameplayTapEffect::BoxRemoved { to: cell(4, 7) }, false),
             &controller,
             &app_state,
         );
@@ -236,7 +234,7 @@ mod tests {
         assert_eq!(update.scene.level_number, 1);
         assert_eq!(
             update.cause,
-            GameplayPresentationCause::BoxRemoved { to_x: 4, to_y: 7 }
+            GameplayPresentationCause::BoxRemoved { to: cell(4, 7) }
         );
     }
 
@@ -244,7 +242,7 @@ mod tests {
     fn solved_board_still_renders_as_gameplay() {
         let (controller, app_state) = solved_controller_and_state();
         let plan = build_presentation_plan(
-            &outcome(GameplayTapEffect::PlayerMoved { to_x: 1, to_y: 1 }, false),
+            &outcome(GameplayTapEffect::PlayerMoved { to: cell(1, 1) }, false),
             &controller,
             &app_state,
         );
@@ -254,7 +252,7 @@ mod tests {
         assert_eq!(update.scene.level_number, 1);
         assert_eq!(
             update.cause,
-            GameplayPresentationCause::PlayerMoved { to_x: 1, to_y: 1 }
+            GameplayPresentationCause::PlayerMoved { to: cell(1, 1) }
         );
     }
 
@@ -306,15 +304,15 @@ mod tests {
         let mut controller = GameplayController::new(vec![level], None);
         let app_state = AppState::default();
 
-        let select_outcome = controller.click_cell_with_outcome(2, 1);
+        let select_outcome = controller.click_cell_with_outcome(cell(2, 1));
         assert_eq!(
             select_outcome.effect,
             GameplayTapEffect::SelectionChanged {
-                selected_box: Some((2, 1))
+                selected_box: Some(cell(2, 1))
             }
         );
 
-        let outcome = controller.click_cell_with_outcome(3, 1);
+        let outcome = controller.click_cell_with_outcome(cell(3, 1));
         let plan = build_presentation_plan(&outcome, &controller, &app_state);
         let (update, present_mode) = gameplay_render(&plan);
 
@@ -322,7 +320,7 @@ mod tests {
         assert_eq!(
             update.cause,
             GameplayPresentationCause::BoxMoved {
-                path: vec![(2, 1), (3, 1)],
+                path: vec![cell(2, 1), cell(3, 1)],
             }
         );
         assert!(update.scene.board.is_solved());

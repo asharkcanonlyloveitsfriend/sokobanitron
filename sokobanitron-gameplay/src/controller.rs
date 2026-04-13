@@ -1,3 +1,4 @@
+use crate::board_cell::BoardCell;
 use crate::presenter::BoardView;
 use crate::session::{GameplayEvent, GameplayKey, GameplaySession};
 
@@ -10,10 +11,10 @@ pub struct GameplayControllerChanges {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GameplayTapEffect {
     None,
-    SelectionChanged { selected_box: Option<(u32, u32)> },
-    PlayerMoved { to_x: u32, to_y: u32 },
-    BoxMoved { path: Vec<(u32, u32)> },
-    BoxRemoved { to_x: u32, to_y: u32 },
+    SelectionChanged { selected_box: Option<BoardCell> },
+    PlayerMoved { to: BoardCell },
+    BoxMoved { path: Vec<BoardCell> },
+    BoxRemoved { to: BoardCell },
     BoxMoveRejected,
 }
 
@@ -117,10 +118,10 @@ impl GameplayController {
         changes
     }
 
-    pub fn click_cell_with_outcome(&mut self, x: u32, y: u32) -> GameplayTapOutcome {
+    pub fn click_cell_with_outcome(&mut self, cell: BoardCell) -> GameplayTapOutcome {
         let was_started = self.session.is_started();
         let was_solved = self.session.board().is_solved();
-        let session_events = self.session.click_cell_with_events(x, y);
+        let session_events = self.session.click_cell_with_events(cell);
         let effect = classify_tap_effect(&session_events);
         let started_now = !was_started && self.session.is_started();
         let is_solved = self.session.board().is_solved();
@@ -158,7 +159,7 @@ impl GameplayController {
         self.session.box_move_history()
     }
 
-    pub fn last_box_move_destination(&self) -> Option<(u32, u32)> {
+    pub fn last_box_move_destination(&self) -> Option<BoardCell> {
         self.session.last_box_move_destination()
     }
 
@@ -179,11 +180,11 @@ fn classify_tap_effect(events: &[GameplayEvent]) -> GameplayTapEffect {
     {
         return GameplayTapEffect::BoxMoveRejected;
     }
-    if let Some((to_x, to_y)) = events.iter().find_map(|event| match event {
-        GameplayEvent::BoxRemoved { to_x, to_y } => Some((*to_x, *to_y)),
+    if let Some(to) = events.iter().find_map(|event| match event {
+        GameplayEvent::BoxRemoved { to } => Some(*to),
         _ => None,
     }) {
-        return GameplayTapEffect::BoxRemoved { to_x, to_y };
+        return GameplayTapEffect::BoxRemoved { to };
     }
     if let Some(path) = events.iter().find_map(|event| match event {
         GameplayEvent::BoxMoved { path } => Some(path.clone()),
@@ -191,11 +192,11 @@ fn classify_tap_effect(events: &[GameplayEvent]) -> GameplayTapEffect {
     }) {
         return GameplayTapEffect::BoxMoved { path };
     }
-    if let Some((to_x, to_y)) = events.iter().find_map(|event| match event {
-        GameplayEvent::PlayerMoved { to_x, to_y } => Some((*to_x, *to_y)),
+    if let Some(to) = events.iter().find_map(|event| match event {
+        GameplayEvent::PlayerMoved { to } => Some(*to),
         _ => None,
     }) {
-        return GameplayTapEffect::PlayerMoved { to_x, to_y };
+        return GameplayTapEffect::PlayerMoved { to };
     }
     if let Some(selected_box) = events.iter().find_map(|event| match event {
         GameplayEvent::SelectionChanged { selected_box } => Some(*selected_box),
@@ -209,13 +210,18 @@ fn classify_tap_effect(events: &[GameplayEvent]) -> GameplayTapEffect {
 #[cfg(test)]
 mod tests {
     use super::{GameplayController, GameplayTapEffect};
+    use crate::BoardCell;
+
+    fn cell(x: u32, y: u32) -> BoardCell {
+        BoardCell::new(x, y)
+    }
 
     #[test]
     fn failed_player_move_is_a_noop_effect() {
         let level = "#####\n#@  #\n#####".to_string();
         let mut controller = GameplayController::new(vec![level], None);
 
-        let outcome = controller.click_cell_with_outcome(4, 1);
+        let outcome = controller.click_cell_with_outcome(cell(4, 1));
 
         assert_eq!(outcome.effect, GameplayTapEffect::None);
     }
@@ -225,15 +231,15 @@ mod tests {
         let level = "######\n#@$ ##\n######".to_string();
         let mut controller = GameplayController::new(vec![level], None);
 
-        let select = controller.click_cell_with_outcome(2, 1);
+        let select = controller.click_cell_with_outcome(cell(2, 1));
         assert_eq!(
             select.effect,
             GameplayTapEffect::SelectionChanged {
-                selected_box: Some((2, 1))
+                selected_box: Some(cell(2, 1))
             }
         );
 
-        let reject = controller.click_cell_with_outcome(4, 1);
+        let reject = controller.click_cell_with_outcome(cell(4, 1));
 
         assert_eq!(reject.effect, GameplayTapEffect::BoxMoveRejected);
     }

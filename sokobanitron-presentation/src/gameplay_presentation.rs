@@ -97,16 +97,16 @@ mod tests {
         GameplayPresentationCause, GameplayPresentationUpdate, GameplayScreenMode,
         GameplayScreenRequest,
     };
-    use sokobanitron_gameplay::{BoardView, TileKind};
+    use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
     use std::time::{Duration, Instant};
 
     fn gameplay_scene(level_number: usize) -> GameplayPresentationUpdate {
-        gameplay_scene_with_player(level_number, Some((1, 1)))
+        gameplay_scene_with_player(level_number, Some(BoardCell::new(1, 1)))
     }
 
     fn gameplay_scene_with_player(
         level_number: usize,
-        player: Option<(u32, u32)>,
+        player: Option<BoardCell>,
     ) -> GameplayPresentationUpdate {
         let board = BoardView::new(
             3,

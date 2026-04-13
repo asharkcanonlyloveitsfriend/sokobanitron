@@ -6,7 +6,7 @@
 use crate::persistence::LevelSetCatalogEntry;
 use crate::shared::{DoubleTapTracker, SinglePointerGestureState};
 use presentation::layout::{BoardViewport, fit_board_viewport_for_controls};
-use sokobanitron_gameplay::BoardView;
+use sokobanitron_gameplay::{BoardCell, BoardView};
 use std::time::Duration;
 
 const DEFAULT_GAMEPLAY_WIDTH: u32 = 670;
@@ -24,7 +24,7 @@ pub struct GameplayUiState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GameplayInteractionState {
     pub(crate) pointer: SinglePointerGestureState,
-    pub(crate) double_tap: DoubleTapTracker<(u32, u32)>,
+    pub(crate) double_tap: DoubleTapTracker<BoardCell>,
     pub(crate) double_tap_window: Duration,
 }
 

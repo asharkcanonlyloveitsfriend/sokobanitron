@@ -1,6 +1,7 @@
 use super::GameplayAnimation;
 use crate::renderer::Renderer;
 use crate::screen_requests::GameplayScreenRequest;
+use sokobanitron_gameplay::BoardCell;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct BoxVanishPhase {
@@ -40,12 +41,12 @@ const BOX_VANISH_PHASES: [BoxVanishPhase; 7] = [
 ];
 
 pub(super) struct BoxVanishAnimation {
-    position: (u32, u32),
+    position: BoardCell,
     phase_index: usize,
 }
 
 impl BoxVanishAnimation {
-    pub(super) fn new(position: (u32, u32)) -> Self {
+    pub(super) fn new(position: BoardCell) -> Self {
         Self {
             position,
             phase_index: 0,

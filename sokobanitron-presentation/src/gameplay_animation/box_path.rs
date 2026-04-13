@@ -1,20 +1,21 @@
 use super::GameplayAnimation;
 use crate::screen_requests::GameplayScreenRequest;
 use resvg::tiny_skia::{LineCap, LineJoin, Paint, PathBuilder, PixmapMut, Stroke, Transform};
+use sokobanitron_gameplay::BoardCell;
 
 const SPEED_SCALE: f32 = 1.3;
 const SPEED_EXPONENT: f32 = 0.5;
 const PATH_COLOR: [u8; 4] = [211, 211, 211, 255];
 
 pub(super) struct BoxPathAnimation {
-    path: Vec<(u32, u32)>,
+    path: Vec<BoardCell>,
     path_progress_segments: f32,
     speed_per_tick: f32,
     total_segments: usize,
 }
 
 impl BoxPathAnimation {
-    pub(super) fn new(path: Vec<(u32, u32)>) -> Self {
+    pub(super) fn new(path: Vec<BoardCell>) -> Self {
         let total_segments = path.len().saturating_sub(1);
         let total = total_segments as f32;
         Self {
@@ -51,8 +52,8 @@ impl GameplayAnimation for BoxPathAnimation {
         let points: Vec<(f32, f32)> = self
             .path
             .iter()
-            .map(|&(x, y)| {
-                let (cell_x, cell_y, cell_w, cell_h) = scene.viewport.cell_to_screen_rect(x, y);
+            .map(|&cell| {
+                let (cell_x, cell_y, cell_w, cell_h) = scene.viewport.cell_to_screen_rect(cell);
                 (
                     cell_x as f32 + cell_w as f32 / 2.0,
                     cell_y as f32 + cell_h as f32 / 2.0,

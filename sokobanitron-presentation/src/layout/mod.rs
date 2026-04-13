@@ -8,7 +8,7 @@ mod level_set_select;
 mod overlay;
 mod viewport;
 
-use sokobanitron_gameplay::{BoardView, TileKind};
+use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
 
 pub use controls::{
     BOARD_HORIZONTAL_MARGIN, BOARD_VERTICAL_MARGIN, ScreenRect, UI_BUTTON_MARGIN, UI_BUTTON_SIZE,
@@ -137,13 +137,11 @@ fn to_pixel_rect(rect: ScreenRect) -> PixelRect {
     }
 }
 
-fn non_void_cells(board: &BoardView) -> Vec<(u32, u32)> {
+fn non_void_cells(board: &BoardView) -> Vec<BoardCell> {
     let mut cells = Vec::new();
-    for y in 0..board.height() {
-        for x in 0..board.width() {
-            if board.tile(x, y) != TileKind::Void {
-                cells.push((x, y));
-            }
+    for cell in board.cells() {
+        if board.tile(cell) != TileKind::Void {
+            cells.push(cell);
         }
     }
     cells
@@ -153,13 +151,13 @@ fn overlaps_forbidden_buttons(
     origin_x: i32,
     origin_y: i32,
     cell_size: u32,
-    non_void_cells: &[(u32, u32)],
+    non_void_cells: &[BoardCell],
     forbidden: &[PixelRect],
 ) -> bool {
     let cell_size = cell_size as i32;
-    non_void_cells.iter().any(|(x, y)| {
-        let left = origin_x + (*x as i32 * cell_size);
-        let top = origin_y + (*y as i32 * cell_size);
+    non_void_cells.iter().any(|cell| {
+        let left = origin_x + (cell.x as i32 * cell_size);
+        let top = origin_y + (cell.y as i32 * cell_size);
         let tile_rect = PixelRect {
             left,
             top,
@@ -196,9 +194,7 @@ mod tests {
         let board = board_with_tile(12, 10, TileKind::Floor);
         let viewport = fit_board_viewport_for_controls(670, 905, &board);
         let forbidden: [PixelRect; 1] = [to_pixel_rect(top_left_level_button_rect())];
-        let solid_cells = (0..board.height())
-            .flat_map(|y| (0..board.width()).map(move |x| (x, y)))
-            .collect::<Vec<_>>();
+        let solid_cells = board.cells().collect::<Vec<_>>();
 
         assert!(!overlaps_forbidden_buttons(
             viewport.origin_x,

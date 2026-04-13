@@ -209,9 +209,15 @@ impl Default for SinglePointerGestureState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DoubleTapTracker<T> {
     last_tap: Option<DoubleTapRecord<T>>,
+}
+
+impl<T> Default for DoubleTapTracker<T> {
+    fn default() -> Self {
+        Self { last_tap: None }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

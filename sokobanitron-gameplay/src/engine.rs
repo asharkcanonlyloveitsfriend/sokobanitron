@@ -1,21 +1,22 @@
-use sokobanitron_core::pathfinder::{BoxPathfinder, PlayerPathfinder, Position};
+use crate::board_cell::BoardCell;
+use sokobanitron_core::pathfinder::{BoxPathfinder, PlayerPathfinder, Position as GridPosition};
 use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
-pub struct GameEngine {
+pub(crate) struct GameEngine {
     width: usize,
     height: usize,
     base_walkable: Vec<Vec<bool>>,
-    goals: HashSet<Position>,
-    initial_player: Position,
-    initial_boxes: HashSet<Position>,
-    player: Position,
-    boxes: HashSet<Position>,
-    box_move_history: Vec<Vec<Position>>,
+    goals: HashSet<GridPosition>,
+    initial_player: GridPosition,
+    initial_boxes: HashSet<GridPosition>,
+    player: GridPosition,
+    boxes: HashSet<GridPosition>,
+    box_move_history: Vec<Vec<GridPosition>>,
 }
 
 impl GameEngine {
-    pub fn from_ascii(ascii: &str) -> Option<Self> {
+    pub(crate) fn from_ascii(ascii: &str) -> Option<Self> {
         let lines = ascii.lines().collect::<Vec<_>>();
         let height = lines.len();
         let width = lines.iter().map(|line| line.len()).max()?;
@@ -36,21 +37,21 @@ impl GameEngine {
                         *cell = false;
                     }
                     '@' | '+' => {
-                        player = Some(Position::new(row, col));
+                        player = Some(GridPosition::new(row, col));
                         if ch == '+' {
-                            goals.insert(Position::new(row, col));
+                            goals.insert(GridPosition::new(row, col));
                         }
                         *cell = true;
                     }
                     '$' | '*' => {
-                        boxes.insert(Position::new(row, col));
+                        boxes.insert(GridPosition::new(row, col));
                         if ch == '*' {
-                            goals.insert(Position::new(row, col));
+                            goals.insert(GridPosition::new(row, col));
                         }
                         *cell = true;
                     }
                     '.' => {
-                        goals.insert(Position::new(row, col));
+                        goals.insert(GridPosition::new(row, col));
                         *cell = true;
                     }
                     _ => {
@@ -75,48 +76,77 @@ impl GameEngine {
         })
     }
 
-    pub fn player(&self) -> Position {
-        self.player
+    pub(crate) fn player(&self) -> BoardCell {
+        board_cell(self.player)
     }
 
-    pub fn boxes(&self) -> &HashSet<Position> {
-        &self.boxes
+    pub(crate) fn boxes(&self) -> impl Iterator<Item = BoardCell> + '_ {
+        self.boxes.iter().copied().map(board_cell)
     }
 
-    pub fn box_move_history(&self) -> &[Vec<Position>] {
-        &self.box_move_history
+    pub(crate) fn box_move_history_cells(&self) -> Vec<Vec<BoardCell>> {
+        self.box_move_history
+            .iter()
+            .map(|path| path.iter().copied().map(board_cell).collect())
+            .collect()
     }
 
-    pub fn last_box_move_destination(&self) -> Option<Position> {
+    pub(crate) fn last_box_move_destination(&self) -> Option<BoardCell> {
+        self.last_box_move_destination_position().map(board_cell)
+    }
+
+    pub(crate) fn has_box(&self, cell: BoardCell) -> bool {
+        self.boxes.contains(&grid_position(cell))
+    }
+
+    pub(crate) fn is_level_solved(&self) -> bool {
+        self.boxes
+            .iter()
+            .all(|box_pos| self.goals.contains(box_pos))
+    }
+
+    pub(crate) fn is_clean_solution(&self) -> bool {
+        self.is_level_solved() && self.boxes.len() == self.initial_boxes.len()
+    }
+
+    pub(crate) fn is_at_start(&self) -> bool {
+        self.player == self.initial_player && self.boxes == self.initial_boxes
+    }
+
+    pub(crate) fn can_restart(&self) -> bool {
+        !self.is_at_start()
+    }
+
+    pub(crate) fn can_undo(&self) -> bool {
+        !self.box_move_history.is_empty()
+    }
+
+    pub(crate) fn move_player_to(&mut self, to: BoardCell) -> bool {
+        self.move_player_to_position(grid_position(to))
+    }
+
+    pub(crate) fn move_box_to(&mut self, from: BoardCell, to: BoardCell) -> Option<Vec<BoardCell>> {
+        self.move_box_to_position(grid_position(from), grid_position(to))
+            .map(|path| path.into_iter().map(board_cell).collect())
+    }
+
+    pub(crate) fn push_box_into_void(&mut self, from: BoardCell, to: BoardCell) -> bool {
+        self.push_box_into_void_position(grid_position(from), grid_position(to))
+    }
+
+    pub(crate) fn undo(&mut self) -> Option<Vec<BoardCell>> {
+        self.undo_position()
+            .map(|path| path.into_iter().map(board_cell).collect())
+    }
+
+    fn last_box_move_destination_position(&self) -> Option<GridPosition> {
         self.box_move_history
             .last()
             .and_then(|path| path.last())
             .copied()
     }
 
-    pub fn is_level_solved(&self) -> bool {
-        self.boxes
-            .iter()
-            .all(|box_pos| self.goals.contains(box_pos))
-    }
-
-    pub fn is_clean_solution(&self) -> bool {
-        self.is_level_solved() && self.boxes.len() == self.initial_boxes.len()
-    }
-
-    pub fn is_at_start(&self) -> bool {
-        self.player == self.initial_player && self.boxes == self.initial_boxes
-    }
-
-    pub fn can_restart(&self) -> bool {
-        !self.is_at_start()
-    }
-
-    pub fn can_undo(&self) -> bool {
-        !self.box_move_history.is_empty()
-    }
-
-    pub fn move_player_to(&mut self, to: Position) -> bool {
+    fn move_player_to_position(&mut self, to: GridPosition) -> bool {
         if !self.is_inside(to.row, to.col) || !self.base_walkable[to.row][to.col] {
             return false;
         }
@@ -135,7 +165,11 @@ impl GameEngine {
         true
     }
 
-    pub fn move_box_to(&mut self, from: Position, to: Position) -> Option<Vec<Position>> {
+    fn move_box_to_position(
+        &mut self,
+        from: GridPosition,
+        to: GridPosition,
+    ) -> Option<Vec<GridPosition>> {
         if !self.boxes.contains(&from) {
             return None;
         }
@@ -160,7 +194,7 @@ impl GameEngine {
         Some(box_path)
     }
 
-    pub fn push_box_into_void(&mut self, from: Position, to: Position) -> bool {
+    fn push_box_into_void_position(&mut self, from: GridPosition, to: GridPosition) -> bool {
         if !self.boxes.contains(&from) {
             return false;
         }
@@ -194,7 +228,7 @@ impl GameEngine {
         true
     }
 
-    pub fn undo(&mut self) -> Option<Vec<Position>> {
+    fn undo_position(&mut self) -> Option<Vec<GridPosition>> {
         let path = self.box_move_history.pop()?;
         if path.len() < 2 {
             return None;
@@ -207,7 +241,7 @@ impl GameEngine {
 
         let new_player_row = box_from.row.checked_add_signed(-first_step_row)?;
         let new_player_col = box_from.col.checked_add_signed(-first_step_col)?;
-        let new_player = Position::new(new_player_row, new_player_col);
+        let new_player = GridPosition::new(new_player_row, new_player_col);
 
         self.boxes.remove(&box_to);
         self.boxes.insert(box_from);
@@ -230,25 +264,37 @@ impl GameEngine {
     }
 }
 
+fn grid_position(cell: BoardCell) -> GridPosition {
+    GridPosition::new(cell.y as usize, cell.x as usize)
+}
+
+fn board_cell(position: GridPosition) -> BoardCell {
+    BoardCell::new(position.col as u32, position.row as u32)
+}
+
 #[cfg(test)]
 mod tests {
     use super::GameEngine;
-    use sokobanitron_core::pathfinder::Position;
+    use crate::BoardCell;
+
+    fn cell(x: u32, y: u32) -> BoardCell {
+        BoardCell::new(x, y)
+    }
 
     #[test]
     fn push_box_into_void_then_undo_restores_box() {
         let ascii = "#####\n# @ #\n# $ #\n#####";
         let mut engine = GameEngine::from_ascii(ascii).expect("expected valid level");
 
-        let pushed = engine.push_box_into_void(Position::new(2, 2), Position::new(3, 2));
+        let pushed = engine.push_box_into_void(cell(2, 2), cell(2, 3));
         assert!(pushed);
-        assert_eq!(engine.player(), Position::new(2, 2));
-        assert!(engine.boxes().is_empty());
+        assert_eq!(engine.player(), cell(2, 2));
+        assert!(engine.boxes().next().is_none());
 
         let undo_path = engine.undo().expect("expected first undo to succeed");
-        assert_eq!(undo_path, vec![Position::new(2, 2), Position::new(3, 2)]);
-        assert_eq!(engine.player(), Position::new(1, 2));
-        assert!(engine.boxes().contains(&Position::new(2, 2)));
+        assert_eq!(undo_path, vec![cell(2, 2), cell(2, 3)]);
+        assert_eq!(engine.player(), cell(2, 1));
+        assert!(engine.has_box(cell(2, 2)));
 
         assert!(
             engine.undo().is_none(),
@@ -262,17 +308,17 @@ mod tests {
         let mut engine = GameEngine::from_ascii(ascii).expect("expected valid level");
 
         let path = engine
-            .move_box_to(Position::new(2, 2), Position::new(3, 2))
+            .move_box_to(cell(2, 2), cell(2, 3))
             .expect("expected box move to succeed");
-        assert_eq!(path.first().copied(), Some(Position::new(2, 2)));
-        assert_eq!(path.last().copied(), Some(Position::new(3, 2)));
-        assert!(engine.boxes().contains(&Position::new(3, 2)));
+        assert_eq!(path.first().copied(), Some(cell(2, 2)));
+        assert_eq!(path.last().copied(), Some(cell(2, 3)));
+        assert!(engine.has_box(cell(2, 3)));
 
         let undo_path = engine.undo().expect("expected undo to succeed");
         assert_eq!(undo_path, path);
-        assert_eq!(engine.player(), Position::new(1, 2));
-        assert!(engine.boxes().contains(&Position::new(2, 2)));
-        assert!(!engine.boxes().contains(&Position::new(3, 2)));
+        assert_eq!(engine.player(), cell(2, 1));
+        assert!(engine.has_box(cell(2, 2)));
+        assert!(!engine.has_box(cell(2, 3)));
     }
 
     #[test]
@@ -281,9 +327,7 @@ mod tests {
         let mut engine = GameEngine::from_ascii(ascii).expect("expected valid level");
 
         assert!(
-            engine
-                .move_box_to(Position::new(2, 2), Position::new(2, 3))
-                .is_some(),
+            engine.move_box_to(cell(2, 2), cell(3, 2)).is_some(),
             "expected box move to solve level"
         );
         assert!(engine.is_level_solved(), "expected level to be solved");
@@ -303,7 +347,7 @@ mod tests {
         let mut engine = GameEngine::from_ascii(ascii).expect("expected valid level");
 
         let first_path = engine
-            .move_box_to(Position::new(1, 3), Position::new(1, 4))
+            .move_box_to(cell(3, 1), cell(4, 1))
             .expect("expected first box move");
         assert_eq!(
             engine.last_box_move_destination(),
@@ -311,7 +355,7 @@ mod tests {
         );
 
         let second_path = engine
-            .move_box_to(Position::new(2, 3), Position::new(2, 4))
+            .move_box_to(cell(3, 2), cell(4, 2))
             .expect("expected second box move");
         assert_eq!(
             engine.last_box_move_destination(),
@@ -331,10 +375,10 @@ mod tests {
         let mut engine = GameEngine::from_ascii(ascii).expect("expected valid level");
 
         let first_path = engine
-            .move_box_to(Position::new(1, 3), Position::new(1, 4))
+            .move_box_to(cell(3, 1), cell(4, 1))
             .expect("expected first box move");
         let second_path = engine
-            .move_box_to(Position::new(2, 3), Position::new(2, 4))
+            .move_box_to(cell(3, 2), cell(4, 2))
             .expect("expected second box move");
 
         assert_eq!(engine.undo().expect("expected first undo"), second_path);

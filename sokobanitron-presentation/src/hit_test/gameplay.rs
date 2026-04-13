@@ -6,7 +6,7 @@ use crate::{
     level_set_select_nav_action_at, level_set_select_target_at,
     overlay_primary_action_button_contains, top_menu_toggle_button_contains,
 };
-use sokobanitron_gameplay::BoardView;
+use sokobanitron_gameplay::{BoardCell, BoardView};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameplaySurfaceLayer {
@@ -70,7 +70,7 @@ pub enum GameplaySurfaceTarget {
     MenuToggle,
     LevelSelect(LevelSelectSurfaceTarget),
     LevelSetSelect(LevelSetSelectSurfaceTarget),
-    BoardCell { x: u32, y: u32 },
+    BoardCell(BoardCell),
 }
 
 pub fn gameplay_surface_target_at(
@@ -153,11 +153,11 @@ pub fn gameplay_surface_target_at(
             ));
         }
     }
-    if let Some((x, y)) = surface
+    if let Some(cell) = surface
         .board_viewport
         .screen_to_cell(tap_x, tap_y, surface.board)
     {
-        return Some(GameplaySurfaceTarget::BoardCell { x, y });
+        return Some(GameplaySurfaceTarget::BoardCell(cell));
     }
     None
 }
@@ -199,17 +199,15 @@ mod tests {
     fn board_cell_target_uses_viewport_mapping() {
         let controller = test_controller();
         let surface = test_surface_model(&controller, GameplaySurfaceLayer::Board);
-        let (x, y, w, h) = surface.board_viewport.cell_to_screen_rect(1, 1);
+        let cell = sokobanitron_gameplay::BoardCell::new(1, 1);
+        let (x, y, w, h) = surface.board_viewport.cell_to_screen_rect(cell);
         let target = gameplay_surface_target_at(
             &surface,
             (x + (w / 2) as i32) as f64,
             (y + (h / 2) as i32) as f64,
         );
 
-        assert_eq!(
-            target,
-            Some(GameplaySurfaceTarget::BoardCell { x: 1, y: 1 })
-        );
+        assert_eq!(target, Some(GameplaySurfaceTarget::BoardCell(cell)));
     }
 
     #[test]

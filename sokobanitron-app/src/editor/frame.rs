@@ -10,6 +10,7 @@ use presentation::layout::ScreenRect;
 use presentation::screen_requests::{
     EditorCountOverlay, EditorHintOverlay, EditorMenuScreenRequest, EditorScreenRequest,
 };
+use sokobanitron_gameplay::BoardCell;
 use sokobanitron_level_editor::{EditorMode, EditorSnapshot, LevelEditor};
 
 use super::view::{
@@ -63,7 +64,7 @@ fn build_count_overlays(
         }
         let (cell_x, cell_y, cell_w, cell_h) = visible
             .viewport
-            .cell_to_screen_rect(local_x as u32, local_y as u32);
+            .cell_to_screen_rect(BoardCell::new(local_x as u32, local_y as u32));
         let inset = (cell_w / 24).max(1);
         let box_x = cell_x + inset as i32;
         let box_y = cell_y + inset as i32;
@@ -106,7 +107,7 @@ fn build_hint_overlays(
         }
         let (cell_x, cell_y, cell_w, cell_h) = visible
             .viewport
-            .cell_to_screen_rect(local_x as u32, local_y as u32);
+            .cell_to_screen_rect(BoardCell::new(local_x as u32, local_y as u32));
         if cell_x < 0 || cell_y < 0 {
             continue;
         }

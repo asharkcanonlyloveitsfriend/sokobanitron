@@ -232,7 +232,7 @@ impl KindleApp {
     fn handle_gameplay_input(&mut self, input: AppInput) -> Result<()> {
         match input {
             AppInput::NoOp => Ok(()),
-            AppInput::BoardTap { .. } => {
+            AppInput::BoardTap(_) => {
                 let _ = self.apply_app_input(input)?;
                 Ok(())
             }

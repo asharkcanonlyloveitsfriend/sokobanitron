@@ -1,9 +1,10 @@
 use super::GameplayAnimation;
 use crate::renderer::{Renderer, blit_rgba};
 use crate::screen_requests::GameplayScreenRequest;
+use sokobanitron_gameplay::BoardCell;
 
 pub(super) struct BlinkAnimation {
-    player_position: (u32, u32),
+    player_position: BoardCell,
     phase: BlinkPhase,
 }
 
@@ -15,7 +16,7 @@ enum BlinkPhase {
 }
 
 impl BlinkAnimation {
-    pub(super) fn new(player_position: (u32, u32)) -> Self {
+    pub(super) fn new(player_position: BoardCell) -> Self {
         Self {
             player_position,
             phase: BlinkPhase::Waiting,

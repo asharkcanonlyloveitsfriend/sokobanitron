@@ -1,3 +1,4 @@
+mod board_cell;
 mod controller;
 mod engine;
 mod level;
@@ -5,6 +6,7 @@ mod levels;
 mod presenter;
 mod session;
 
+pub use board_cell::BoardCell;
 pub use controller::{
     GameplayController, GameplayControllerChanges, GameplayTapEffect, GameplayTapOutcome,
 };

@@ -1,7 +1,7 @@
+use crate::board_cell::BoardCell;
 use crate::engine::GameEngine;
 use crate::level::parse_level_ascii;
-use crate::presenter::{BoardView, GameBoardPresenter};
-use sokobanitron_core::pathfinder::Position;
+use crate::presenter::{BoardView, GameBoardPresenter, TileKind};
 use std::collections::HashSet;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -13,10 +13,10 @@ pub enum GameplayKey {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GameplayEvent {
-    SelectionChanged { selected_box: Option<(u32, u32)> },
-    PlayerMoved { to_x: u32, to_y: u32 },
-    BoxMoved { path: Vec<(u32, u32)> },
-    BoxRemoved { to_x: u32, to_y: u32 },
+    SelectionChanged { selected_box: Option<BoardCell> },
+    PlayerMoved { to: BoardCell },
+    BoxMoved { path: Vec<BoardCell> },
+    BoxRemoved { to: BoardCell },
     BoxMoveRejected,
     UndoApplied,
     Restarted,
@@ -27,7 +27,7 @@ pub struct GameplaySession {
     level_ascii: String,
     presenter: GameBoardPresenter,
     engine: GameEngine,
-    selected_box: Option<(u32, u32)>,
+    selected_box: Option<BoardCell>,
     board: BoardView,
 }
 
@@ -37,15 +37,9 @@ impl GameplaySession {
         let presenter = GameBoardPresenter::new(parsed);
         let engine = GameEngine::from_ascii(&level_ascii).expect("level ascii must parse");
 
-        let player = engine.player();
-        let player_xy = Some((player.col as u32, player.row as u32));
-        let box_positions: HashSet<(u32, u32)> = engine
-            .boxes()
-            .iter()
-            .map(|pos| (pos.col as u32, pos.row as u32))
-            .collect();
-        let board =
-            presenter.render_board(player_xy, &box_positions, None, engine.is_level_solved());
+        let player = Some(engine.player());
+        let box_positions: HashSet<BoardCell> = engine.boxes().collect();
+        let board = presenter.render_board(player, &box_positions, None, engine.is_level_solved());
 
         Self {
             level_ascii,
@@ -78,32 +72,32 @@ impl GameplaySession {
 
     pub fn box_move_history(&self) -> Vec<Vec<(usize, usize)>> {
         self.engine
-            .box_move_history()
-            .iter()
-            .map(|path| path.iter().map(|pos| (pos.row, pos.col)).collect())
+            .box_move_history_cells()
+            .into_iter()
+            .map(|path| {
+                path.into_iter()
+                    .map(|cell| (cell.y as usize, cell.x as usize))
+                    .collect()
+            })
             .collect()
     }
 
-    pub fn last_box_move_destination(&self) -> Option<(u32, u32)> {
-        self.engine
-            .last_box_move_destination()
-            .map(|pos| (pos.col as u32, pos.row as u32))
+    pub fn last_box_move_destination(&self) -> Option<BoardCell> {
+        self.engine.last_box_move_destination()
     }
 
-    pub fn click_cell_with_events(&mut self, x: u32, y: u32) -> Vec<GameplayEvent> {
+    pub fn click_cell_with_events(&mut self, clicked_cell: BoardCell) -> Vec<GameplayEvent> {
         let mut events = Vec::new();
         if self.board.is_solved() {
             return events;
         }
         let was_solved = self.board.is_solved();
-        let clicked_cell = Position::new(y as usize, x as usize);
 
-        let clicked_has_box = self.engine.boxes().contains(&clicked_cell);
-        if clicked_has_box {
-            self.selected_box = if self.selected_box == Some((x, y)) {
+        if self.engine.has_box(clicked_cell) {
+            self.selected_box = if self.selected_box == Some(clicked_cell) {
                 None
             } else {
-                Some((x, y))
+                Some(clicked_cell)
             };
             self.sync_board();
             events.push(GameplayEvent::SelectionChanged {
@@ -112,21 +106,15 @@ impl GameplaySession {
             return events;
         }
 
-        if let Some((from_x, from_y)) = self.selected_box.take() {
-            let from_cell = Position::new(from_y as usize, from_x as usize);
-            let outcome = if self.board.tile(x, y) == crate::presenter::TileKind::Void {
+        if let Some(from_cell) = self.selected_box.take() {
+            let outcome = if self.board.tile(clicked_cell) == TileKind::Void {
                 self.engine
                     .push_box_into_void(from_cell, clicked_cell)
-                    .then_some(GameplayEvent::BoxRemoved { to_x: x, to_y: y })
+                    .then_some(GameplayEvent::BoxRemoved { to: clicked_cell })
             } else {
                 self.engine
                     .move_box_to(from_cell, clicked_cell)
-                    .map(|path| GameplayEvent::BoxMoved {
-                        path: path
-                            .into_iter()
-                            .map(|p| (p.col as u32, p.row as u32))
-                            .collect(),
-                    })
+                    .map(|path| GameplayEvent::BoxMoved { path })
             };
 
             self.sync_board();
@@ -146,7 +134,7 @@ impl GameplaySession {
 
         if self.engine.move_player_to(clicked_cell) {
             self.sync_board();
-            events.push(GameplayEvent::PlayerMoved { to_x: x, to_y: y });
+            events.push(GameplayEvent::PlayerMoved { to: clicked_cell });
             return events;
         }
         events
@@ -186,16 +174,10 @@ impl GameplaySession {
     }
 
     fn sync_board(&mut self) {
-        let player = self.engine.player();
-        let player_xy = Some((player.col as u32, player.row as u32));
-        let box_positions: HashSet<(u32, u32)> = self
-            .engine
-            .boxes()
-            .iter()
-            .map(|pos| (pos.col as u32, pos.row as u32))
-            .collect();
+        let player = Some(self.engine.player());
+        let box_positions: HashSet<BoardCell> = self.engine.boxes().collect();
         self.board = self.presenter.render_board(
-            player_xy,
+            player,
             &box_positions,
             self.selected_box,
             self.engine.is_level_solved(),

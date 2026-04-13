@@ -1,3 +1,5 @@
+use sokobanitron_gameplay::BoardCell;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppAction {
     Restart,
@@ -14,7 +16,7 @@ pub enum AppAction {
     SelectLevel(usize),
     SelectLevelSet(usize),
     AdvanceAfterSolved,
-    TapBoardCell { x: u32, y: u32 },
-    DoubleTapBoardCell { x: u32, y: u32 },
+    TapBoardCell(BoardCell),
+    DoubleTapBoardCell(BoardCell),
     NoOp,
 }

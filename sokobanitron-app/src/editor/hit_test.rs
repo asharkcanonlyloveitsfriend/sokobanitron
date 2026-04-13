@@ -112,6 +112,7 @@ mod tests {
     use super::{EditorSurfaceTarget, build_editor_surface_model, editor_surface_target_at};
     use crate::app::state::AppState;
     use presentation::layout::overlay_secondary_action_button_rect;
+    use sokobanitron_gameplay::BoardCell;
     use sokobanitron_level_editor::{DrawTool, EditorCommand, EditorMode, LevelEditor};
 
     #[test]
@@ -145,7 +146,7 @@ mod tests {
         let (screen_x, screen_y, width, height) = surface
             .visible_window
             .viewport
-            .cell_to_screen_rect(local_x, local_y);
+            .cell_to_screen_rect(BoardCell::new(local_x, local_y));
 
         let target = editor_surface_target_at(
             &surface,

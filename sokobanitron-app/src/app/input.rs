@@ -1,5 +1,6 @@
 use super::action::AppAction;
 use super::state::AppState;
+use sokobanitron_gameplay::BoardCell;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppInput {
@@ -17,8 +18,8 @@ pub enum AppInput {
     LevelSelectSelect(usize),
     LevelSetSelectNavigate { page_start: usize },
     LevelSetSelectSelect(usize),
-    BoardTap { x: u32, y: u32 },
-    BoardDoubleTap { x: u32, y: u32 },
+    BoardTap(BoardCell),
+    BoardDoubleTap(BoardCell),
     NoOp,
 }
 
@@ -41,8 +42,8 @@ pub fn interpret_input(_app_state: &AppState, input: AppInput) -> AppAction {
             AppAction::SetLevelSetSelectPageStart(page_start)
         }
         AppInput::LevelSetSelectSelect(level_set) => AppAction::SelectLevelSet(level_set),
-        AppInput::BoardTap { x, y } => AppAction::TapBoardCell { x, y },
-        AppInput::BoardDoubleTap { x, y } => AppAction::DoubleTapBoardCell { x, y },
+        AppInput::BoardTap(cell) => AppAction::TapBoardCell(cell),
+        AppInput::BoardDoubleTap(cell) => AppAction::DoubleTapBoardCell(cell),
         AppInput::NoOp => AppAction::NoOp,
     }
 }
@@ -52,6 +53,7 @@ mod tests {
     use super::{AppInput, interpret_input};
     use crate::app::action::AppAction;
     use crate::app::state::AppState;
+    use sokobanitron_gameplay::BoardCell;
 
     #[test]
     fn interpret_restart_maps_to_restart_action() {
@@ -101,9 +103,10 @@ mod tests {
     #[test]
     fn interpret_board_double_tap_maps_to_double_tap_board_cell_action() {
         let app_state = AppState::default();
+        let cell = BoardCell::new(3, 4);
         assert_eq!(
-            interpret_input(&app_state, AppInput::BoardDoubleTap { x: 3, y: 4 }),
-            AppAction::DoubleTapBoardCell { x: 3, y: 4 }
+            interpret_input(&app_state, AppInput::BoardDoubleTap(cell)),
+            AppAction::DoubleTapBoardCell(cell)
         );
     }
 

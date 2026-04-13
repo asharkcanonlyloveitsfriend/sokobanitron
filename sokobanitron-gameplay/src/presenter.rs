@@ -4,6 +4,7 @@
 //! and should not grow device-specific rendering concerns. Shared visual rendering belongs in
 //! `sokobanitron-presentation`.
 
+use crate::board_cell::BoardCell;
 use crate::level::{LevelCell, ParsedLevel};
 use std::collections::HashSet;
 
@@ -20,8 +21,8 @@ pub struct BoardView {
     height: u32,
     tiles: Vec<TileKind>,
     boxes: Vec<bool>,
-    player: Option<(u32, u32)>,
-    selected_box: Option<(u32, u32)>,
+    player: Option<BoardCell>,
+    selected_box: Option<BoardCell>,
     is_solved: bool,
 }
 
@@ -31,8 +32,8 @@ impl BoardView {
         height: u32,
         tiles: Vec<TileKind>,
         boxes: Vec<bool>,
-        player: Option<(u32, u32)>,
-        selected_box: Option<(u32, u32)>,
+        player: Option<BoardCell>,
+        selected_box: Option<BoardCell>,
         is_solved: bool,
     ) -> Self {
         assert_eq!(tiles.len(), (width as usize) * (height as usize));
@@ -56,19 +57,23 @@ impl BoardView {
         self.height
     }
 
-    pub fn tile(&self, x: u32, y: u32) -> TileKind {
-        self.tiles[(y * self.width + x) as usize]
+    pub fn cells(&self) -> impl Iterator<Item = BoardCell> + '_ {
+        (0..self.height).flat_map(|y| (0..self.width).map(move |x| BoardCell::new(x, y)))
     }
 
-    pub fn has_box(&self, x: u32, y: u32) -> bool {
-        self.boxes[(y * self.width + x) as usize]
+    pub fn tile(&self, cell: BoardCell) -> TileKind {
+        self.tiles[(cell.y * self.width + cell.x) as usize]
     }
 
-    pub fn player(&self) -> Option<(u32, u32)> {
+    pub fn has_box(&self, cell: BoardCell) -> bool {
+        self.boxes[(cell.y * self.width + cell.x) as usize]
+    }
+
+    pub fn player(&self) -> Option<BoardCell> {
         self.player
     }
 
-    pub fn selected_box(&self) -> Option<(u32, u32)> {
+    pub fn selected_box(&self) -> Option<BoardCell> {
         self.selected_box
     }
 
@@ -88,9 +93,9 @@ impl GameBoardPresenter {
 
     pub fn render_board(
         &self,
-        player: Option<(u32, u32)>,
-        box_positions: &HashSet<(u32, u32)>,
-        selected_box: Option<(u32, u32)>,
+        player: Option<BoardCell>,
+        box_positions: &HashSet<BoardCell>,
+        selected_box: Option<BoardCell>,
         is_solved: bool,
     ) -> BoardView {
         let mut tiles = Vec::with_capacity((self.level.width * self.level.height) as usize);
@@ -103,7 +108,7 @@ impl GameBoardPresenter {
                     LevelCell::Floor => TileKind::Floor,
                 };
                 tiles.push(tile);
-                boxes.push(box_positions.contains(&(x, y)));
+                boxes.push(box_positions.contains(&BoardCell::new(x, y)));
             }
         }
         let selected_box = selected_box.filter(|pos| box_positions.contains(pos));

@@ -231,9 +231,9 @@ fn animations_for_update(
         {
             animations.push(Box::new(BoxPathAnimation::new(path.clone())));
         }
-        GameplayPresentationCause::BoxRemoved { to_x, to_y } => {
+        GameplayPresentationCause::BoxRemoved { to } => {
             if config.enable_box_vanish_animation {
-                animations.push(Box::new(BoxVanishAnimation::new((*to_x, *to_y))));
+                animations.push(Box::new(BoxVanishAnimation::new(*to)));
             }
             if let Some(player_position) = update.scene.board.player() {
                 animations.push(Box::new(BlinkAnimation::new(player_position)));
@@ -268,16 +268,16 @@ mod tests {
         GameplayPresentationCause, GameplayPresentationUpdate, GameplayScreenMode,
         GameplayScreenRequest,
     };
-    use sokobanitron_gameplay::{BoardView, TileKind};
+    use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
     use std::time::{Duration, Instant};
 
     fn update_with_cause(cause: GameplayPresentationCause) -> GameplayPresentationUpdate {
-        update_with_state(cause, Some((0, 0)), vec![false; 8])
+        update_with_state(cause, Some(BoardCell::new(0, 0)), vec![false; 8])
     }
 
     fn update_with_state(
         cause: GameplayPresentationCause,
-        player: Option<(u32, u32)>,
+        player: Option<BoardCell>,
         boxes: Vec<bool>,
     ) -> GameplayPresentationUpdate {
         let board = BoardView::new(
@@ -330,7 +330,11 @@ mod tests {
     #[test]
     fn box_path_is_client_configurable() {
         let now = Instant::now();
-        let path = vec![(0, 0), (1, 0), (2, 0)];
+        let path = vec![
+            BoardCell::new(0, 0),
+            BoardCell::new(1, 0),
+            BoardCell::new(2, 0),
+        ];
         let update = update_with_cause(GameplayPresentationCause::BoxMoved { path });
         let mut full_runner = GameplayAnimationRunner::default();
         let mut blink_only_runner = GameplayAnimationRunner::default();
@@ -357,12 +361,14 @@ mod tests {
         let now = Instant::now();
         let previous = update_with_state(
             GameplayPresentationCause::CurrentState,
-            Some((0, 0)),
+            Some(BoardCell::new(0, 0)),
             vec![false, true, false, false, false, false, false, false],
         );
         let update = update_with_state(
-            GameplayPresentationCause::PlayerMoved { to_x: 1, to_y: 0 },
-            Some((1, 0)),
+            GameplayPresentationCause::PlayerMoved {
+                to: BoardCell::new(1, 0),
+            },
+            Some(BoardCell::new(1, 0)),
             vec![false, true, false, false, false, false, false, false],
         );
         let mut runner = GameplayAnimationRunner::default();
@@ -383,12 +389,14 @@ mod tests {
         let now = Instant::now();
         let previous = update_with_state(
             GameplayPresentationCause::CurrentState,
-            Some((0, 0)),
+            Some(BoardCell::new(0, 0)),
             vec![false, true, false, false, false, false, false, false],
         );
         let update = update_with_state(
-            GameplayPresentationCause::BoxRemoved { to_x: 2, to_y: 0 },
-            Some((0, 0)),
+            GameplayPresentationCause::BoxRemoved {
+                to: BoardCell::new(2, 0),
+            },
+            Some(BoardCell::new(0, 0)),
             vec![false; 8],
         );
         let mut runner = GameplayAnimationRunner::default();

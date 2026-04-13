@@ -7,7 +7,7 @@
 use presentation::layout::{
     BoardViewport, ScreenRect, editor_bottom_left_button_rect, editor_bottom_right_button_rect,
 };
-use sokobanitron_gameplay::{BoardView, TileKind};
+use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
 use sokobanitron_level_editor::{EditorMode, LevelEditor, NonVoidBounds, Tile};
 
 use crate::shared::{DoubleTapTracker, PointerId, SinglePointerGestureState};
@@ -118,10 +118,10 @@ impl VisibleBoardWindow {
     pub(crate) fn screen_to_world_cell(&self, screen_x: f64, screen_y: f64) -> Option<(i32, i32)> {
         self.viewport
             .screen_to_cell(screen_x, screen_y, &self.board)
-            .map(|(x, y)| {
+            .map(|cell| {
                 (
-                    self.world_origin_x + x as i32,
-                    self.world_origin_y + y as i32,
+                    self.world_origin_x + cell.x as i32,
+                    self.world_origin_y + cell.y as i32,
                 )
             })
     }
@@ -149,7 +149,7 @@ pub(crate) fn build_visible_window(ui: &EditorUiState, editor: &LevelEditor) -> 
             let tile = editor.world().tile(world_x, world_y);
             let has_box = editor.world().has_box(world_x, world_y);
             if !hide_player && editor.world().player() == Some((world_x, world_y)) {
-                player_local = Some((x, y));
+                player_local = Some(BoardCell::new(x, y));
             }
             match tile {
                 sokobanitron_level_editor::Tile::Void => tiles.push(TileKind::Void),
@@ -161,7 +161,7 @@ pub(crate) fn build_visible_window(ui: &EditorUiState, editor: &LevelEditor) -> 
                 && editor.selected_box() == Some((world_x, world_y))
                 && matches!(editor.mode(), EditorMode::Move)
             {
-                selected_box_local = Some((x, y));
+                selected_box_local = Some(BoardCell::new(x, y));
             }
         }
     }

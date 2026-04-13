@@ -1,5 +1,5 @@
 use crate::layout::BoardViewport;
-use sokobanitron_gameplay::{BoardView, TileKind};
+use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
 
 use super::{Renderer, WHITE, pixels::fill_rect};
 
@@ -12,42 +12,39 @@ impl Renderer {
         board: &BoardView,
         viewport: &BoardViewport,
     ) {
-        for y in 0..board.height() {
-            for x in 0..board.width() {
-                let tile = board.tile(x, y);
-                if tile == TileKind::Void {
-                    continue;
-                }
-                let (rect_x, rect_y, rect_w, rect_h) = viewport.cell_to_screen_rect(x, y);
-                let (fill, stroke) = match tile {
-                    TileKind::Floor => (WHITE, self.theme.light_1),
-                    TileKind::Goal => (self.theme.light_2, WHITE),
-                    TileKind::Void => continue,
-                };
-                fill_rect(
-                    frame,
-                    frame_width,
-                    frame_height,
-                    rect_x,
-                    rect_y,
-                    rect_w,
-                    rect_h,
-                    fill,
-                );
-                draw_tile_edges_once(
-                    frame,
-                    frame_width,
-                    frame_height,
-                    board,
-                    x,
-                    y,
-                    rect_x,
-                    rect_y,
-                    rect_w,
-                    rect_h,
-                    stroke,
-                );
+        for cell in board.cells() {
+            let tile = board.tile(cell);
+            if tile == TileKind::Void {
+                continue;
             }
+            let (rect_x, rect_y, rect_w, rect_h) = viewport.cell_to_screen_rect(cell);
+            let (fill, stroke) = match tile {
+                TileKind::Floor => (WHITE, self.theme.light_1),
+                TileKind::Goal => (self.theme.light_2, WHITE),
+                TileKind::Void => continue,
+            };
+            fill_rect(
+                frame,
+                frame_width,
+                frame_height,
+                rect_x,
+                rect_y,
+                rect_w,
+                rect_h,
+                fill,
+            );
+            draw_tile_edges_once(
+                frame,
+                frame_width,
+                frame_height,
+                board,
+                cell,
+                rect_x,
+                rect_y,
+                rect_w,
+                rect_h,
+                stroke,
+            );
         }
     }
 }
@@ -58,8 +55,7 @@ fn draw_tile_edges_once(
     frame_width: u32,
     frame_height: u32,
     board: &BoardView,
-    tile_x: u32,
-    tile_y: u32,
+    tile: BoardCell,
     x: i32,
     y: i32,
     w: u32,
@@ -69,8 +65,10 @@ fn draw_tile_edges_once(
     if w == 0 || h == 0 {
         return;
     }
-    let left_is_void = tile_x == 0 || board.tile(tile_x - 1, tile_y) == TileKind::Void;
-    let top_is_void = tile_y == 0 || board.tile(tile_x, tile_y - 1) == TileKind::Void;
+    let left_is_void =
+        tile.x == 0 || board.tile(BoardCell::new(tile.x - 1, tile.y)) == TileKind::Void;
+    let top_is_void =
+        tile.y == 0 || board.tile(BoardCell::new(tile.x, tile.y - 1)) == TileKind::Void;
 
     if left_is_void {
         fill_rect(frame, frame_width, frame_height, x, y, 1, h, color);

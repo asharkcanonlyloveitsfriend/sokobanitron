@@ -1,6 +1,6 @@
 use crate::assets::UiIcon;
 use crate::layout::{BoardViewport, ScreenRect};
-use sokobanitron_gameplay::BoardView;
+use sokobanitron_gameplay::{BoardCell, BoardView};
 use sokobanitron_level_editor::PullHintStatus;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -26,18 +26,16 @@ pub enum GameplayPresentationCause {
     /// Render the current gameplay scene without attributing it to a specific gameplay action.
     CurrentState,
     SelectionChanged {
-        selected_box: Option<(u32, u32)>,
+        selected_box: Option<BoardCell>,
     },
     PlayerMoved {
-        to_x: u32,
-        to_y: u32,
+        to: BoardCell,
     },
     BoxMoved {
-        path: Vec<(u32, u32)>,
+        path: Vec<BoardCell>,
     },
     BoxRemoved {
-        to_x: u32,
-        to_y: u32,
+        to: BoardCell,
     },
     BoxMoveRejected,
     UndoApplied,

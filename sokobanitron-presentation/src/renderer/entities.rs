@@ -1,6 +1,6 @@
 use crate::assets::rasterize_svg;
 use crate::layout::BoardViewport;
-use sokobanitron_gameplay::BoardView;
+use sokobanitron_gameplay::{BoardCell, BoardView};
 
 use super::{BLACK, EntityVisualStyle, Renderer, WHITE, blit_rgba};
 
@@ -32,18 +32,17 @@ impl Renderer {
         board: &BoardView,
         viewport: &BoardViewport,
         entity_visual_style: EntityVisualStyle,
-        x: u32,
-        y: u32,
+        cell: BoardCell,
     ) {
-        if !board.has_box(x, y) {
+        if !board.has_box(cell) {
             return;
         }
-        let Some((box_x, box_y, icon_size)) = self.box_sprite_rect_at(viewport, (x, y)) else {
+        let Some((box_x, box_y, icon_size)) = self.box_sprite_rect_at(viewport, cell) else {
             return;
         };
         let icon = if entity_visual_style == EntityVisualStyle::Solved && board.is_solved() {
             self.box_bitmap(icon_size, BoxSpriteVariant::Solved)
-        } else if board.selected_box() == Some((x, y)) {
+        } else if board.selected_box() == Some(cell) {
             self.box_bitmap(icon_size, BoxSpriteVariant::Selected)
         } else {
             self.box_bitmap(icon_size, BoxSpriteVariant::Standard)
@@ -69,29 +68,25 @@ impl Renderer {
         viewport: &BoardViewport,
         entity_visual_style: EntityVisualStyle,
     ) {
-        for y in 0..board.height() {
-            for x in 0..board.width() {
-                self.draw_box_at(
-                    frame,
-                    frame_width,
-                    frame_height,
-                    board,
-                    viewport,
-                    entity_visual_style,
-                    x,
-                    y,
-                );
-            }
+        for cell in board.cells() {
+            self.draw_box_at(
+                frame,
+                frame_width,
+                frame_height,
+                board,
+                viewport,
+                entity_visual_style,
+                cell,
+            );
         }
     }
 
     pub(crate) fn box_sprite_rect_at(
         &self,
         viewport: &BoardViewport,
-        box_position: (u32, u32),
+        box_position: BoardCell,
     ) -> Option<(i32, i32, u32)> {
-        let (x, y) = box_position;
-        let (cell_x, cell_y, cell_w, cell_h) = viewport.cell_to_screen_rect(x, y);
+        let (cell_x, cell_y, cell_w, cell_h) = viewport.cell_to_screen_rect(box_position);
         let inset = (cell_w / 24).max(1);
         let box_x = cell_x + inset as i32;
         let box_y = cell_y + inset as i32;
@@ -117,7 +112,7 @@ impl Renderer {
         frame_width: u32,
         frame_height: u32,
         viewport: &BoardViewport,
-        position: (u32, u32),
+        position: BoardCell,
         scale: f32,
     ) {
         if scale <= 0.0 {
@@ -180,17 +175,15 @@ impl Renderer {
         board: &BoardView,
         viewport: &BoardViewport,
     ) -> Option<(i32, i32, u32)> {
-        let (x, y) = board.player()?;
-        self.player_sprite_rect_at(viewport, (x, y))
+        self.player_sprite_rect_at(viewport, board.player()?)
     }
 
     pub(crate) fn player_sprite_rect_at(
         &self,
         viewport: &BoardViewport,
-        player_position: (u32, u32),
+        player_position: BoardCell,
     ) -> Option<(i32, i32, u32)> {
-        let (x, y) = player_position;
-        let (cell_x, cell_y, cell_w, cell_h) = viewport.cell_to_screen_rect(x, y);
+        let (cell_x, cell_y, cell_w, cell_h) = viewport.cell_to_screen_rect(player_position);
         let inset = (cell_w / 10).max(1);
         let player_x = cell_x + inset as i32;
         let player_y = cell_y + inset as i32;
@@ -385,7 +378,7 @@ mod tests {
     use crate::layout::fit_board_viewport_for_controls;
     use crate::renderer::EntityVisualStyle;
     use crate::screen_requests::{GameplayScreenMode, GameplayScreenRequest};
-    use sokobanitron_gameplay::{BoardView, TileKind};
+    use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
 
     fn board(is_solved: bool) -> BoardView {
         BoardView::new(
@@ -403,7 +396,7 @@ mod tests {
                 TileKind::Void,
             ],
             vec![false, false, false, false, true, false, false, false, false],
-            Some((1, 1)),
+            Some(BoardCell::new(1, 1)),
             None,
             is_solved,
         )

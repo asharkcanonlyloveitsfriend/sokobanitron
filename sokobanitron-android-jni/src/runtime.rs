@@ -189,7 +189,7 @@ impl AndroidApp {
                 self.enter_editor_mode();
                 self.render_current();
             }
-            AppInput::BoardTap { .. } => {
+            AppInput::BoardTap(_) => {
                 let _ = self.apply_app_input(input);
             }
             _ => {

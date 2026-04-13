@@ -1,13 +1,14 @@
 use super::GameplayAnimation;
 use crate::renderer::{Renderer, blit_rgba};
 use crate::screen_requests::GameplayScreenRequest;
+use sokobanitron_gameplay::BoardCell;
 
 const FLASH_DARK_COLOR: [u8; 4] = [142, 142, 142, 255];
 const FLASH_LIGHT_COLOR: [u8; 4] = [242, 242, 242, 255];
 
 pub(super) struct EntityFlashAnimation {
-    player_position: (u32, u32),
-    box_positions: Vec<(u32, u32)>,
+    player_position: BoardCell,
+    box_positions: Vec<BoardCell>,
     phase: EntityFlashPhase,
 }
 
@@ -95,16 +96,14 @@ impl GameplayAnimation for EntityFlashAnimation {
 fn removed_box_positions(
     previous: &GameplayScreenRequest,
     current: &GameplayScreenRequest,
-) -> Vec<(u32, u32)> {
+) -> Vec<BoardCell> {
     let mut removed = Vec::new();
-    for y in 0..previous.board.height() {
-        for x in 0..previous.board.width() {
-            let current_has_box = x < current.board.width()
-                && y < current.board.height()
-                && current.board.has_box(x, y);
-            if previous.board.has_box(x, y) && !current_has_box {
-                removed.push((x, y));
-            }
+    for cell in previous.board.cells() {
+        let current_has_box = cell.x < current.board.width()
+            && cell.y < current.board.height()
+            && current.board.has_box(cell);
+        if previous.board.has_box(cell) && !current_has_box {
+            removed.push(cell);
         }
     }
     removed
@@ -116,7 +115,7 @@ fn draw_tinted_player(
     width: u32,
     height: u32,
     scene: &GameplayScreenRequest,
-    position: (u32, u32),
+    position: BoardCell,
     color: [u8; 4],
 ) {
     let Some((player_x, player_y, icon_size)) =
@@ -137,7 +136,7 @@ fn draw_tinted_box(
     width: u32,
     height: u32,
     scene: &GameplayScreenRequest,
-    position: (u32, u32),
+    position: BoardCell,
     color: [u8; 4],
 ) {
     let Some((box_x, box_y, icon_size)) = renderer.box_sprite_rect_at(&scene.viewport, position)

@@ -1,4 +1,4 @@
-use sokobanitron_gameplay::BoardView;
+use sokobanitron_gameplay::{BoardCell, BoardView};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoardViewport {
@@ -76,9 +76,11 @@ impl BoardViewport {
         }
     }
 
-    pub fn cell_to_screen_rect(&self, x: u32, y: u32) -> (i32, i32, u32, u32) {
-        let px = self.origin_x + ((x + self.outer_margin_tiles) as i32 * self.cell_size as i32);
-        let py = self.origin_y + ((y + self.outer_margin_tiles) as i32 * self.cell_size as i32);
+    pub fn cell_to_screen_rect(&self, cell: BoardCell) -> (i32, i32, u32, u32) {
+        let px =
+            self.origin_x + ((cell.x + self.outer_margin_tiles) as i32 * self.cell_size as i32);
+        let py =
+            self.origin_y + ((cell.y + self.outer_margin_tiles) as i32 * self.cell_size as i32);
         (px, py, self.cell_size, self.cell_size)
     }
 
@@ -87,7 +89,7 @@ impl BoardViewport {
         screen_x: f64,
         screen_y: f64,
         board: &BoardView,
-    ) -> Option<(u32, u32)> {
+    ) -> Option<BoardCell> {
         let rel_x = screen_x - f64::from(self.origin_x);
         let rel_y = screen_y - f64::from(self.origin_y);
         if rel_x < 0.0 || rel_y < 0.0 {
@@ -107,7 +109,7 @@ impl BoardViewport {
             && (inner_x as u32) < board.width()
             && (inner_y as u32) < board.height()
         {
-            Some((inner_x as u32, inner_y as u32))
+            Some(BoardCell::new(inner_x as u32, inner_y as u32))
         } else {
             None
         }
