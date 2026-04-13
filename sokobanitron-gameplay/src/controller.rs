@@ -14,7 +14,7 @@ pub enum GameplayTapEffect {
     PlayerMoved { to_x: u32, to_y: u32 },
     BoxMoved { path: Vec<(u32, u32)> },
     BoxRemoved { to_x: u32, to_y: u32 },
-    MoveRejected,
+    BoxMoveRejected,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -175,9 +175,9 @@ impl GameplayController {
 fn classify_tap_effect(events: &[GameplayEvent]) -> GameplayTapEffect {
     if events
         .iter()
-        .any(|event| matches!(event, GameplayEvent::MoveRejected))
+        .any(|event| matches!(event, GameplayEvent::BoxMoveRejected))
     {
-        return GameplayTapEffect::MoveRejected;
+        return GameplayTapEffect::BoxMoveRejected;
     }
     if let Some((to_x, to_y)) = events.iter().find_map(|event| match event {
         GameplayEvent::BoxRemoved { to_x, to_y } => Some((*to_x, *to_y)),
@@ -204,4 +204,37 @@ fn classify_tap_effect(events: &[GameplayEvent]) -> GameplayTapEffect {
         return GameplayTapEffect::SelectionChanged { selected_box };
     }
     GameplayTapEffect::None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{GameplayController, GameplayTapEffect};
+
+    #[test]
+    fn failed_player_move_is_a_noop_effect() {
+        let level = "#####\n#@  #\n#####".to_string();
+        let mut controller = GameplayController::new(vec![level], None);
+
+        let outcome = controller.click_cell_with_outcome(4, 1);
+
+        assert_eq!(outcome.effect, GameplayTapEffect::None);
+    }
+
+    #[test]
+    fn invalid_selected_box_destination_is_box_move_rejected() {
+        let level = "######\n#@$ ##\n######".to_string();
+        let mut controller = GameplayController::new(vec![level], None);
+
+        let select = controller.click_cell_with_outcome(2, 1);
+        assert_eq!(
+            select.effect,
+            GameplayTapEffect::SelectionChanged {
+                selected_box: Some((2, 1))
+            }
+        );
+
+        let reject = controller.click_cell_with_outcome(4, 1);
+
+        assert_eq!(reject.effect, GameplayTapEffect::BoxMoveRejected);
+    }
 }

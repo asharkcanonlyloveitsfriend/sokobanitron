@@ -20,8 +20,7 @@ pub struct GameplayScreenRequest {
 
 /// Records the primary reason this gameplay presentation update was produced.
 ///
-/// It is not a complete semantic delta. Future animation selection can combine this cause with
-/// scene comparison and prior presentation state.
+/// It is not presentation state and is consumed when the update is received.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GameplayPresentationCause {
     /// Render the current gameplay scene without attributing it to a specific gameplay action.
@@ -40,24 +39,15 @@ pub enum GameplayPresentationCause {
         to_x: u32,
         to_y: u32,
     },
-    MoveRejected,
+    BoxMoveRejected,
     UndoApplied,
     Restarted,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum SolvedStateChange {
-    #[default]
-    Unchanged,
-    BecameSolved,
-    BecameUnsolved,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameplayPresentationUpdate {
     pub scene: GameplayScreenRequest,
     pub cause: GameplayPresentationCause,
-    pub solved_state_change: SolvedStateChange,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,5 +1,5 @@
 use crate::{config, platform};
-use presentation::{GameplayPresentationState, Renderer};
+use presentation::{GameplayPresentationConfig, GameplayPresentationState, Renderer};
 use sokobanitron_app::{
     AppPreferences,
     app::{
@@ -76,7 +76,9 @@ impl KindleApp {
         );
         Ok(Self {
             renderer: Self::build_renderer(),
-            gameplay_presentation: GameplayPresentationState::new(),
+            gameplay_presentation: GameplayPresentationState::with_config(
+                GameplayPresentationConfig::blink_only(),
+            ),
             rgba_frame: vec![0; config::WIDTH * config::HEIGHT * 4],
             sleep_state: AppSleepState::Awake,
             preview_boards,
@@ -93,16 +95,23 @@ impl KindleApp {
 
         let mut touch = platform::TouchReader::new()?;
         loop {
-            let event = touch.next_input_event(
+            let timeout_ms = if self.gameplay_presentation.has_active_animation() {
+                Some(50)
+            } else {
                 self.preferences
                     .kindle
                     .use_app_sleep_screen
-                    .then_some(config::SLEEP_STATE_POLL_TIMEOUT_MS),
-            )?;
+                    .then_some(config::SLEEP_STATE_POLL_TIMEOUT_MS)
+            };
+            let event = touch.next_input_event(timeout_ms)?;
             let sync = self.sync_sleep_state()?;
 
             match event {
-                platform::AppInputEvent::IdleTick => {}
+                platform::AppInputEvent::IdleTick => {
+                    if self.gameplay_presentation.has_active_animation() {
+                        self.render_active_gameplay_presentation()?;
+                    }
+                }
                 platform::AppInputEvent::Pointer {
                     phase,
                     raw_x,
@@ -117,6 +126,18 @@ impl KindleApp {
                 }
             }
         }
+    }
+
+    fn render_active_gameplay_presentation(&mut self) -> Result<()> {
+        let (renderer, rgba, display) =
+            (&mut self.renderer, &mut self.rgba_frame, &mut self.display);
+        self.gameplay_presentation.draw(
+            renderer,
+            rgba,
+            config::WIDTH as u32,
+            config::HEIGHT as u32,
+        );
+        display.present_rgba_fast_partial(rgba)
     }
 
     fn sync_sleep_state(&mut self) -> Result<SleepSyncOutcome> {

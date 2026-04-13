@@ -117,7 +117,7 @@ impl GameEngine {
     }
 
     pub fn move_player_to(&mut self, to: Position) -> bool {
-        if !self.is_inside(to.row, to.col) {
+        if !self.is_inside(to.row, to.col) || !self.base_walkable[to.row][to.col] {
             return false;
         }
         if to == self.player {

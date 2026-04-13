@@ -2,7 +2,7 @@ use crate::assets::rasterize_svg;
 use crate::layout::BoardViewport;
 use sokobanitron_gameplay::BoardView;
 
-use super::{BLACK, EntityVisualStyle, Renderer, WHITE, pixels::blit_rgba};
+use super::{BLACK, EntityVisualStyle, Renderer, WHITE, blit_rgba};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BoxSpriteVariant {
@@ -38,17 +38,9 @@ impl Renderer {
         if !board.has_box(x, y) {
             return;
         }
-        let (cell_x, cell_y, cell_w, cell_h) = viewport.cell_to_screen_rect(x, y);
-        let inset = (cell_w / 24).max(1);
-        let box_x = cell_x + inset as i32;
-        let box_y = cell_y + inset as i32;
-        let box_w = cell_w.saturating_sub(inset * 2);
-        let box_h = cell_h.saturating_sub(inset * 2);
-        if box_w == 0 || box_h == 0 {
+        let Some((box_x, box_y, icon_size)) = self.box_sprite_rect_at(viewport, (x, y)) else {
             return;
-        }
-
-        let icon_size = box_w.min(box_h);
+        };
         let icon = if entity_visual_style == EntityVisualStyle::Solved && board.is_solved() {
             self.box_bitmap(icon_size, BoxSpriteVariant::Solved)
         } else if board.selected_box() == Some((x, y)) {
@@ -93,6 +85,62 @@ impl Renderer {
         }
     }
 
+    pub(crate) fn box_sprite_rect_at(
+        &self,
+        viewport: &BoardViewport,
+        box_position: (u32, u32),
+    ) -> Option<(i32, i32, u32)> {
+        let (x, y) = box_position;
+        let (cell_x, cell_y, cell_w, cell_h) = viewport.cell_to_screen_rect(x, y);
+        let inset = (cell_w / 24).max(1);
+        let box_x = cell_x + inset as i32;
+        let box_y = cell_y + inset as i32;
+        let box_w = cell_w.saturating_sub(inset * 2);
+        let box_h = cell_h.saturating_sub(inset * 2);
+        if box_w == 0 || box_h == 0 {
+            return None;
+        }
+        Some((box_x, box_y, box_w.min(box_h)))
+    }
+
+    pub(crate) fn standard_box_bitmap(&mut self, size: u32) -> &[u8] {
+        self.box_bitmap(size, BoxSpriteVariant::Standard)
+    }
+
+    pub(crate) fn standard_player_bitmap(&mut self, size: u32) -> &[u8] {
+        self.player_bitmap(size, PlayerSpriteVariant::Standard)
+    }
+
+    pub(crate) fn draw_vanishing_box_at(
+        &mut self,
+        frame: &mut [u8],
+        frame_width: u32,
+        frame_height: u32,
+        viewport: &BoardViewport,
+        position: (u32, u32),
+        scale: f32,
+    ) {
+        if scale <= 0.0 {
+            return;
+        }
+        let Some((box_x, box_y, icon_size)) = self.box_sprite_rect_at(viewport, position) else {
+            return;
+        };
+        let scaled_size = ((icon_size as f32 * scale).round() as u32).max(1);
+        let offset = ((icon_size as f32 - scaled_size as f32) / 2.0).round() as i32;
+        let icon = self.standard_box_bitmap(scaled_size);
+        blit_rgba(
+            frame,
+            frame_width,
+            frame_height,
+            icon,
+            scaled_size,
+            scaled_size,
+            box_x + offset,
+            box_y + offset,
+        );
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn draw_player(
         &mut self,
@@ -127,12 +175,21 @@ impl Renderer {
         );
     }
 
-    fn player_sprite_rect(
+    pub(crate) fn player_sprite_rect(
         &self,
         board: &BoardView,
         viewport: &BoardViewport,
     ) -> Option<(i32, i32, u32)> {
         let (x, y) = board.player()?;
+        self.player_sprite_rect_at(viewport, (x, y))
+    }
+
+    pub(crate) fn player_sprite_rect_at(
+        &self,
+        viewport: &BoardViewport,
+        player_position: (u32, u32),
+    ) -> Option<(i32, i32, u32)> {
+        let (x, y) = player_position;
         let (cell_x, cell_y, cell_w, cell_h) = viewport.cell_to_screen_rect(x, y);
         let inset = (cell_w / 10).max(1);
         let player_x = cell_x + inset as i32;
@@ -204,6 +261,24 @@ impl Renderer {
         );
 
         rasterize_svg(&svg, size)
+    }
+
+    pub(crate) fn player_blink_overlay_bitmap(&mut self, size: u32) -> &[u8] {
+        self.blink_player_bitmap_cache.entry(size).or_insert_with(|| {
+            let body = rgb_hex(self.theme.mid_1);
+            let eye = rgb_hex(BLACK);
+            let svg = format!(
+                "<svg xmlns='http://www.w3.org/2000/svg' width='{s}' height='{s}' viewBox='0 0 100 100'>\
+                 <path d='M31,36h38v13h-38z' fill='{body}'/>\
+                 <path d='M31,41h14v3h-14z' fill='{eye}'/>\
+                 <path d='M55,41h14v3h-14z' fill='{eye}'/>\
+                 </svg>",
+                s = size,
+                body = body,
+                eye = eye,
+            );
+            rasterize_svg(&svg, size)
+        })
     }
 
     fn rasterize_solved_box_bitmap(

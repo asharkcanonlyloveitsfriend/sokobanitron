@@ -25,6 +25,22 @@ impl App {
         let _ = self.render_request(&request);
     }
 
+    pub(crate) fn render_active_gameplay_presentation(&mut self) {
+        if let Some(pixels) = &mut self.pixels {
+            let frame = pixels.frame_mut();
+            self.gameplay_presentation.draw(
+                &mut self.renderer,
+                frame,
+                self.surface_width,
+                self.surface_height,
+            );
+            pixels.render().expect("render");
+            if self.gameplay_presentation.has_active_animation() {
+                self.request_window_redraw();
+            }
+        }
+    }
+
     fn render_request(&mut self, request: &FrameRequest) -> Result<(), ()> {
         match request {
             FrameRequest::Gameplay { update, .. } => {
@@ -38,6 +54,9 @@ impl App {
                         self.surface_height,
                     );
                     pixels.render().expect("render");
+                    if self.gameplay_presentation.has_active_animation() {
+                        self.request_window_redraw();
+                    }
                 }
             }
             FrameRequest::GameplayMenu { screen } => {

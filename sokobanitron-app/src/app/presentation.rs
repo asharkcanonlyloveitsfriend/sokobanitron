@@ -16,7 +16,7 @@ use crate::gameplay::build_gameplay_frame_request_with_cause;
 use presentation::screen_requests::{
     EditorMenuScreenRequest, EditorScreenRequest, GameplayMenuScreenRequest,
     GameplayPresentationCause, GameplayPresentationUpdate, LevelSelectScreenRequest,
-    LevelSetSelectScreenRequest, SolvedStateChange,
+    LevelSetSelectScreenRequest,
 };
 use sokobanitron_gameplay::{GameplayController, GameplayTapEffect, GameplayTapOutcome};
 
@@ -87,20 +87,13 @@ pub fn build_presentation_plan(
         return PresentationPlan::default();
     };
 
-    gameplay_presentation_plan(
-        controller,
-        app_state,
-        cause,
-        solved_state_change_for_tap_outcome(outcome),
-        PresentMode::Full,
-    )
+    gameplay_presentation_plan(controller, app_state, cause, PresentMode::Full)
 }
 
 pub(crate) fn gameplay_presentation_plan(
     controller: &GameplayController,
     app_state: &AppState,
     cause: GameplayPresentationCause,
-    solved_state_change: SolvedStateChange,
     present_mode: PresentMode,
 ) -> PresentationPlan {
     PresentationPlan {
@@ -108,7 +101,6 @@ pub(crate) fn gameplay_presentation_plan(
             controller,
             app_state,
             cause,
-            solved_state_change,
             present_mode,
         )],
     }
@@ -118,41 +110,18 @@ fn gameplay_render_step_with_cause(
     controller: &GameplayController,
     app_state: &AppState,
     cause: GameplayPresentationCause,
-    solved_state_change: SolvedStateChange,
     present_mode: PresentMode,
 ) -> PresentationStep {
     PresentationStep::Render(build_gameplay_frame_request_with_cause(
         controller,
         app_state,
         cause,
-        solved_state_change,
         present_mode,
     ))
 }
 
-fn solved_state_change_for_tap_outcome(outcome: &GameplayTapOutcome) -> SolvedStateChange {
-    // Tap outcomes only report newly solved boards. Non-tap unsolve transitions are derived from
-    // before/after scene state at the app action mapping point.
-    if outcome.became_solved {
-        SolvedStateChange::BecameSolved
-    } else {
-        SolvedStateChange::Unchanged
-    }
-}
-
-pub(crate) fn solved_state_change_for_scene_change(
-    was_solved: bool,
-    is_solved: bool,
-) -> SolvedStateChange {
-    match (was_solved, is_solved) {
-        (false, true) => SolvedStateChange::BecameSolved,
-        (true, false) => SolvedStateChange::BecameUnsolved,
-        _ => SolvedStateChange::Unchanged,
-    }
-}
-
-// This cause captures the primary trigger for the update. Other visible consequences still come
-// from the scene itself and, later, may also come from prior presentation state comparisons.
+// This cause captures the primary trigger for the update. Other visible consequences come from the
+// scene itself.
 fn gameplay_presentation_cause_for_effect(
     effect: &GameplayTapEffect,
 ) -> Option<GameplayPresentationCause> {
@@ -178,7 +147,7 @@ fn gameplay_presentation_cause_for_effect(
                 to_y: *to_y,
             })
         }
-        GameplayTapEffect::MoveRejected => Some(GameplayPresentationCause::MoveRejected),
+        GameplayTapEffect::BoxMoveRejected => Some(GameplayPresentationCause::BoxMoveRejected),
     }
 }
 
@@ -186,12 +155,12 @@ fn gameplay_presentation_cause_for_effect(
 mod tests {
     use super::{
         FrameSink, PresentMode, PresentationPlan, PresentationStep, build_presentation_plan,
-        gameplay_presentation_plan, render_presentation_plan, solved_state_change_for_scene_change,
+        gameplay_presentation_plan, render_presentation_plan,
     };
     use crate::app::{AppState, FrameRequest};
     use presentation::screen_requests::{
         GameplayMenuScreenRequest, GameplayPresentationCause, GameplayPresentationUpdate,
-        LevelSelectScreenRequest, SolvedStateChange,
+        LevelSelectScreenRequest,
     };
     use sokobanitron_gameplay::GameplayController;
     use sokobanitron_gameplay::{GameplayControllerChanges, GameplayTapEffect, GameplayTapOutcome};
@@ -251,7 +220,6 @@ mod tests {
             update.cause,
             GameplayPresentationCause::PlayerMoved { to_x: 1, to_y: 2 }
         );
-        assert_eq!(update.solved_state_change, SolvedStateChange::Unchanged);
     }
 
     #[test]
@@ -270,7 +238,6 @@ mod tests {
             update.cause,
             GameplayPresentationCause::BoxRemoved { to_x: 4, to_y: 7 }
         );
-        assert_eq!(update.solved_state_change, SolvedStateChange::Unchanged);
     }
 
     #[test]
@@ -289,14 +256,13 @@ mod tests {
             update.cause,
             GameplayPresentationCause::PlayerMoved { to_x: 1, to_y: 1 }
         );
-        assert_eq!(update.solved_state_change, SolvedStateChange::Unchanged);
     }
 
     #[test]
-    fn move_rejected_renders_once() {
+    fn box_move_rejected_renders_once() {
         let (controller, app_state) = controller_and_state();
         let plan = build_presentation_plan(
-            &outcome(GameplayTapEffect::MoveRejected, false),
+            &outcome(GameplayTapEffect::BoxMoveRejected, false),
             &controller,
             &app_state,
         );
@@ -304,8 +270,19 @@ mod tests {
 
         assert_eq!(*present_mode, PresentMode::Full);
         assert_eq!(update.scene.level_number, 1);
-        assert_eq!(update.cause, GameplayPresentationCause::MoveRejected);
-        assert_eq!(update.solved_state_change, SolvedStateChange::Unchanged);
+        assert_eq!(update.cause, GameplayPresentationCause::BoxMoveRejected);
+    }
+
+    #[test]
+    fn no_effect_produces_no_presentation_plan() {
+        let (controller, app_state) = controller_and_state();
+        let plan = build_presentation_plan(
+            &outcome(GameplayTapEffect::None, false),
+            &controller,
+            &app_state,
+        );
+
+        assert!(plan.steps.is_empty());
     }
 
     #[test]
@@ -315,18 +292,16 @@ mod tests {
             &controller,
             &app_state,
             GameplayPresentationCause::Restarted,
-            SolvedStateChange::Unchanged,
             PresentMode::Full,
         );
         let (update, present_mode) = gameplay_render(&plan);
 
         assert_eq!(*present_mode, PresentMode::Full);
         assert_eq!(update.cause, GameplayPresentationCause::Restarted);
-        assert_eq!(update.solved_state_change, SolvedStateChange::Unchanged);
     }
 
     #[test]
-    fn solved_move_marks_solved_state_change() {
+    fn solved_move_carries_solved_scene() {
         let level = "#####\n#@$.#\n#####".to_string();
         let mut controller = GameplayController::new(vec![level], None);
         let app_state = AppState::default();
@@ -350,23 +325,7 @@ mod tests {
                 path: vec![(2, 1), (3, 1)],
             }
         );
-        assert_eq!(update.solved_state_change, SolvedStateChange::BecameSolved);
-    }
-
-    #[test]
-    fn solved_state_change_tracks_unsolve_transitions() {
-        assert_eq!(
-            solved_state_change_for_scene_change(false, false),
-            SolvedStateChange::Unchanged
-        );
-        assert_eq!(
-            solved_state_change_for_scene_change(false, true),
-            SolvedStateChange::BecameSolved
-        );
-        assert_eq!(
-            solved_state_change_for_scene_change(true, false),
-            SolvedStateChange::BecameUnsolved
-        );
+        assert!(update.scene.board.is_solved());
     }
 
     #[derive(Default)]

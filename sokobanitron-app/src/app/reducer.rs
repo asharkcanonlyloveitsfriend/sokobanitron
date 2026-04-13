@@ -1,8 +1,5 @@
 use super::action::AppAction;
-use super::presentation::{
-    PresentationPlan, build_presentation_plan, gameplay_presentation_plan,
-    solved_state_change_for_scene_change,
-};
+use super::presentation::{PresentationPlan, build_presentation_plan, gameplay_presentation_plan};
 use super::state::{AppOverlay, AppScreen, AppState};
 use presentation::layout::{level_select_menu_start_index, level_set_select_start_index};
 use presentation::screen_requests::GameplayPresentationCause;
@@ -140,13 +137,11 @@ fn apply_restart_command(
     app_state: &AppState,
     update: &mut AppUpdate,
 ) {
-    let was_solved = controller.board().is_solved();
     update.changes = controller.restart_with_changes();
     update.presentation_plan = Some(gameplay_presentation_plan(
         controller,
         app_state,
         GameplayPresentationCause::Restarted,
-        solved_state_change_for_scene_change(was_solved, controller.board().is_solved()),
         super::presentation::PresentMode::Full,
     ));
 }
@@ -156,13 +151,11 @@ fn apply_undo_command(
     app_state: &AppState,
     update: &mut AppUpdate,
 ) {
-    let was_solved = controller.board().is_solved();
     update.changes = controller.undo_with_changes();
     update.presentation_plan = Some(gameplay_presentation_plan(
         controller,
         app_state,
         GameplayPresentationCause::UndoApplied,
-        solved_state_change_for_scene_change(was_solved, controller.board().is_solved()),
         super::presentation::PresentMode::Full,
     ));
 }
@@ -233,7 +226,7 @@ mod tests {
     use crate::app::action::AppAction;
     use crate::app::presentation::{FrameRequest, PresentationStep};
     use crate::app::state::{AppOverlay, AppScreen, AppState};
-    use presentation::screen_requests::{GameplayPresentationCause, SolvedStateChange};
+    use presentation::screen_requests::GameplayPresentationCause;
     use sokobanitron_gameplay::GameplayController;
 
     fn test_controller() -> GameplayController {
@@ -737,7 +730,7 @@ mod tests {
     }
 
     #[test]
-    fn restart_marks_became_unsolved_after_restarting_solved_board() {
+    fn restart_renders_unsolved_scene_after_restarting_solved_board() {
         let level = "#####\n#@$.#\n#####".to_string();
         let mut controller = GameplayController::new(vec![level], None);
         let mut app_state = AppState::default();
@@ -766,7 +759,7 @@ mod tests {
                 path: vec![(2, 1), (3, 1)]
             }
         );
-        assert_eq!(update.solved_state_change, SolvedStateChange::BecameSolved);
+        assert!(update.scene.board.is_solved());
 
         let restart = apply_action(&mut controller, &mut app_state, AppAction::Restart);
         let Some(restart_plan) = restart.presentation_plan else {
@@ -779,9 +772,6 @@ mod tests {
         };
 
         assert_eq!(update.cause, GameplayPresentationCause::Restarted);
-        assert_eq!(
-            update.solved_state_change,
-            SolvedStateChange::BecameUnsolved
-        );
+        assert!(!update.scene.board.is_solved());
     }
 }

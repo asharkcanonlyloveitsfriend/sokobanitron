@@ -15,7 +15,7 @@ use presentation::assets::UiIcon;
 use presentation::screen_requests::{
     GameplayMenuScreenRequest, GameplayPresentationCause, GameplayPresentationUpdate,
     GameplayScreenMode, GameplayScreenRequest, LevelSelectScreenRequest, LevelSetListEntry,
-    LevelSetSelectScreenRequest, SolvedStateChange,
+    LevelSetSelectScreenRequest,
 };
 use sokobanitron_gameplay::GameplayController;
 
@@ -30,7 +30,6 @@ pub fn build_gameplay_frame_request(
             app_state,
             GameplayScreenMode::Normal,
             GameplayPresentationCause::CurrentState,
-            SolvedStateChange::Unchanged,
         ),
         present_mode,
     }
@@ -46,7 +45,6 @@ pub fn build_sleep_gameplay_frame_request(
             app_state,
             GameplayScreenMode::Sleep,
             GameplayPresentationCause::CurrentState,
-            SolvedStateChange::Unchanged,
         ),
         present_mode: PresentMode::Full,
     }
@@ -56,7 +54,6 @@ pub(crate) fn build_gameplay_frame_request_with_cause(
     controller: &GameplayController,
     app_state: &AppState,
     cause: GameplayPresentationCause,
-    solved_state_change: SolvedStateChange,
     present_mode: PresentMode,
 ) -> FrameRequest {
     FrameRequest::Gameplay {
@@ -65,7 +62,6 @@ pub(crate) fn build_gameplay_frame_request_with_cause(
             app_state,
             GameplayScreenMode::Normal,
             cause,
-            solved_state_change,
         ),
         present_mode,
     }
@@ -155,12 +151,10 @@ fn build_gameplay_presentation_update(
     app_state: &AppState,
     mode: GameplayScreenMode,
     cause: GameplayPresentationCause,
-    solved_state_change: SolvedStateChange,
 ) -> GameplayPresentationUpdate {
     GameplayPresentationUpdate {
         scene: build_gameplay_screen_request(controller, app_state, mode),
         cause,
-        solved_state_change,
     }
 }
 
@@ -171,7 +165,6 @@ mod tests {
     use crate::app::state::{AppOverlay, AppState};
     use presentation::screen_requests::{
         GameplayMenuScreenRequest, GameplayPresentationCause, GameplayScreenRequest,
-        SolvedStateChange,
     };
     use sokobanitron_gameplay::GameplayController;
 
@@ -235,7 +228,6 @@ mod tests {
                 presentation::screen_requests::GameplayPresentationUpdate {
                     scene: GameplayScreenRequest { level_number, .. },
                     cause,
-                    solved_state_change,
                 },
             present_mode,
         } = build_current_frame_request(&controller, &app_state)
@@ -246,6 +238,5 @@ mod tests {
         assert_eq!(present_mode, PresentMode::Full);
         assert_eq!(level_number, 1);
         assert_eq!(cause, GameplayPresentationCause::CurrentState);
-        assert_eq!(solved_state_change, SolvedStateChange::Unchanged);
     }
 }

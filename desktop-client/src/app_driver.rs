@@ -175,6 +175,12 @@ impl App {
             AppScreen::Editor => self.on_editor_touch(id, phase, x, y),
         }
     }
+
+    pub(crate) fn request_window_redraw(&self) {
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
 }
 
 impl AppDriverContext for App {
@@ -356,7 +362,13 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
-                self.render_current();
+                if self.app_state.active_screen() == AppScreen::Gameplay
+                    && self.gameplay_presentation.has_active_animation()
+                {
+                    self.render_active_gameplay_presentation();
+                } else {
+                    self.render_current();
+                }
             }
             _ => {}
         }

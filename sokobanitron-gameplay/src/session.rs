@@ -17,7 +17,7 @@ pub enum GameplayEvent {
     PlayerMoved { to_x: u32, to_y: u32 },
     BoxMoved { path: Vec<(u32, u32)> },
     BoxRemoved { to_x: u32, to_y: u32 },
-    MoveRejected,
+    BoxMoveRejected,
     UndoApplied,
     Restarted,
     LevelSolved { clean: bool },
@@ -96,13 +96,9 @@ impl GameplaySession {
             return events;
         }
         let was_solved = self.board.is_solved();
+        let clicked_cell = Position::new(y as usize, x as usize);
 
-        let clicked_has_box = self
-            .engine
-            .boxes()
-            .iter()
-            .any(|pos| pos.col == x as usize && pos.row == y as usize);
-
+        let clicked_has_box = self.engine.boxes().contains(&clicked_cell);
         if clicked_has_box {
             self.selected_box = if self.selected_box == Some((x, y)) {
                 None
@@ -116,56 +112,43 @@ impl GameplaySession {
             return events;
         }
 
-        if let Some((from_x, from_y)) = self.selected_box {
-            if self.board.tile(x, y) == crate::presenter::TileKind::Void {
-                let removed = self.engine.push_box_into_void(
-                    Position::new(from_y as usize, from_x as usize),
-                    Position::new(y as usize, x as usize),
-                );
-                if removed {
-                    self.selected_box = None;
-                    self.sync_board();
-                    events.push(GameplayEvent::BoxRemoved { to_x: x, to_y: y });
-                    self.push_solved_event_if_needed(was_solved, &mut events);
-                    return events;
-                }
-                self.selected_box = None;
-                self.sync_board();
-                events.push(GameplayEvent::MoveRejected);
-                return events;
-            }
+        if let Some((from_x, from_y)) = self.selected_box.take() {
+            let from_cell = Position::new(from_y as usize, from_x as usize);
+            let outcome = if self.board.tile(x, y) == crate::presenter::TileKind::Void {
+                self.engine
+                    .push_box_into_void(from_cell, clicked_cell)
+                    .then_some(GameplayEvent::BoxRemoved { to_x: x, to_y: y })
+            } else {
+                self.engine
+                    .move_box_to(from_cell, clicked_cell)
+                    .map(|path| GameplayEvent::BoxMoved {
+                        path: path
+                            .into_iter()
+                            .map(|p| (p.col as u32, p.row as u32))
+                            .collect(),
+                    })
+            };
 
-            let moved_box = self.engine.move_box_to(
-                Position::new(from_y as usize, from_x as usize),
-                Position::new(y as usize, x as usize),
-            );
-            if let Some(path) = moved_box {
-                self.selected_box = None;
-                self.sync_board();
-                events.push(GameplayEvent::BoxMoved {
-                    path: path
-                        .into_iter()
-                        .map(|p| (p.col as u32, p.row as u32))
-                        .collect(),
-                });
-                self.push_solved_event_if_needed(was_solved, &mut events);
-                return events;
-            }
-            self.selected_box = None;
             self.sync_board();
-            events.push(GameplayEvent::MoveRejected);
+
+            if let Some(event) = outcome {
+                events.push(event);
+                self.push_solved_event_if_needed(was_solved, &mut events);
+            } else {
+                events.push(GameplayEvent::BoxMoveRejected);
+            }
             return events;
         }
 
-        if self
-            .engine
-            .move_player_to(Position::new(y as usize, x as usize))
-        {
+        if self.engine.player() == clicked_cell {
+            return events;
+        }
+
+        if self.engine.move_player_to(clicked_cell) {
             self.sync_board();
             events.push(GameplayEvent::PlayerMoved { to_x: x, to_y: y });
             return events;
         }
-        events.push(GameplayEvent::MoveRejected);
         events
     }
 

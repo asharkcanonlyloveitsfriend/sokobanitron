@@ -8,6 +8,7 @@ use crate::layout::{ScreenRect, UI_BUTTON_MARGIN, UI_BUTTON_SIZE};
 use crate::screen_requests::{GameplayScreenMode, GameplayScreenRequest};
 
 use super::{BoardSceneComposition, EntityVisualStyle, Renderer, chrome};
+use crate::gameplay_animation::GameplayAnimationRunner;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct GameplaySceneComposition {
@@ -44,6 +45,7 @@ impl GameplaySceneComposition {
 }
 
 impl Renderer {
+    #[allow(dead_code)]
     pub(crate) fn draw_gameplay_scene(
         &mut self,
         frame: &mut [u8],
@@ -51,8 +53,32 @@ impl Renderer {
         height: u32,
         request: &GameplayScreenRequest,
     ) {
+        self.draw_gameplay_scene_with_animation(
+            frame,
+            width,
+            height,
+            request,
+            &GameplayAnimationRunner::default(),
+        );
+    }
+
+    pub(crate) fn draw_gameplay_scene_with_animation(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        request: &GameplayScreenRequest,
+        animation_runner: &GameplayAnimationRunner,
+    ) {
         let composition = GameplaySceneComposition::from_request(request);
-        self.draw_gameplay_board_scene(frame, width, height, request, composition.board);
+        self.draw_gameplay_board_scene(
+            frame,
+            width,
+            height,
+            request,
+            composition.board,
+            animation_runner,
+        );
         match composition.chrome {
             GameplayChromePhase::GameplayControls { level_number } => {
                 chrome::draw_controls_ui(frame, width, height, false);
@@ -69,15 +95,47 @@ impl Renderer {
         height: u32,
         request: &GameplayScreenRequest,
         composition: BoardSceneComposition,
+        animation_runner: &GameplayAnimationRunner,
     ) {
-        self.draw_board_scene_on_frame(
+        let mut composition = composition;
+        if animation_runner.hides_player() {
+            composition.player.visible = false;
+        }
+        self.draw_board_base_layer_on_frame(
             frame,
             width,
             height,
             &request.board,
             &request.viewport,
-            composition,
+            super::BoardBaseLayer::CachedScene,
         );
+        self.draw_board_under_entity_layer_on_frame(
+            frame,
+            width,
+            height,
+            &request.board,
+            &request.viewport,
+            composition.under_entities,
+        );
+        animation_runner.draw_under_entities(self, frame, width, height, request);
+        self.draw_board_entity_layer_on_frame(
+            frame,
+            width,
+            height,
+            &request.board,
+            &request.viewport,
+            composition.player,
+            composition.over_entities,
+        );
+        self.draw_board_over_entity_layer_on_frame(
+            frame,
+            width,
+            height,
+            &request.board,
+            &request.viewport,
+            composition.over_entities,
+        );
+        animation_runner.draw_over_entities(self, frame, width, height, request);
     }
 
     fn draw_gameplay_sleep_chrome(&mut self, frame: &mut [u8], width: u32, height: u32) {

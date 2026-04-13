@@ -38,6 +38,9 @@ pub(crate) fn blit_rgba(
     dst_x: i32,
     dst_y: i32,
 ) {
+    // Sprite assets rasterized from SVGs come from `tiny-skia` in premultiplied RGBA form.
+    // The destination frame is fully opaque once the background is drawn, so we can composite
+    // premultiplied source directly without first converting it back to straight alpha.
     for sy in 0..src_height {
         let dy = dst_y + sy as i32;
         if dy < 0 || dy >= frame_height as i32 {
@@ -66,10 +69,25 @@ pub(crate) fn blit_rgba(
             let dst_b = frame[dst_idx + 2] as u32;
             let dst_a = frame[dst_idx + 3] as u32;
 
-            frame[dst_idx] = ((src_r * src_a + dst_r * inv_a) / 255) as u8;
-            frame[dst_idx + 1] = ((src_g * src_a + dst_g * inv_a) / 255) as u8;
-            frame[dst_idx + 2] = ((src_b * src_a + dst_b * inv_a) / 255) as u8;
+            frame[dst_idx] = (src_r + (dst_r * inv_a) / 255).min(255) as u8;
+            frame[dst_idx + 1] = (src_g + (dst_g * inv_a) / 255).min(255) as u8;
+            frame[dst_idx + 2] = (src_b + (dst_b * inv_a) / 255).min(255) as u8;
             frame[dst_idx + 3] = (src_a + (dst_a * inv_a) / 255) as u8;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::blit_rgba;
+
+    #[test]
+    fn blit_rgba_composites_premultiplied_source_without_edge_darkening() {
+        let mut frame = vec![156, 163, 175, 255];
+        let src = vec![79, 82, 88, 128];
+
+        blit_rgba(&mut frame, 1, 1, &src, 1, 1, 0, 0);
+
+        assert_eq!(frame, vec![156, 163, 175, 255]);
     }
 }

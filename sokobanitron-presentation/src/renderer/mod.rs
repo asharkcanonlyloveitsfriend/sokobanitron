@@ -30,6 +30,7 @@ pub use pixel_ui::{
     PIXEL_FONT_HEIGHT, draw_centered_text_in_rect, draw_icon_bits_in_rect, draw_text,
     measure_text_width,
 };
+pub(crate) use pixels::blit_rgba;
 
 pub type Rgba = [u8; 4];
 
@@ -208,6 +209,7 @@ pub struct Renderer {
     pub(crate) solved_box_bitmap_cache: HashMap<u32, Vec<u8>>,
     pub(crate) selected_box_bitmap_cache: HashMap<u32, Vec<u8>>,
     pub(crate) player_bitmap_cache: HashMap<u32, Vec<u8>>,
+    pub(crate) blink_player_bitmap_cache: HashMap<u32, Vec<u8>>,
     pub(crate) squint_player_bitmap_cache: HashMap<u32, Vec<u8>>,
     pub(crate) sleeping_player_bitmap_cache: HashMap<u32, Vec<u8>>,
 }
@@ -238,6 +240,7 @@ impl Renderer {
             solved_box_bitmap_cache: HashMap::new(),
             selected_box_bitmap_cache: HashMap::new(),
             player_bitmap_cache: HashMap::new(),
+            blink_player_bitmap_cache: HashMap::new(),
             squint_player_bitmap_cache: HashMap::new(),
             sleeping_player_bitmap_cache: HashMap::new(),
         }

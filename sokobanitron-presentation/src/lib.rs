@@ -11,6 +11,7 @@
 //! clocks, redraw scheduling, and final presentation to screen.
 
 pub mod assets;
+mod gameplay_animation;
 pub mod gameplay_presentation;
 pub mod hit_test;
 pub mod layout;
@@ -18,6 +19,7 @@ pub mod renderer;
 pub mod screen_requests;
 
 pub use assets::{UiIcon, draw_ui_icon_in_rect};
+pub use gameplay_animation::GameplayPresentationConfig;
 pub use gameplay_presentation::GameplayPresentationState;
 pub use hit_test::{
     ControlsButtonAction, GameplaySurfaceLayer, GameplaySurfaceModel, GameplaySurfaceTarget,
@@ -51,5 +53,5 @@ pub use screen_requests::{
     EditorCountOverlay, EditorHintOverlay, EditorMenuScreenRequest, EditorScreenRequest,
     GameplayMenuScreenRequest, GameplayPresentationCause, GameplayPresentationUpdate,
     GameplayScreenMode, GameplayScreenRequest, LevelSelectScreenRequest, LevelSetListEntry,
-    LevelSetSelectScreenRequest, SolvedStateChange,
+    LevelSetSelectScreenRequest,
 };

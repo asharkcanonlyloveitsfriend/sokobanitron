@@ -47,10 +47,10 @@ pub struct AndroidApp {
     surface_height: u32,
     editor: LevelEditor,
     native_window: Option<NativeWindow>,
-    // Tracks presentation-relevant invalidation observed by the Android host. Today we only bump
-    // this when the built frame request changes, which is a deliberate current limitation rather
-    // than a claim that request equality always implies identical pixels.
+    // Tracks presentation events separately from animation redraws so a stored animated request is
+    // applied once, then subsequent frames only advance/draw the active animation.
     presentation_generation: u64,
+    applied_presentation_generation: Option<u64>,
 }
 
 impl AndroidApp {
@@ -101,6 +101,7 @@ impl AndroidApp {
             editor,
             native_window: None,
             presentation_generation: 0,
+            applied_presentation_generation: None,
         })
     }
 
@@ -148,15 +149,28 @@ impl AndroidApp {
         let request = self.current_request.clone();
         let surface_width = self.surface_width;
         let surface_height = self.surface_height;
+        let apply_request =
+            self.applied_presentation_generation != Some(self.presentation_generation);
         let mut frame = std::mem::take(&mut self.rgba_frame);
-        self.render_request_into(&request, &mut frame, surface_width, surface_height);
+        self.render_request_into(
+            &request,
+            &mut frame,
+            surface_width,
+            surface_height,
+            apply_request,
+        );
         let presented = window.present_rgba(&frame, surface_width, surface_height);
         self.rgba_frame = frame;
         self.native_window = Some(window);
         if presented {
-            self.frame_dirty = false;
+            self.applied_presentation_generation = Some(self.presentation_generation);
+            self.frame_dirty = self.gameplay_presentation.has_active_animation();
         }
         presented
+    }
+
+    pub fn has_active_gameplay_animation(&self) -> bool {
+        self.gameplay_presentation.has_active_animation()
     }
 
     fn apply_app_input(&mut self, input: AppInput) -> Option<AppliedUpdate> {
@@ -213,7 +227,7 @@ impl AndroidApp {
         apply_editor_ui_action(action, runtime.with_editor(&mut self.editor));
         let after_request = self.build_current_request();
         if after_request != before_request {
-            self.queue_request(after_request);
+            self.queue_changed_request(after_request);
         }
     }
 
@@ -229,7 +243,7 @@ impl AndroidApp {
 
     fn render_current(&mut self) {
         let request = self.build_current_request();
-        self.queue_request(request);
+        self.queue_changed_request(request);
     }
 
     fn build_current_request(&self) -> FrameRequest {
@@ -238,18 +252,19 @@ impl AndroidApp {
 
     fn render_active_gameplay_screen(&mut self) {
         let request = build_current_frame_request(&self.controller, &self.app_state);
-        self.queue_request(request);
+        self.queue_changed_request(request);
     }
 
-    // Current invalidation policy: only queue a presentable update when the rebuilt frame request
-    // changes. Future shared presentation work may need additional invalidation paths even when the
-    // request shape stays the same.
-    fn queue_request(&mut self, request: FrameRequest) {
+    fn queue_changed_request(&mut self, request: FrameRequest) {
         if self.current_request != request {
-            self.current_request = request;
-            self.frame_dirty = true;
-            self.presentation_generation = self.presentation_generation.wrapping_add(1);
+            self.queue_presentation_request(request);
         }
+    }
+
+    fn queue_presentation_request(&mut self, request: FrameRequest) {
+        self.current_request = request;
+        self.frame_dirty = true;
+        self.presentation_generation = self.presentation_generation.wrapping_add(1);
     }
 
     fn configure_native_window(&mut self) {
@@ -270,10 +285,13 @@ impl AndroidApp {
         frame: &mut [u8],
         surface_width: u32,
         surface_height: u32,
+        apply_request: bool,
     ) {
         match request {
             FrameRequest::Gameplay { update, .. } => {
-                self.gameplay_presentation.replace_update(update.clone());
+                if apply_request || self.gameplay_presentation.current_scene().is_none() {
+                    self.gameplay_presentation.replace_update(update.clone());
+                }
                 self.gameplay_presentation.draw(
                     &mut self.renderer,
                     frame,
@@ -354,7 +372,7 @@ impl FrameSink for AndroidApp {
         if !self.app_state.is_gameplay_screen() {
             return Ok(());
         }
-        self.queue_request(request.clone());
+        self.queue_presentation_request(request.clone());
         Ok(())
     }
 }
