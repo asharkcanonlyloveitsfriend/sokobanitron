@@ -255,6 +255,7 @@ fn is_state_change_flash_cause(cause: &GameplayPresentationCause) -> bool {
         GameplayPresentationCause::PlayerMoved { .. }
             | GameplayPresentationCause::BoxMoved { .. }
             | GameplayPresentationCause::BoxRemoved { .. }
+            | GameplayPresentationCause::PuzzleSolved { .. }
             | GameplayPresentationCause::UndoApplied
             | GameplayPresentationCause::Restarted
     )

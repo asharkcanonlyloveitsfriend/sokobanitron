@@ -18,7 +18,9 @@ use presentation::screen_requests::{
     GameplayPresentationCause, GameplayPresentationUpdate, LevelSelectScreenRequest,
     LevelSetSelectScreenRequest,
 };
-use sokobanitron_gameplay::{GameplayController, GameplayTapEffect, GameplayTapOutcome};
+use sokobanitron_gameplay::{
+    GameplayController, GameplayTapEffect, GameplayTapEvent, GameplayTapOutcome,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PresentMode {
@@ -83,11 +85,38 @@ pub fn build_presentation_plan(
     controller: &GameplayController,
     app_state: &AppState,
 ) -> PresentationPlan {
-    let Some(cause) = gameplay_presentation_cause_for_effect(&outcome.effect) else {
-        return PresentationPlan::default();
-    };
+    let mut steps = Vec::new();
 
-    gameplay_presentation_plan(controller, app_state, cause, PresentMode::Full)
+    if let Some(cause) = gameplay_presentation_cause_for_effect(&outcome.effect) {
+        steps.push(gameplay_render_step_with_cause(
+            controller,
+            app_state,
+            cause,
+            PresentMode::Full,
+        ));
+    }
+
+    if let Some(cause) = gameplay_presentation_cause_for_event(outcome.event) {
+        steps.push(gameplay_render_step_with_cause(
+            controller,
+            app_state,
+            cause,
+            PresentMode::Full,
+        ));
+    }
+
+    PresentationPlan { steps }
+}
+
+fn gameplay_presentation_cause_for_event(
+    event: GameplayTapEvent,
+) -> Option<GameplayPresentationCause> {
+    match event {
+        GameplayTapEvent::None => None,
+        GameplayTapEvent::PuzzleSolved { clean } => {
+            Some(GameplayPresentationCause::PuzzleSolved { clean })
+        }
+    }
 }
 
 pub(crate) fn gameplay_presentation_plan(
@@ -157,19 +186,23 @@ mod tests {
         LevelSelectScreenRequest,
     };
     use sokobanitron_gameplay::{BoardCell, GameplayController};
-    use sokobanitron_gameplay::{GameplayControllerChanges, GameplayTapEffect, GameplayTapOutcome};
+    use sokobanitron_gameplay::{
+        GameplayControllerChanges, GameplayTapEffect, GameplayTapEvent, GameplayTapOutcome,
+    };
 
     fn cell(x: u32, y: u32) -> BoardCell {
         BoardCell::new(x, y)
     }
 
-    fn outcome(effect: GameplayTapEffect, became_solved: bool) -> GameplayTapOutcome {
+    fn outcome(effect: GameplayTapEffect, puzzle_solved: bool) -> GameplayTapOutcome {
         GameplayTapOutcome {
             changes: GameplayControllerChanges::default(),
             effect,
-            became_solved,
-            dirty_solution: false,
-            started_now: false,
+            event: if puzzle_solved {
+                GameplayTapEvent::PuzzleSolved { clean: true }
+            } else {
+                GameplayTapEvent::None
+            },
         }
     }
 
@@ -314,16 +347,34 @@ mod tests {
 
         let outcome = controller.click_cell_with_outcome(cell(3, 1));
         let plan = build_presentation_plan(&outcome, &controller, &app_state);
-        let (update, present_mode) = gameplay_render(&plan);
+        let [
+            PresentationStep::Render(FrameRequest::Gameplay {
+                update: move_update,
+                present_mode: move_present_mode,
+            }),
+            PresentationStep::Render(FrameRequest::Gameplay {
+                update: solved_update,
+                present_mode: solved_present_mode,
+            }),
+        ] = plan.steps.as_slice()
+        else {
+            panic!("expected move render followed by solved render");
+        };
 
-        assert_eq!(*present_mode, PresentMode::Full);
+        assert_eq!(*move_present_mode, PresentMode::Full);
         assert_eq!(
-            update.cause,
+            move_update.cause,
             GameplayPresentationCause::BoxMoved {
                 path: vec![cell(2, 1), cell(3, 1)],
             }
         );
-        assert!(update.scene.board.is_solved());
+        assert!(move_update.scene.board.is_solved());
+        assert_eq!(*solved_present_mode, PresentMode::Full);
+        assert_eq!(
+            solved_update.cause,
+            GameplayPresentationCause::PuzzleSolved { clean: true }
+        );
+        assert!(solved_update.scene.board.is_solved());
     }
 
     #[derive(Default)]

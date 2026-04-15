@@ -12,15 +12,28 @@ pub enum GameplayKey {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum GameplayEvent {
+pub enum GameplayTapEffect {
+    None,
     SelectionChanged { selected_box: Option<BoardCell> },
     PlayerMoved { to: BoardCell },
     BoxMoved { path: Vec<BoardCell> },
     BoxRemoved { to: BoardCell },
     BoxMoveRejected,
-    UndoApplied,
-    Restarted,
-    LevelSolved { clean: bool },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GameplayTapEvent {
+    #[default]
+    None,
+    PuzzleSolved {
+        clean: bool,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GameplaySessionTapOutcome {
+    pub effect: GameplayTapEffect,
+    pub event: GameplayTapEvent,
 }
 
 pub struct GameplaySession {
@@ -66,10 +79,6 @@ impl GameplaySession {
         self.engine.can_undo()
     }
 
-    pub fn is_clean_solution(&self) -> bool {
-        self.engine.is_clean_solution()
-    }
-
     pub fn box_move_history(&self) -> Vec<Vec<(usize, usize)>> {
         self.engine
             .box_move_history_cells()
@@ -86,10 +95,9 @@ impl GameplaySession {
         self.engine.last_box_move_destination()
     }
 
-    pub fn click_cell_with_events(&mut self, clicked_cell: BoardCell) -> Vec<GameplayEvent> {
-        let mut events = Vec::new();
+    pub fn click_cell(&mut self, clicked_cell: BoardCell) -> GameplaySessionTapOutcome {
         if self.board.is_solved() {
-            return events;
+            return GameplaySessionTapOutcome::default();
         }
         let was_solved = self.board.is_solved();
 
@@ -100,63 +108,60 @@ impl GameplaySession {
                 Some(clicked_cell)
             };
             self.sync_board();
-            events.push(GameplayEvent::SelectionChanged {
+            return GameplaySessionTapOutcome::effect(GameplayTapEffect::SelectionChanged {
                 selected_box: self.selected_box,
             });
-            return events;
         }
 
         if let Some(from_cell) = self.selected_box.take() {
-            let outcome = if self.board.tile(clicked_cell) == TileKind::Void {
+            let effect = if self.board.tile(clicked_cell) == TileKind::Void {
                 self.engine
                     .push_box_into_void(from_cell, clicked_cell)
-                    .then_some(GameplayEvent::BoxRemoved { to: clicked_cell })
+                    .then_some(GameplayTapEffect::BoxRemoved { to: clicked_cell })
             } else {
                 self.engine
                     .move_box_to(from_cell, clicked_cell)
-                    .map(|path| GameplayEvent::BoxMoved { path })
+                    .map(|path| GameplayTapEffect::BoxMoved { path })
             };
 
             self.sync_board();
 
-            if let Some(event) = outcome {
-                events.push(event);
-                self.push_solved_event_if_needed(was_solved, &mut events);
+            if let Some(effect) = effect {
+                return GameplaySessionTapOutcome {
+                    effect,
+                    event: self.solved_event_if_needed(was_solved),
+                };
             } else {
-                events.push(GameplayEvent::BoxMoveRejected);
+                return GameplaySessionTapOutcome::effect(GameplayTapEffect::BoxMoveRejected);
             }
-            return events;
         }
 
         if self.engine.player() == clicked_cell {
-            return events;
+            return GameplaySessionTapOutcome::default();
         }
 
         if self.engine.move_player_to(clicked_cell) {
             self.sync_board();
-            events.push(GameplayEvent::PlayerMoved { to: clicked_cell });
-            return events;
+            return GameplaySessionTapOutcome::effect(GameplayTapEffect::PlayerMoved {
+                to: clicked_cell,
+            });
         }
-        events
+        GameplaySessionTapOutcome::default()
     }
 
-    pub fn on_key_with_events(&mut self, key: GameplayKey) -> Vec<GameplayEvent> {
-        let mut events = Vec::new();
+    pub fn on_key(&mut self, key: GameplayKey) {
         match key {
             GameplayKey::Backspace => {
                 if self.engine.undo().is_some() {
                     self.selected_box = None;
                     self.sync_board();
-                    events.push(GameplayEvent::UndoApplied);
                 }
             }
             GameplayKey::Escape => {
                 self.restart();
-                events.push(GameplayEvent::Restarted);
             }
             GameplayKey::Other => {}
         }
-        events
     }
 
     pub fn restart(&mut self) {
@@ -165,11 +170,13 @@ impl GameplaySession {
         self.sync_board();
     }
 
-    fn push_solved_event_if_needed(&self, was_solved: bool, events: &mut Vec<GameplayEvent>) {
+    fn solved_event_if_needed(&self, was_solved: bool) -> GameplayTapEvent {
         if !was_solved && self.board.is_solved() {
-            events.push(GameplayEvent::LevelSolved {
+            GameplayTapEvent::PuzzleSolved {
                 clean: self.engine.is_clean_solution(),
-            });
+            }
+        } else {
+            GameplayTapEvent::None
         }
     }
 
@@ -182,5 +189,23 @@ impl GameplaySession {
             self.selected_box,
             self.engine.is_level_solved(),
         );
+    }
+}
+
+impl Default for GameplaySessionTapOutcome {
+    fn default() -> Self {
+        Self {
+            effect: GameplayTapEffect::None,
+            event: GameplayTapEvent::None,
+        }
+    }
+}
+
+impl GameplaySessionTapOutcome {
+    fn effect(effect: GameplayTapEffect) -> Self {
+        Self {
+            effect,
+            event: GameplayTapEvent::None,
+        }
     }
 }

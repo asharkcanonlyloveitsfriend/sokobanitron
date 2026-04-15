@@ -398,7 +398,7 @@ mod tests {
             apply_action_and_render_in_context(&mut context, AppAction::AdvanceAfterSolved)
                 .unwrap();
 
-        assert_eq!(applied.persistence.resume_level_changed, Some(1));
+        assert_eq!(applied.persistence.resume_level_to_persist, Some(1));
         assert!(applied.presentation_plan.is_none());
         assert!(!applied.rendered_frame);
     }

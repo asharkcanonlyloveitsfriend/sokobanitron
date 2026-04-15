@@ -25,7 +25,7 @@ fn persist_runtime_changes(
 ) -> io::Result<()> {
     let mut errors = Vec::new();
 
-    if let Some(index) = applied.persistence.resume_level_changed
+    if let Some(index) = applied.persistence.resume_level_to_persist
         && let Err(err) = level_persistence.persist_resume_level(index)
     {
         errors.push(format!("persist resume level failed: {err}"));

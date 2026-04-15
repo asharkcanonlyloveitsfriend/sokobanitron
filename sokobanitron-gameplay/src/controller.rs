@@ -1,30 +1,18 @@
 use crate::board_cell::BoardCell;
 use crate::presenter::BoardView;
-use crate::session::{GameplayEvent, GameplayKey, GameplaySession};
+use crate::session::{GameplayKey, GameplaySession, GameplayTapEffect, GameplayTapEvent};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct GameplayControllerChanges {
     pub level_changed: Option<usize>,
-    pub resume_level_changed: Option<usize>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum GameplayTapEffect {
-    None,
-    SelectionChanged { selected_box: Option<BoardCell> },
-    PlayerMoved { to: BoardCell },
-    BoxMoved { path: Vec<BoardCell> },
-    BoxRemoved { to: BoardCell },
-    BoxMoveRejected,
+    pub resume_level_to_persist: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameplayTapOutcome {
     pub changes: GameplayControllerChanges,
     pub effect: GameplayTapEffect,
-    pub became_solved: bool,
-    pub dirty_solution: bool,
-    pub started_now: bool,
+    pub event: GameplayTapEvent,
 }
 
 pub struct GameplayController {
@@ -106,44 +94,39 @@ impl GameplayController {
         self.session = GameplaySession::from_level_ascii(self.levels[self.current_level].clone());
         GameplayControllerChanges {
             level_changed: Some(self.current_level),
-            resume_level_changed: None,
+            resume_level_to_persist: None,
         }
     }
 
     pub fn advance_after_win(&mut self, target_level: usize) -> GameplayControllerChanges {
         let mut changes = self.jump_to_level(target_level);
         if let Some(index) = self.set_resume_level_to_current_if_needed() {
-            changes.resume_level_changed = Some(index);
+            changes.resume_level_to_persist = Some(index);
         }
         changes
     }
 
     pub fn click_cell_with_outcome(&mut self, cell: BoardCell) -> GameplayTapOutcome {
         let was_started = self.session.is_started();
-        let was_solved = self.session.board().is_solved();
-        let session_events = self.session.click_cell_with_events(cell);
-        let effect = classify_tap_effect(&session_events);
-        let started_now = !was_started && self.session.is_started();
-        let is_solved = self.session.board().is_solved();
-        let became_solved = !was_solved && is_solved;
-        let dirty_solution = became_solved && !self.session.is_clean_solution();
+        let session_outcome = self.session.click_cell(cell);
+        let puzzle_started = !was_started && self.session.is_started();
 
         let mut changes = GameplayControllerChanges::default();
-        if started_now && let Some(index) = self.set_resume_level_to_current_if_needed() {
-            changes.resume_level_changed = Some(index);
+        if puzzle_started {
+            changes.resume_level_to_persist = self
+                .set_resume_level_to_current_if_needed()
+                .or(Some(self.current_level));
         }
 
         GameplayTapOutcome {
             changes,
-            effect,
-            became_solved,
-            dirty_solution,
-            started_now,
+            effect: session_outcome.effect,
+            event: session_outcome.event,
         }
     }
 
     pub fn on_key_with_changes(&mut self, key: GameplayKey) -> GameplayControllerChanges {
-        let _ = self.session.on_key_with_events(key);
+        self.session.on_key(key);
         GameplayControllerChanges::default()
     }
 
@@ -173,44 +156,10 @@ impl GameplayController {
     }
 }
 
-fn classify_tap_effect(events: &[GameplayEvent]) -> GameplayTapEffect {
-    if events
-        .iter()
-        .any(|event| matches!(event, GameplayEvent::BoxMoveRejected))
-    {
-        return GameplayTapEffect::BoxMoveRejected;
-    }
-    if let Some(to) = events.iter().find_map(|event| match event {
-        GameplayEvent::BoxRemoved { to } => Some(*to),
-        _ => None,
-    }) {
-        return GameplayTapEffect::BoxRemoved { to };
-    }
-    if let Some(path) = events.iter().find_map(|event| match event {
-        GameplayEvent::BoxMoved { path } => Some(path.clone()),
-        _ => None,
-    }) {
-        return GameplayTapEffect::BoxMoved { path };
-    }
-    if let Some(to) = events.iter().find_map(|event| match event {
-        GameplayEvent::PlayerMoved { to } => Some(*to),
-        _ => None,
-    }) {
-        return GameplayTapEffect::PlayerMoved { to };
-    }
-    if let Some(selected_box) = events.iter().find_map(|event| match event {
-        GameplayEvent::SelectionChanged { selected_box } => Some(*selected_box),
-        _ => None,
-    }) {
-        return GameplayTapEffect::SelectionChanged { selected_box };
-    }
-    GameplayTapEffect::None
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{GameplayController, GameplayTapEffect};
-    use crate::BoardCell;
+    use super::GameplayController;
+    use crate::{BoardCell, GameplayTapEffect, GameplayTapEvent};
 
     fn cell(x: u32, y: u32) -> BoardCell {
         BoardCell::new(x, y)
@@ -224,6 +173,7 @@ mod tests {
         let outcome = controller.click_cell_with_outcome(cell(4, 1));
 
         assert_eq!(outcome.effect, GameplayTapEffect::None);
+        assert_eq!(outcome.event, GameplayTapEvent::None);
     }
 
     #[test]
@@ -242,5 +192,39 @@ mod tests {
         let reject = controller.click_cell_with_outcome(cell(4, 1));
 
         assert_eq!(reject.effect, GameplayTapEffect::BoxMoveRejected);
+        assert_eq!(reject.event, GameplayTapEvent::None);
+    }
+
+    #[test]
+    fn first_meaningful_tap_updates_resume_level_without_emitting_event() {
+        let level = "#######\n#@ $. #\n#######".to_string();
+        let mut controller = GameplayController::new(vec![level], None);
+
+        let outcome = controller.click_cell_with_outcome(cell(2, 1));
+
+        assert_eq!(
+            outcome.effect,
+            GameplayTapEffect::PlayerMoved { to: cell(2, 1) }
+        );
+        assert_eq!(outcome.event, GameplayTapEvent::None);
+        assert_eq!(outcome.changes.resume_level_to_persist, Some(0));
+    }
+
+    #[test]
+    fn tap_that_starts_and_solves_only_emits_puzzle_solved_event() {
+        let level = "#####\n#@$.#\n#####".to_string();
+        let mut controller = GameplayController::new(vec![level], None);
+
+        let select = controller.click_cell_with_outcome(cell(2, 1));
+        let solved = controller.click_cell_with_outcome(cell(3, 1));
+
+        assert_eq!(select.event, GameplayTapEvent::None);
+        assert_eq!(
+            solved.effect,
+            GameplayTapEffect::BoxMoved {
+                path: vec![cell(2, 1), cell(3, 1)]
+            }
+        );
+        assert_eq!(solved.event, GameplayTapEvent::PuzzleSolved { clean: true });
     }
 }

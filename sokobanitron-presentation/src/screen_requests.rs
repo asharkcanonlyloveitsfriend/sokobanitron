@@ -38,6 +38,9 @@ pub enum GameplayPresentationCause {
         to: BoardCell,
     },
     BoxMoveRejected,
+    PuzzleSolved {
+        clean: bool,
+    },
     UndoApplied,
     Restarted,
 }

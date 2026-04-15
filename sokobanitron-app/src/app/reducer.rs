@@ -4,12 +4,12 @@ use super::state::{AppOverlay, AppScreen, AppState};
 use presentation::layout::{level_select_menu_start_index, level_set_select_start_index};
 use presentation::screen_requests::GameplayPresentationCause;
 use sokobanitron_gameplay::{
-    BoardCell, GameplayController, GameplayControllerChanges, GameplayTapEffect,
+    BoardCell, GameplayController, GameplayControllerChanges, GameplayTapEffect, GameplayTapEvent,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PersistenceUpdate {
-    pub resume_level_changed: Option<usize>,
+    pub resume_level_to_persist: Option<usize>,
     pub solved_level: Option<usize>,
 }
 
@@ -127,8 +127,8 @@ pub fn apply_action(
         AppAction::NoOp => {}
     }
 
-    if update.persistence.resume_level_changed.is_none() {
-        update.persistence.resume_level_changed = update.changes.resume_level_changed;
+    if update.persistence.resume_level_to_persist.is_none() {
+        update.persistence.resume_level_to_persist = update.changes.resume_level_to_persist;
     }
 
     update
@@ -182,12 +182,8 @@ fn apply_board_tap(
     let outcome = controller.click_cell_with_outcome(cell);
     update.changes = outcome.changes;
     update.gameplay_effect = Some(outcome.effect.clone());
-    update.persistence.resume_level_changed = if outcome.started_now {
-        Some(controller.current_level())
-    } else {
-        update.changes.resume_level_changed
-    };
-    if outcome.became_solved {
+    update.persistence.resume_level_to_persist = update.changes.resume_level_to_persist;
+    if matches!(outcome.event, GameplayTapEvent::PuzzleSolved { .. }) {
         update.persistence.solved_level = Some(controller.current_level());
     }
     update.presentation_plan = Some(build_presentation_plan(&outcome, controller, app_state));
@@ -447,7 +443,7 @@ mod tests {
         let mut preview_controller =
             GameplayController::new_at_level(vec![level.clone()], 0, Some(0));
         let preview_outcome = preview_controller.click_cell_with_outcome(cell(2, 1));
-        assert!(preview_outcome.started_now);
+        assert_eq!(preview_outcome.changes.resume_level_to_persist, Some(0));
 
         let mut controller = GameplayController::new_at_level(vec![level], 0, Some(0));
         let mut app_state = AppState::default();
@@ -458,7 +454,7 @@ mod tests {
             AppAction::TapBoardCell(cell(2, 1)),
         );
 
-        assert_eq!(update.persistence.resume_level_changed, Some(0));
+        assert_eq!(update.persistence.resume_level_to_persist, Some(0));
     }
 
     #[test]
@@ -475,7 +471,7 @@ mod tests {
         );
 
         assert_eq!(controller.current_level(), 1);
-        assert_eq!(update.persistence.resume_level_changed, Some(1));
+        assert_eq!(update.persistence.resume_level_to_persist, Some(1));
     }
 
     #[test]
@@ -752,18 +748,31 @@ mod tests {
         let Some(solved_plan) = solved_move.presentation_plan else {
             panic!("expected solved gameplay render");
         };
-        let [PresentationStep::Render(FrameRequest::Gameplay { update, .. })] =
-            solved_plan.steps.as_slice()
+        let [
+            PresentationStep::Render(FrameRequest::Gameplay {
+                update: move_update,
+                ..
+            }),
+            PresentationStep::Render(FrameRequest::Gameplay {
+                update: solved_update,
+                ..
+            }),
+        ] = solved_plan.steps.as_slice()
         else {
-            panic!("expected one gameplay render step");
+            panic!("expected move render followed by solved render");
         };
         assert_eq!(
-            update.cause,
+            move_update.cause,
             GameplayPresentationCause::BoxMoved {
                 path: vec![cell(2, 1), cell(3, 1)]
             }
         );
-        assert!(update.scene.board.is_solved());
+        assert!(move_update.scene.board.is_solved());
+        assert_eq!(
+            solved_update.cause,
+            GameplayPresentationCause::PuzzleSolved { clean: true }
+        );
+        assert!(solved_update.scene.board.is_solved());
 
         let restart = apply_action(&mut controller, &mut app_state, AppAction::Restart);
         let Some(restart_plan) = restart.presentation_plan else {
