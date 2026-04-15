@@ -1,5 +1,7 @@
 use super::GameplayAnimation;
-use crate::renderer::{Renderer, blit_rgba};
+use crate::renderer::{
+    Renderer, blit_premultiplied_gray_alpha, premultiply_straight_gray, rgba_to_gray,
+};
 use crate::screen_requests::GameplayScreenRequest;
 use sokobanitron_gameplay::BoardCell;
 
@@ -124,8 +126,8 @@ fn draw_tinted_player(
         return;
     };
     let icon = renderer.standard_player_bitmap(icon_size);
-    let tinted = tint_premultiplied_rgba(icon, color);
-    blit_rgba(
+    let tinted = tint_premultiplied_gray_alpha(icon, color);
+    blit_premultiplied_gray_alpha(
         frame, width, height, &tinted, icon_size, icon_size, player_x, player_y,
     );
 }
@@ -144,20 +146,42 @@ fn draw_tinted_box(
         return;
     };
     let icon = renderer.standard_box_bitmap(icon_size);
-    let tinted = tint_premultiplied_rgba(icon, color);
-    blit_rgba(
+    let tinted = tint_premultiplied_gray_alpha(icon, color);
+    blit_premultiplied_gray_alpha(
         frame, width, height, &tinted, icon_size, icon_size, box_x, box_y,
     );
 }
 
-fn tint_premultiplied_rgba(bitmap: &[u8], color: [u8; 4]) -> Vec<u8> {
+/// Recolors a premultiplied gray+alpha bitmap and returns the same premultiplied format.
+///
+/// `bitmap` is `[premultiplied_gray, alpha]` pairs. The tint color is straight RGBA; its alpha
+/// modulates the bitmap alpha before the output gray channel is premultiplied.
+fn tint_premultiplied_gray_alpha(bitmap: &[u8], color: [u8; 4]) -> Vec<u8> {
+    let color_alpha = color[3];
+    let color = rgba_to_gray(color);
     let mut tinted = Vec::with_capacity(bitmap.len());
-    for pixel in bitmap.chunks_exact(4) {
-        let alpha = (u16::from(pixel[3]) * u16::from(color[3]) / 255) as u8;
-        tinted.push((u16::from(color[0]) * u16::from(alpha) / 255) as u8);
-        tinted.push((u16::from(color[1]) * u16::from(alpha) / 255) as u8);
-        tinted.push((u16::from(color[2]) * u16::from(alpha) / 255) as u8);
+    for pixel in bitmap.chunks_exact(2) {
+        let alpha = (u16::from(pixel[1]) * u16::from(color_alpha) / 255) as u8;
+        tinted.push(premultiply_straight_gray(color, alpha));
         tinted.push(alpha);
     }
     tinted
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tint_premultiplied_gray_alpha;
+    use crate::renderer::blit_premultiplied_gray_alpha;
+
+    #[test]
+    fn tint_premultiplied_gray_alpha_preserves_composited_alpha_behavior() {
+        let bitmap = vec![200, 128];
+        let tinted = tint_premultiplied_gray_alpha(&bitmap, [200, 200, 200, 128]);
+        let mut frame = vec![100];
+
+        blit_premultiplied_gray_alpha(&mut frame, 1, 1, &tinted, 1, 1, 0, 0);
+
+        assert_eq!(tinted, vec![50, 64]);
+        assert_eq!(frame, vec![124]);
+    }
 }

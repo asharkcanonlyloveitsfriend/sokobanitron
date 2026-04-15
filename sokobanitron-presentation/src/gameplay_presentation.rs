@@ -155,7 +155,7 @@ mod tests {
         let mut state = GameplayPresentationState::new();
         state.replace_update(gameplay_scene(1));
         let mut renderer = Renderer::new();
-        let mut frame = vec![0; 64 * 64 * 4];
+        let mut frame = vec![0; 64 * 64];
 
         state.draw(&mut renderer, &mut frame, 64, 64);
 
@@ -169,8 +169,8 @@ mod tests {
         state.replace_update(update.clone());
         let mut state_renderer = Renderer::new();
         let mut direct_renderer = Renderer::new();
-        let mut state_frame = vec![0; 64 * 64 * 4];
-        let mut direct_frame = vec![0; 64 * 64 * 4];
+        let mut state_frame = vec![0; 64 * 64];
+        let mut direct_frame = vec![0; 64 * 64];
 
         state.draw(&mut state_renderer, &mut state_frame, 64, 64);
         direct_renderer.draw_gameplay_scene(&mut direct_frame, 64, 64, &update.scene);
@@ -184,8 +184,8 @@ mod tests {
         update.cause = GameplayPresentationCause::BoxMoveRejected;
         let mut state = GameplayPresentationState::new();
         let mut renderer = Renderer::new();
-        let mut waiting_frame = vec![0; 64 * 64 * 4];
-        let mut blinking_frame = vec![0; 64 * 64 * 4];
+        let mut waiting_frame = vec![0; 64 * 64];
+        let mut blinking_frame = vec![0; 64 * 64];
         let start = Instant::now();
 
         state.replace_update_at(update, start);
@@ -208,7 +208,7 @@ mod tests {
         update.cause = GameplayPresentationCause::BoxMoveRejected;
         let mut state = GameplayPresentationState::new();
         let mut renderer = Renderer::new();
-        let mut frame = vec![0; 64 * 64 * 4];
+        let mut frame = vec![0; 64 * 64];
         let start = Instant::now();
 
         state.replace_update_at(update.clone(), start);

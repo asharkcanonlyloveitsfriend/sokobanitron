@@ -2,7 +2,7 @@ use crate::assets::rasterize_svg;
 use crate::layout::BoardViewport;
 use sokobanitron_gameplay::{BoardCell, BoardView};
 
-use super::{BLACK, EntityVisualStyle, Renderer, WHITE, blit_rgba};
+use super::{BLACK, EntityVisualStyle, Renderer, WHITE, blit_premultiplied_gray_alpha};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BoxSpriteVariant {
@@ -47,7 +47,7 @@ impl Renderer {
         } else {
             self.box_bitmap(icon_size, BoxSpriteVariant::Standard)
         };
-        blit_rgba(
+        blit_premultiplied_gray_alpha(
             frame,
             frame_width,
             frame_height,
@@ -124,7 +124,7 @@ impl Renderer {
         let scaled_size = ((icon_size as f32 * scale).round() as u32).max(1);
         let offset = ((icon_size as f32 - scaled_size as f32) / 2.0).round() as i32;
         let icon = self.standard_box_bitmap(scaled_size);
-        blit_rgba(
+        blit_premultiplied_gray_alpha(
             frame,
             frame_width,
             frame_height,
@@ -158,7 +158,7 @@ impl Renderer {
             PlayerSpriteVariant::Standard
         };
         let icon = self.player_bitmap(icon_size, variant);
-        blit_rgba(
+        blit_premultiplied_gray_alpha(
             frame,
             frame_width,
             frame_height,
@@ -441,8 +441,8 @@ mod tests {
         let unsolved_viewport = fit_board_viewport_for_controls(64, 64, &unsolved_board);
         let mut solved_renderer = Renderer::new();
         let mut unsolved_renderer = Renderer::new();
-        let mut solved_frame = vec![0; 64 * 64 * 4];
-        let mut unsolved_frame = vec![0; 64 * 64 * 4];
+        let mut solved_frame = vec![0; 64 * 64];
+        let mut unsolved_frame = vec![0; 64 * 64];
 
         solved_renderer.draw_board_on_frame(
             &mut solved_frame,
@@ -472,7 +472,7 @@ mod tests {
     fn gameplay_scene_uses_solved_visuals_when_opted_in() {
         let request = gameplay_request(board(true), GameplayScreenMode::Normal);
         let mut renderer = Renderer::new();
-        let mut frame = vec![0; 64 * 64 * 4];
+        let mut frame = vec![0; 64 * 64];
 
         renderer.draw_gameplay_scene(&mut frame, 64, 64, &request);
 
@@ -484,7 +484,7 @@ mod tests {
     fn sleep_mode_keeps_sleeping_player_on_solved_gameplay_board() {
         let request = gameplay_request(board(true), GameplayScreenMode::Sleep);
         let mut renderer = Renderer::new();
-        let mut frame = vec![0; 64 * 64 * 4];
+        let mut frame = vec![0; 64 * 64];
 
         renderer.draw_gameplay_scene(&mut frame, 64, 64, &request);
 

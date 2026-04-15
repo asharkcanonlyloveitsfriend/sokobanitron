@@ -1,5 +1,5 @@
 use super::Renderer;
-use image::{ImageBuffer, Rgba, RgbaImage, imageops};
+use image::{GrayImage, ImageBuffer, Luma, imageops};
 
 impl Renderer {
     pub(crate) fn ensure_cached_background(&mut self, width: u32, height: u32) {
@@ -26,9 +26,9 @@ impl Renderer {
             (0, crop_y, src_w, crop_h)
         };
 
-        let cropped: RgbaImage =
+        let cropped: GrayImage =
             imageops::crop_imm(&self.source_background, crop_x, crop_y, crop_w, crop_h).to_image();
-        let resized: ImageBuffer<Rgba<u8>, Vec<u8>> =
+        let resized: ImageBuffer<Luma<u8>, Vec<u8>> =
             imageops::resize(&cropped, width, height, imageops::FilterType::Triangle);
 
         self.cached_background = resized.into_raw();

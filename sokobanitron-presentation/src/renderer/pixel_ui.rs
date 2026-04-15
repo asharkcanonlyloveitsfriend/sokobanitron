@@ -70,7 +70,7 @@ pub fn draw_icon_bits_in_rect(
     for (row_idx, row_bits) in icon_rows.iter().take(icon_size).enumerate() {
         for col_idx in 0..icon_size {
             if (row_bits >> ((icon_size - 1) - col_idx)) & 1 == 1 {
-                draw_rect_rgba(
+                draw_rect_gray(
                     frame,
                     width as usize,
                     height as usize,
@@ -100,7 +100,7 @@ fn draw_glyph(
     for (row_idx, row_bits) in glyph.iter().enumerate() {
         for col_idx in 0..5 {
             if (row_bits >> (4 - col_idx)) & 1 == 1 {
-                draw_rect_rgba(
+                draw_rect_gray(
                     frame,
                     width as usize,
                     height as usize,
@@ -284,7 +284,7 @@ fn glyph_pattern(ch: char) -> [u8; PIXEL_FONT_HEIGHT] {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_rect_rgba(
+fn draw_rect_gray(
     frame: &mut [u8],
     frame_width: usize,
     frame_height: usize,
@@ -297,13 +297,24 @@ fn draw_rect_rgba(
     let x_end = x.saturating_add(w).min(frame_width);
     let y_end = y.saturating_add(h).min(frame_height);
     for yy in y..y_end {
-        let row = yy * frame_width * 4;
+        let row = yy * frame_width;
         for xx in x..x_end {
-            let idx = row + xx * 4;
-            frame[idx] = color[0];
-            frame[idx + 1] = color[1];
-            frame[idx + 2] = color[2];
-            frame[idx + 3] = color[3];
+            let idx = row + xx;
+            frame[idx] = super::composite_straight_rgba_over_gray(frame[idx], color);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::draw_rect_gray;
+
+    #[test]
+    fn draw_rect_gray_composites_alpha() {
+        let mut frame = vec![100];
+
+        draw_rect_gray(&mut frame, 1, 1, 0, 0, 1, 1, [200, 200, 200, 128]);
+
+        assert_eq!(frame, vec![149]);
     }
 }

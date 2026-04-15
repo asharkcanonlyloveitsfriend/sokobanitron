@@ -37,6 +37,7 @@ const LEVEL_SETS_ROOT: &str = "tmp/level_sets";
 pub struct App {
     window: Option<Arc<Window>>,
     pub(crate) pixels: Option<Pixels<'static>>,
+    pub(crate) gray_frame: Vec<u8>,
     pub(crate) renderer: Renderer,
     pub(crate) gameplay_presentation: GameplayPresentationState,
     pub(crate) preview_boards: Vec<BoardView>,
@@ -72,6 +73,7 @@ impl App {
         Ok(Self {
             window: None,
             pixels: None,
+            gray_frame: vec![0; (INITIAL_WIDTH * INITIAL_HEIGHT) as usize],
             renderer: Renderer::new(),
             gameplay_presentation: GameplayPresentationState::new(),
             preview_boards,
@@ -206,6 +208,7 @@ impl ApplicationHandler for App {
         let size = window.inner_size();
         self.surface_width = size.width.max(1);
         self.surface_height = size.height.max(1);
+        self.gray_frame = vec![0; (self.surface_width as usize) * (self.surface_height as usize)];
         resize_gameplay_surface(
             &mut self.app_state.gameplay,
             self.surface_width,
@@ -247,6 +250,8 @@ impl ApplicationHandler for App {
                     self.surface_width,
                     self.surface_height,
                 );
+                self.gray_frame =
+                    vec![0; (self.surface_width as usize) * (self.surface_height as usize)];
                 resize_editor_surface(&mut self.app_state, self.surface_width, self.surface_height);
                 self.render_current();
             }
@@ -266,6 +271,8 @@ impl ApplicationHandler for App {
                         self.surface_width,
                         self.surface_height,
                     );
+                    self.gray_frame =
+                        vec![0; (self.surface_width as usize) * (self.surface_height as usize)];
                     resize_editor_surface(
                         &mut self.app_state,
                         self.surface_width,

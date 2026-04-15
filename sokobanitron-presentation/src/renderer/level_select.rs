@@ -195,7 +195,7 @@ mod tests {
     #[test]
     fn level_select_thumbnails_do_not_opt_into_solved_visuals() {
         let mut renderer = Renderer::new();
-        let mut frame = vec![0; 128 * 128 * 4];
+        let mut frame = vec![0; 128 * 128];
 
         renderer.draw_level_select_menu_contents(&mut frame, 128, 128, &[solved_board()], 0, 0);
 

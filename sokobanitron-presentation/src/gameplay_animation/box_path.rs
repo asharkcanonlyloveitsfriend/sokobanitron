@@ -1,6 +1,6 @@
 use super::GameplayAnimation;
+use crate::renderer::composite_straight_rgba_over_gray;
 use crate::screen_requests::GameplayScreenRequest;
-use resvg::tiny_skia::{LineCap, LineJoin, Paint, PathBuilder, PixmapMut, Stroke, Transform};
 use sokobanitron_gameplay::BoardCell;
 
 const SPEED_SCALE: f32 = 1.3;
@@ -69,28 +69,16 @@ impl GameplayAnimation for BoxPathAnimation {
         let start_x = sx + (ex - sx) * start_fraction;
         let start_y = sy + (ey - sy) * start_fraction;
 
-        let mut builder = PathBuilder::new();
-        builder.move_to(start_x, start_y);
-        for &(x, y) in &points[(start_segment + 1)..] {
-            builder.line_to(x, y);
+        // Use a deterministic grayscale-native stroke instead of the previous tiny-skia RGBA
+        // path. This is a simplified round-brush approximation, not an antialiased vector stroke.
+        // That tradeoff is acceptable for the transient box path cue and avoids reintroducing an
+        // RGBA render target.
+        let line_width = (scene.viewport.cell_size as f32 * 0.2).max(1.0);
+        let mut previous = (start_x, start_y);
+        for &next in &points[(start_segment + 1)..] {
+            draw_thick_line(frame, width, height, previous, next, line_width, PATH_COLOR);
+            previous = next;
         }
-        let Some(path) = builder.finish() else {
-            return;
-        };
-
-        let mut paint = Paint::default();
-        paint.set_color_rgba8(PATH_COLOR[0], PATH_COLOR[1], PATH_COLOR[2], PATH_COLOR[3]);
-        paint.anti_alias = true;
-
-        let stroke = Stroke {
-            width: scene.viewport.cell_size as f32 * 0.2,
-            line_cap: LineCap::Round,
-            line_join: LineJoin::Round,
-            ..Stroke::default()
-        };
-        let mut pixmap =
-            PixmapMut::from_bytes(frame, width, height).expect("frame dimensions must be valid");
-        pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
     }
 
     fn ticks_until_next_step(&self) -> Option<u32> {
@@ -103,5 +91,74 @@ impl GameplayAnimation for BoxPathAnimation {
 
     fn step(&mut self) {
         self.path_progress_segments += self.speed_per_tick;
+    }
+}
+
+fn draw_thick_line(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    start: (f32, f32),
+    end: (f32, f32),
+    thickness: f32,
+    color: [u8; 4],
+) {
+    let radius = thickness / 2.0;
+    let dx = end.0 - start.0;
+    let dy = end.1 - start.1;
+    let distance = (dx * dx + dy * dy).sqrt();
+    let steps = distance.ceil().max(1.0) as u32;
+    for step in 0..=steps {
+        let t = step as f32 / steps as f32;
+        draw_filled_circle(
+            frame,
+            width,
+            height,
+            start.0 + dx * t,
+            start.1 + dy * t,
+            radius,
+            color,
+        );
+    }
+}
+
+fn draw_filled_circle(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    cx: f32,
+    cy: f32,
+    radius: f32,
+    color: [u8; 4],
+) {
+    let min_x = (cx - radius).floor().max(0.0) as u32;
+    let max_x = (cx + radius).ceil().min(width.saturating_sub(1) as f32) as u32;
+    let min_y = (cy - radius).floor().max(0.0) as u32;
+    let max_y = (cy + radius).ceil().min(height.saturating_sub(1) as f32) as u32;
+    let radius_sq = radius * radius;
+    for y in min_y..=max_y {
+        for x in min_x..=max_x {
+            let px = x as f32 + 0.5;
+            let py = y as f32 + 0.5;
+            let dist_sq = (px - cx) * (px - cx) + (py - cy) * (py - cy);
+            if dist_sq <= radius_sq {
+                let idx = (y * width + x) as usize;
+                frame[idx] = composite_straight_rgba_over_gray(frame[idx], color);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::draw_filled_circle;
+
+    #[test]
+    fn filled_circle_composites_alpha_into_gray_frame() {
+        let mut frame = vec![100];
+
+        draw_filled_circle(&mut frame, 1, 1, 0.5, 0.5, 1.0, [200, 200, 200, 128]);
+
+        assert_eq!(frame, vec![149]);
     }
 }

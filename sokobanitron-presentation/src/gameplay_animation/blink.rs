@@ -1,5 +1,5 @@
 use super::GameplayAnimation;
-use crate::renderer::{Renderer, blit_rgba};
+use crate::renderer::{Renderer, blit_premultiplied_gray_alpha};
 use crate::screen_requests::GameplayScreenRequest;
 use sokobanitron_gameplay::BoardCell;
 
@@ -42,7 +42,7 @@ impl GameplayAnimation for BlinkAnimation {
             return;
         };
         let icon = renderer.player_blink_overlay_bitmap(icon_size);
-        blit_rgba(
+        blit_premultiplied_gray_alpha(
             frame, width, height, icon, icon_size, icon_size, player_x, player_y,
         );
     }

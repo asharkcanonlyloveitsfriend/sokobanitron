@@ -40,98 +40,98 @@ impl KindleApp {
                 present_mode,
             } => {
                 self.gameplay_presentation.replace_update(update.clone());
-                let (renderer, rgba, display) =
-                    (&mut self.renderer, &mut self.rgba_frame, &mut self.display);
+                let (renderer, gray, display) =
+                    (&mut self.renderer, &mut self.gray_frame, &mut self.display);
                 self.gameplay_presentation.draw(
                     renderer,
-                    rgba,
+                    gray,
                     config::WIDTH as u32,
                     config::HEIGHT as u32,
                 );
                 // Keep the Kindle partial-refresh path available as a documented platform
                 // capability even though gameplay no longer uses timed or animated presentation.
                 if matches!(present_mode, PresentMode::FastPartial) {
-                    display.present_rgba_fast_partial(rgba)
+                    display.present_gray_fast_partial(gray)
                 } else {
-                    display.present_rgba(rgba)
+                    display.present_gray(gray)
                 }
             }
             FrameRequest::GameplayMenu { screen } => {
-                let (renderer, rgba, display) =
-                    (&mut self.renderer, &mut self.rgba_frame, &mut self.display);
-                renderer.draw_background_only(rgba, config::WIDTH as u32, config::HEIGHT as u32);
-                draw_top_menu_toggle(rgba, config::WIDTH as u32, config::HEIGHT as u32, true);
+                let (renderer, gray, display) =
+                    (&mut self.renderer, &mut self.gray_frame, &mut self.display);
+                renderer.draw_background_only(gray, config::WIDTH as u32, config::HEIGHT as u32);
+                draw_top_menu_toggle(gray, config::WIDTH as u32, config::HEIGHT as u32, true);
                 if screen.show_change_level_set {
                     draw_gameplay_menu_level_set_button(
-                        rgba,
+                        gray,
                         config::WIDTH as u32,
                         config::HEIGHT as u32,
                     );
                 }
                 if let Some(icon) = screen.primary_action_icon {
                     draw_overlay_primary_action_button(
-                        rgba,
+                        gray,
                         config::WIDTH as u32,
                         config::HEIGHT as u32,
                         icon,
                         [220, 220, 220, 255],
                     );
                 }
-                display.present_rgba(rgba)
+                display.present_gray(gray)
             }
             FrameRequest::LevelSelect {
                 screen,
                 present_mode,
             } => {
-                let (renderer, rgba, display, preview_boards) = (
+                let (renderer, gray, display, preview_boards) = (
                     &mut self.renderer,
-                    &mut self.rgba_frame,
+                    &mut self.gray_frame,
                     &mut self.display,
                     &self.preview_boards,
                 );
-                renderer.draw_background_only(rgba, config::WIDTH as u32, config::HEIGHT as u32);
+                renderer.draw_background_only(gray, config::WIDTH as u32, config::HEIGHT as u32);
                 renderer.draw_level_select_menu_contents(
-                    rgba,
+                    gray,
                     config::WIDTH as u32,
                     config::HEIGHT as u32,
                     preview_boards,
                     screen.resume_level,
                     screen.page_start,
                 );
-                draw_controls_ui(rgba, config::WIDTH as u32, config::HEIGHT as u32, true);
+                draw_controls_ui(gray, config::WIDTH as u32, config::HEIGHT as u32, true);
                 if matches!(present_mode, PresentMode::FastPartial) {
-                    display.present_rgba_fast_partial(rgba)
+                    display.present_gray_fast_partial(gray)
                 } else {
-                    display.present_rgba(rgba)
+                    display.present_gray(gray)
                 }
             }
             FrameRequest::LevelSetSelect {
                 screen,
                 present_mode,
             } => {
-                let (renderer, rgba, display) =
-                    (&mut self.renderer, &mut self.rgba_frame, &mut self.display);
-                renderer.draw_background_only(rgba, config::WIDTH as u32, config::HEIGHT as u32);
+                let (renderer, gray, display) =
+                    (&mut self.renderer, &mut self.gray_frame, &mut self.display);
+                renderer.draw_background_only(gray, config::WIDTH as u32, config::HEIGHT as u32);
                 renderer.draw_level_set_select_menu_contents(
-                    rgba,
+                    gray,
                     config::WIDTH as u32,
                     config::HEIGHT as u32,
                     screen,
                 );
-                draw_controls_ui(rgba, config::WIDTH as u32, config::HEIGHT as u32, true);
+                draw_controls_ui(gray, config::WIDTH as u32, config::HEIGHT as u32, true);
                 if matches!(present_mode, PresentMode::FastPartial) {
-                    display.present_rgba_fast_partial(rgba)
+                    display.present_gray_fast_partial(gray)
                 } else {
-                    display.present_rgba(rgba)
+                    display.present_gray(gray)
                 }
             }
             FrameRequest::Editor { .. } | FrameRequest::EditorMenu { .. } => {
-                let (renderer, rgba, display) =
-                    (&mut self.renderer, &mut self.rgba_frame, &mut self.display);
+                let (renderer, gray, display) =
+                    (&mut self.renderer, &mut self.gray_frame, &mut self.display);
                 // Kindle still opts out of editor support; keep the fallback explicit until
                 // that client is migrated onto a real editor presentation path.
-                renderer.draw_background_only(rgba, config::WIDTH as u32, config::HEIGHT as u32);
-                display.present_rgba(rgba)
+                renderer.draw_background_only(gray, config::WIDTH as u32, config::HEIGHT as u32);
+                display.present_gray(gray)
             }
         }
     }

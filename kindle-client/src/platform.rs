@@ -172,8 +172,8 @@ pub struct Region {
 
 pub struct Display {
     fb: File,
-    previous_rgba: Vec<u8>,
-    has_previous_rgba: bool,
+    previous_gray: Vec<u8>,
+    has_previous_gray: bool,
     framebuffer: Vec<u8>,
     update_marker: u32,
     update_abi: Option<UpdateAbi>,
@@ -189,12 +189,12 @@ impl Display {
         let _ = configure_update_mode(&fb);
         let update_abi = probe_update_abi(&fb);
         let blank_frame = vec![0xFFu8; config::STRIDE * config::HEIGHT];
-        let blank_rgba = vec![0xFFu8; config::WIDTH * config::HEIGHT * 4];
+        let blank_gray = vec![0xFFu8; config::WIDTH * config::HEIGHT];
 
         Ok(Self {
             fb,
-            previous_rgba: blank_rgba,
-            has_previous_rgba: false,
+            previous_gray: blank_gray,
+            has_previous_gray: false,
             framebuffer: blank_frame,
             update_marker: 1,
             update_abi,
@@ -202,31 +202,31 @@ impl Display {
         })
     }
 
-    pub fn present_rgba(&mut self, rgba: &[u8]) -> Result<()> {
-        self.present_rgba_inner(rgba, None)
+    pub fn present_gray(&mut self, gray: &[u8]) -> Result<()> {
+        self.present_gray_inner(gray, None)
     }
 
-    pub fn present_rgba_fast_partial(&mut self, rgba: &[u8]) -> Result<()> {
-        self.present_rgba_inner(rgba, Some(WAVEFORM_MODE_DU))
+    pub fn present_gray_fast_partial(&mut self, gray: &[u8]) -> Result<()> {
+        self.present_gray_inner(gray, Some(WAVEFORM_MODE_DU))
     }
 
     pub fn force_full_refresh_next(&mut self) {
-        self.has_previous_rgba = false;
+        self.has_previous_gray = false;
     }
 
-    fn present_rgba_inner(&mut self, rgba: &[u8], partial_waveform: Option<u32>) -> Result<()> {
-        let dirty = if self.has_previous_rgba {
-            update_grayscale_framebuffer_from_rgba_diff(
-                rgba,
-                self.previous_rgba.as_slice(),
+    fn present_gray_inner(&mut self, gray: &[u8], partial_waveform: Option<u32>) -> Result<()> {
+        let dirty = if self.has_previous_gray {
+            update_grayscale_framebuffer_from_gray_diff(
+                gray,
+                self.previous_gray.as_slice(),
                 &mut self.framebuffer,
             )
         } else {
-            rgba_to_grayscale_framebuffer_full(rgba, &mut self.framebuffer);
+            copy_gray_framebuffer_full(gray, &mut self.framebuffer);
             None
         };
 
-        if self.has_previous_rgba && dirty.is_none() {
+        if self.has_previous_gray && dirty.is_none() {
             return Ok(());
         }
 
@@ -237,15 +237,15 @@ impl Display {
         match dirty {
             None => {
                 self.request_full_refresh()?;
-                self.previous_rgba.copy_from_slice(rgba);
+                self.previous_gray.copy_from_slice(gray);
             }
             Some(region) => {
                 self.request_partial_refresh(region, partial_waveform)?;
-                copy_rgba_region(rgba, &mut self.previous_rgba, region);
+                copy_gray_region(gray, &mut self.previous_gray, region);
             }
         }
 
-        self.has_previous_rgba = true;
+        self.has_previous_gray = true;
         Ok(())
     }
 
@@ -819,21 +819,19 @@ fn send_update_ioctl(
     Ok(())
 }
 
-fn rgba_to_grayscale_framebuffer_full(rgba: &[u8], framebuffer: &mut [u8]) {
+fn copy_gray_framebuffer_full(gray: &[u8], framebuffer: &mut [u8]) {
     for y in 0..config::HEIGHT {
-        let src_row = y * config::WIDTH * 4;
+        let src_row = y * config::WIDTH;
         let dst_row = y * config::STRIDE;
-        for x in 0..config::WIDTH {
-            let i = src_row + x * 4;
-            framebuffer[dst_row + x] = rgb_to_gray(rgba[i], rgba[i + 1], rgba[i + 2]);
-        }
+        framebuffer[dst_row..dst_row + config::WIDTH]
+            .copy_from_slice(&gray[src_row..src_row + config::WIDTH]);
         framebuffer[dst_row + config::WIDTH..dst_row + config::STRIDE].fill(0xFF);
     }
 }
 
-fn update_grayscale_framebuffer_from_rgba_diff(
-    rgba: &[u8],
-    previous_rgba: &[u8],
+fn update_grayscale_framebuffer_from_gray_diff(
+    gray: &[u8],
+    previous_gray: &[u8],
     framebuffer: &mut [u8],
 ) -> Option<Region> {
     let mut min_x = config::WIDTH;
@@ -843,19 +841,19 @@ fn update_grayscale_framebuffer_from_rgba_diff(
     let mut found = false;
 
     for y in 0..config::HEIGHT {
-        let src_row = y * config::WIDTH * 4;
+        let src_row = y * config::WIDTH;
         let dst_row = y * config::STRIDE;
         for x in 0..config::WIDTH {
-            let i = src_row + x * 4;
-            let previous = &previous_rgba[i..i + 4];
-            let current = &rgba[i..i + 4];
+            let i = src_row + x;
+            let previous = previous_gray[i];
+            let current = gray[i];
             if current != previous {
                 found = true;
                 min_x = min_x.min(x);
                 min_y = min_y.min(y);
                 max_x = max_x.max(x);
                 max_y = max_y.max(y);
-                framebuffer[dst_row + x] = rgb_to_gray(rgba[i], rgba[i + 1], rgba[i + 2]);
+                framebuffer[dst_row + x] = current;
             }
         }
     }
@@ -872,25 +870,17 @@ fn update_grayscale_framebuffer_from_rgba_diff(
     })
 }
 
-fn copy_rgba_region(rgba: &[u8], previous_rgba: &mut [u8], region: Region) {
+fn copy_gray_region(gray: &[u8], previous_gray: &mut [u8], region: Region) {
     let left = region.left.min(config::WIDTH);
     let top = region.top.min(config::HEIGHT);
     let right = (region.left + region.width).min(config::WIDTH);
     let bottom = (region.top + region.height).min(config::HEIGHT);
 
     for y in top..bottom {
-        let row_start = (y * config::WIDTH + left) * 4;
-        let row_end = (y * config::WIDTH + right) * 4;
-        previous_rgba[row_start..row_end].copy_from_slice(&rgba[row_start..row_end]);
+        let row_start = y * config::WIDTH + left;
+        let row_end = y * config::WIDTH + right;
+        previous_gray[row_start..row_end].copy_from_slice(&gray[row_start..row_end]);
     }
-}
-
-#[inline]
-fn rgb_to_gray(r: u8, g: u8, b: u8) -> u8 {
-    let r = r as u16;
-    let g = g as u16;
-    let b = b as u16;
-    ((77 * r + 150 * g + 29 * b) >> 8) as u8
 }
 
 fn write_full_framebuffer(fb: &File, frame: &[u8]) -> Result<()> {

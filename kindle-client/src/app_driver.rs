@@ -36,7 +36,7 @@ enum SleepSyncOutcome {
 pub struct KindleApp {
     pub(crate) renderer: Renderer,
     pub(crate) gameplay_presentation: GameplayPresentationState,
-    pub(crate) rgba_frame: Vec<u8>,
+    pub(crate) gray_frame: Vec<u8>,
     sleep_state: AppSleepState,
     pub(crate) preview_boards: Vec<BoardView>,
     pub(crate) controller: GameplayController,
@@ -79,7 +79,7 @@ impl KindleApp {
             gameplay_presentation: GameplayPresentationState::with_config(
                 GameplayPresentationConfig::blink_only(),
             ),
-            rgba_frame: vec![0; config::WIDTH * config::HEIGHT * 4],
+            gray_frame: vec![0; config::WIDTH * config::HEIGHT],
             sleep_state: AppSleepState::Awake,
             preview_boards,
             controller,
@@ -129,15 +129,15 @@ impl KindleApp {
     }
 
     fn render_active_gameplay_presentation(&mut self) -> Result<()> {
-        let (renderer, rgba, display) =
-            (&mut self.renderer, &mut self.rgba_frame, &mut self.display);
+        let (renderer, gray, display) =
+            (&mut self.renderer, &mut self.gray_frame, &mut self.display);
         self.gameplay_presentation.draw(
             renderer,
-            rgba,
+            gray,
             config::WIDTH as u32,
             config::HEIGHT as u32,
         );
-        display.present_rgba_fast_partial(rgba)
+        display.present_gray_fast_partial(gray)
     }
 
     fn sync_sleep_state(&mut self) -> Result<SleepSyncOutcome> {

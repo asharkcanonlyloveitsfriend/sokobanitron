@@ -16,7 +16,7 @@ mod pixel_ui;
 mod pixels;
 mod tiles;
 
-use image::RgbaImage;
+use image::GrayImage;
 use sokobanitron_gameplay::BoardView;
 use std::collections::HashMap;
 
@@ -30,7 +30,10 @@ pub use pixel_ui::{
     PIXEL_FONT_HEIGHT, draw_centered_text_in_rect, draw_icon_bits_in_rect, draw_text,
     measure_text_width,
 };
-pub(crate) use pixels::blit_rgba;
+pub(crate) use pixels::{
+    blit_premultiplied_gray_alpha, composite_straight_rgba_over_gray, premultiply_straight_gray,
+    rgba_to_gray,
+};
 
 pub type Rgba = [u8; 4];
 
@@ -199,7 +202,7 @@ impl RendererTheme {
 
 pub struct Renderer {
     pub(crate) theme: RendererTheme,
-    pub(crate) source_background: RgbaImage,
+    pub(crate) source_background: GrayImage,
     pub(crate) cached_background: Vec<u8>,
     pub(crate) cached_width: u32,
     pub(crate) cached_height: u32,
@@ -226,7 +229,7 @@ impl Renderer {
     pub fn with_theme(theme: RendererTheme) -> Self {
         let source_background = image::load_from_memory(BG_SPACE_PNG)
             .expect("failed to decode bg_space.png")
-            .into_rgba8();
+            .into_luma8();
 
         Self {
             theme,
@@ -495,7 +498,7 @@ impl Renderer {
             return;
         }
         self.ensure_cached_background(width, height);
-        copy_rect_rgba(
+        copy_rect_gray(
             frame,
             width,
             height,
@@ -518,7 +521,7 @@ enum BoardBaseLayer {
     Tiles,
 }
 
-fn copy_rect_rgba(
+fn copy_rect_gray(
     dst: &mut [u8],
     dst_width: u32,
     dst_height: u32,
@@ -534,10 +537,10 @@ fn copy_rect_rgba(
         return;
     }
 
-    let row_bytes = (end_x - start_x) * 4;
+    let row_bytes = end_x - start_x;
     for y in start_y..end_y {
-        let dst_row_start = ((y * dst_width as usize) + start_x) * 4;
-        let src_row_start = ((y * src_width as usize) + start_x) * 4;
+        let dst_row_start = (y * dst_width as usize) + start_x;
+        let src_row_start = (y * src_width as usize) + start_x;
         let dst_row_end = dst_row_start + row_bytes;
         let src_row_end = src_row_start + row_bytes;
         dst[dst_row_start..dst_row_end].copy_from_slice(&src[src_row_start..src_row_end]);

@@ -36,7 +36,7 @@ const BUTTON_TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
 pub struct AndroidApp {
     renderer: GameplayRenderer,
     gameplay_presentation: GameplayPresentationState,
-    rgba_frame: Vec<u8>,
+    gray_frame: Vec<u8>,
     current_request: FrameRequest,
     frame_dirty: bool,
     preview_boards: Vec<BoardView>,
@@ -89,7 +89,7 @@ impl AndroidApp {
         Ok(Self {
             renderer: Renderer::new(),
             gameplay_presentation: GameplayPresentationState::new(),
-            rgba_frame: allocate_rgba_frame(surface_width, surface_height),
+            gray_frame: allocate_gray_frame(surface_width, surface_height),
             current_request,
             frame_dirty: true,
             preview_boards,
@@ -108,7 +108,7 @@ impl AndroidApp {
     pub fn resize(&mut self, surface_width: u32, surface_height: u32) {
         self.surface_width = surface_width.max(1);
         self.surface_height = surface_height.max(1);
-        self.rgba_frame = allocate_rgba_frame(self.surface_width, self.surface_height);
+        self.gray_frame = allocate_gray_frame(self.surface_width, self.surface_height);
         resize_gameplay_surface(
             &mut self.app_state.gameplay,
             self.surface_width,
@@ -151,7 +151,7 @@ impl AndroidApp {
         let surface_height = self.surface_height;
         let apply_request =
             self.applied_presentation_generation != Some(self.presentation_generation);
-        let mut frame = std::mem::take(&mut self.rgba_frame);
+        let mut frame = std::mem::take(&mut self.gray_frame);
         self.render_request_into(
             &request,
             &mut frame,
@@ -159,8 +159,8 @@ impl AndroidApp {
             surface_height,
             apply_request,
         );
-        let presented = window.present_rgba(&frame, surface_width, surface_height);
-        self.rgba_frame = frame;
+        let presented = window.present_gray(&frame, surface_width, surface_height);
+        self.gray_frame = frame;
         self.native_window = Some(window);
         if presented {
             self.applied_presentation_generation = Some(self.presentation_generation);
@@ -388,13 +388,12 @@ fn build_android_frame_request(
     }
 }
 
-fn allocate_rgba_frame(surface_width: u32, surface_height: u32) -> Vec<u8> {
-    vec![0; frame_len(surface_width, surface_height, 4)]
+fn allocate_gray_frame(surface_width: u32, surface_height: u32) -> Vec<u8> {
+    vec![0; frame_len(surface_width, surface_height)]
 }
 
-fn frame_len(surface_width: u32, surface_height: u32, channels: usize) -> usize {
+fn frame_len(surface_width: u32, surface_height: u32) -> usize {
     usize::try_from(surface_width)
         .unwrap_or(1)
         .saturating_mul(usize::try_from(surface_height).unwrap_or(1))
-        .saturating_mul(channels)
 }

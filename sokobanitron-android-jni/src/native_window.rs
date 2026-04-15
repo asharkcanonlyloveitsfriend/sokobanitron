@@ -76,24 +76,21 @@ mod imp {
             }
         }
 
-        pub fn present_rgba(&mut self, rgba: &[u8], width: u32, height: u32) -> bool {
+        pub fn present_gray(&mut self, gray: &[u8], width: u32, height: u32) -> bool {
             let width_px = usize::try_from(width).unwrap_or(0);
             let height_px = usize::try_from(height).unwrap_or(0);
-            let Some(expected_len) = width_px
-                .checked_mul(height_px)
-                .and_then(|pixels| pixels.checked_mul(4))
-            else {
+            let Some(expected_len) = width_px.checked_mul(height_px) else {
                 return false;
             };
-            if rgba.len() < expected_len {
+            if gray.len() < expected_len {
                 return false;
             }
-            self.present_staged(rgba, width_px, height_px)
+            self.present_staged(gray, width_px, height_px)
         }
 
         fn present_staged(
             &mut self,
-            staging_rgba: &[u8],
+            staging_gray: &[u8],
             width_px: usize,
             height_px: usize,
         ) -> bool {
@@ -111,17 +108,20 @@ mod imp {
                 return false;
             }
 
-            let row_bytes = width_px.saturating_mul(4);
             let stride_bytes = stride_pixels.saturating_mul(4);
             for row in 0..height_px {
-                let src_offset = row.saturating_mul(row_bytes);
+                let src_offset = row.saturating_mul(width_px);
                 let dst_offset = row.saturating_mul(stride_bytes);
-                unsafe {
-                    ptr::copy_nonoverlapping(
-                        staging_rgba.as_ptr().add(src_offset),
-                        bits.as_ptr().add(dst_offset),
-                        row_bytes,
-                    );
+                for col in 0..width_px {
+                    let gray = staging_gray[src_offset + col];
+                    let dst = dst_offset + col * 4;
+                    unsafe {
+                        let out = bits.as_ptr().add(dst);
+                        *out = gray;
+                        *out.add(1) = gray;
+                        *out.add(2) = gray;
+                        *out.add(3) = 255;
+                    }
                 }
             }
 
@@ -170,7 +170,7 @@ mod imp {
             false
         }
 
-        pub fn present_rgba(&mut self, _rgba: &[u8], _width: u32, _height: u32) -> bool {
+        pub fn present_gray(&mut self, _gray: &[u8], _width: u32, _height: u32) -> bool {
             false
         }
     }

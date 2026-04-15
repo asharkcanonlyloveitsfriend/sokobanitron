@@ -245,7 +245,7 @@ mod tests {
             can_restart: false,
         };
         let mut renderer = Renderer::new();
-        let mut frame = vec![0; 64 * 64 * 4];
+        let mut frame = vec![0; 64 * 64];
 
         renderer.draw_editor_screen(&mut frame, 64, 64, &request);
 

@@ -27,13 +27,14 @@ impl App {
 
     pub(crate) fn render_active_gameplay_presentation(&mut self) {
         if let Some(pixels) = &mut self.pixels {
-            let frame = pixels.frame_mut();
+            let frame = &mut self.gray_frame;
             self.gameplay_presentation.draw(
                 &mut self.renderer,
                 frame,
                 self.surface_width,
                 self.surface_height,
             );
+            copy_gray_to_rgba(frame, pixels.frame_mut());
             pixels.render().expect("render");
             if self.gameplay_presentation.has_active_animation() {
                 self.request_window_redraw();
@@ -46,13 +47,14 @@ impl App {
             FrameRequest::Gameplay { update, .. } => {
                 if let Some(pixels) = &mut self.pixels {
                     self.gameplay_presentation.replace_update(update.clone());
-                    let frame = pixels.frame_mut();
+                    let frame = &mut self.gray_frame;
                     self.gameplay_presentation.draw(
                         &mut self.renderer,
                         frame,
                         self.surface_width,
                         self.surface_height,
                     );
+                    copy_gray_to_rgba(frame, pixels.frame_mut());
                     pixels.render().expect("render");
                     if self.gameplay_presentation.has_active_animation() {
                         self.request_window_redraw();
@@ -61,7 +63,7 @@ impl App {
             }
             FrameRequest::GameplayMenu { screen } => {
                 if let Some(pixels) = &mut self.pixels {
-                    let frame = pixels.frame_mut();
+                    let frame = &mut self.gray_frame;
                     self.renderer.draw_background_only(
                         frame,
                         self.surface_width,
@@ -84,12 +86,13 @@ impl App {
                             BUTTON_TEXT_COLOR,
                         );
                     }
+                    copy_gray_to_rgba(frame, pixels.frame_mut());
                     pixels.render().expect("render");
                 }
             }
             FrameRequest::LevelSelect { screen, .. } => {
                 if let Some(pixels) = &mut self.pixels {
-                    let frame = pixels.frame_mut();
+                    let frame = &mut self.gray_frame;
                     self.renderer.draw_background_only(
                         frame,
                         self.surface_width,
@@ -104,12 +107,13 @@ impl App {
                         screen.page_start,
                     );
                     draw_controls_ui(frame, self.surface_width, self.surface_height, true);
+                    copy_gray_to_rgba(frame, pixels.frame_mut());
                     pixels.render().expect("render");
                 }
             }
             FrameRequest::LevelSetSelect { screen, .. } => {
                 if let Some(pixels) = &mut self.pixels {
-                    let frame = pixels.frame_mut();
+                    let frame = &mut self.gray_frame;
                     self.renderer.draw_background_only(
                         frame,
                         self.surface_width,
@@ -122,35 +126,47 @@ impl App {
                         screen,
                     );
                     draw_controls_ui(frame, self.surface_width, self.surface_height, true);
+                    copy_gray_to_rgba(frame, pixels.frame_mut());
                     pixels.render().expect("render");
                 }
             }
             FrameRequest::Editor { screen } => {
                 if let Some(pixels) = &mut self.pixels {
-                    let frame = pixels.frame_mut();
+                    let frame = &mut self.gray_frame;
                     self.renderer.draw_editor_screen(
                         frame,
                         self.surface_width,
                         self.surface_height,
                         screen,
                     );
+                    copy_gray_to_rgba(frame, pixels.frame_mut());
                     pixels.render().expect("render");
                 }
             }
             FrameRequest::EditorMenu { screen } => {
                 if let Some(pixels) = &mut self.pixels {
-                    let frame = pixels.frame_mut();
+                    let frame = &mut self.gray_frame;
                     self.renderer.draw_editor_menu(
                         frame,
                         self.surface_width,
                         self.surface_height,
                         screen,
                     );
+                    copy_gray_to_rgba(frame, pixels.frame_mut());
                     pixels.render().expect("render");
                 }
             }
         }
         Ok(())
+    }
+}
+
+fn copy_gray_to_rgba(gray: &[u8], rgba: &mut [u8]) {
+    for (src, dst) in gray.iter().zip(rgba.chunks_exact_mut(4)) {
+        dst[0] = *src;
+        dst[1] = *src;
+        dst[2] = *src;
+        dst[3] = 255;
     }
 }
 
