@@ -115,7 +115,7 @@ pub fn apply_action(
             if matches!(app_state.ui.screen, AppScreen::Gameplay)
                 && let Some(next_level) = controller.peek_level(1)
             {
-                update.changes = controller.advance_after_win(next_level);
+                apply_advance_after_solved(controller, app_state, &mut update, next_level);
             }
         }
         AppAction::TapBoardCell(cell) => {
@@ -162,6 +162,21 @@ fn apply_undo_command(
     ));
 }
 
+fn apply_advance_after_solved(
+    controller: &mut GameplayController,
+    app_state: &AppState,
+    update: &mut AppUpdate,
+    next_level: usize,
+) {
+    update.changes = controller.advance_after_win(next_level);
+    update.presentation_plan = Some(gameplay_presentation_plan(
+        controller,
+        app_state,
+        GameplayPresentationCause::CurrentState,
+        super::presentation::PresentMode::Full,
+    ));
+}
+
 fn apply_board_tap(
     controller: &mut GameplayController,
     app_state: &mut AppState,
@@ -173,8 +188,11 @@ fn apply_board_tap(
     }
 
     if controller.board().is_solved() {
+        if controller.board().player() == Some(cell) {
+            return;
+        }
         if let Some(next_level) = controller.peek_level(1) {
-            update.changes = controller.advance_after_win(next_level);
+            apply_advance_after_solved(controller, app_state, update, next_level);
         }
         return;
     }
@@ -459,7 +477,38 @@ mod tests {
 
     #[test]
     fn board_tap_action_advances_when_board_is_solved() {
-        let solved_level = "###\n#@#\n###".to_string();
+        let solved_level = "#####\n#@  #\n#   #\n#####".to_string();
+        let mut controller =
+            GameplayController::new(vec![solved_level.clone(), solved_level], None);
+        let mut app_state = AppState::default();
+
+        let update = apply_action(
+            &mut controller,
+            &mut app_state,
+            AppAction::TapBoardCell(cell(2, 1)),
+        );
+
+        assert_eq!(controller.current_level(), 1);
+        assert_eq!(update.persistence.resume_level_to_persist, Some(1));
+        let Some(plan) = update.presentation_plan else {
+            panic!("expected gameplay render for next level");
+        };
+        let [
+            PresentationStep::Render(FrameRequest::Gameplay {
+                update: render_update,
+                ..
+            }),
+        ] = plan.steps.as_slice()
+        else {
+            panic!("expected one gameplay render step");
+        };
+        assert_eq!(render_update.cause, GameplayPresentationCause::CurrentState);
+        assert_eq!(render_update.scene.level_number, 2);
+    }
+
+    #[test]
+    fn board_tap_on_solved_player_does_not_advance() {
+        let solved_level = "#####\n#@  #\n#   #\n#####".to_string();
         let mut controller =
             GameplayController::new(vec![solved_level.clone(), solved_level], None);
         let mut app_state = AppState::default();
@@ -470,8 +519,10 @@ mod tests {
             AppAction::TapBoardCell(cell(1, 1)),
         );
 
-        assert_eq!(controller.current_level(), 1);
-        assert_eq!(update.persistence.resume_level_to_persist, Some(1));
+        assert_eq!(controller.current_level(), 0);
+        assert_eq!(update.changes, Default::default());
+        assert_eq!(update.persistence, Default::default());
+        assert!(update.presentation_plan.is_none());
     }
 
     #[test]

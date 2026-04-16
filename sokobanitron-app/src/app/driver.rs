@@ -391,7 +391,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_action_and_render_returns_resume_level_update() {
+    fn apply_action_and_render_advances_after_solved_and_renders_new_level() {
         let mut context = TestContext::new();
 
         let applied =
@@ -399,8 +399,17 @@ mod tests {
                 .unwrap();
 
         assert_eq!(applied.persistence.resume_level_to_persist, Some(1));
-        assert!(applied.presentation_plan.is_none());
-        assert!(!applied.rendered_frame);
+        assert!(applied.presentation_plan.is_some());
+        assert!(applied.rendered_frame);
+        assert_eq!(context.rendered_frames.len(), 1);
+        let FrameRequest::Gameplay { update, .. } = &context.rendered_frames[0] else {
+            panic!("expected gameplay frame");
+        };
+        assert_eq!(
+            update.cause,
+            presentation::screen_requests::GameplayPresentationCause::CurrentState
+        );
+        assert_eq!(update.scene.level_number, 2);
     }
 
     #[test]
