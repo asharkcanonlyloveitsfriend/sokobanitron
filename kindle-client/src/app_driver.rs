@@ -8,7 +8,7 @@ use sokobanitron_app::{
     },
     gameplay::{
         interpret_gameplay_pointer_event, resize_gameplay_surface, set_gameplay_level_sets,
-        set_gameplay_touch_slop,
+        set_gameplay_max_cell_size, set_gameplay_touch_slop,
     },
     level_bootstrap::load_initial_levels_for_app,
     persistence::LevelPersistence,
@@ -19,6 +19,7 @@ use std::io::Result;
 
 const TOUCH_POINTER_ID: u64 = 1;
 const KINDLE_GAMEPLAY_TAP_SLOP_PX: i32 = 24;
+const KINDLE_GAMEPLAY_MAX_CELL_SIZE: u32 = 178;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AppSleepState {
@@ -68,6 +69,7 @@ impl KindleApp {
             config::WIDTH as u32,
             config::HEIGHT as u32,
         );
+        set_gameplay_max_cell_size(&mut app_state.gameplay, KINDLE_GAMEPLAY_MAX_CELL_SIZE);
         set_gameplay_touch_slop(&mut app_state.gameplay, KINDLE_GAMEPLAY_TAP_SLOP_PX);
         set_gameplay_level_sets(
             &mut app_state.gameplay,

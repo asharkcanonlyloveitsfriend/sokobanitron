@@ -5,17 +5,19 @@
 
 use crate::persistence::LevelSetCatalogEntry;
 use crate::shared::{DoubleTapTracker, SinglePointerGestureState};
-use presentation::layout::{BoardViewport, fit_board_viewport_for_controls};
+use presentation::layout::{BoardViewport, fit_board_viewport_for_controls_capped};
 use sokobanitron_gameplay::{BoardCell, BoardView};
 use std::time::Duration;
 
 const DEFAULT_GAMEPLAY_WIDTH: u32 = 670;
 const DEFAULT_GAMEPLAY_HEIGHT: u32 = 891;
+const DEFAULT_GAMEPLAY_MAX_CELL_SIZE: u32 = 260;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameplayUiState {
     pub surface_width: u32,
     pub surface_height: u32,
+    pub max_cell_size: u32,
     pub level_sets: Vec<LevelSetCatalogEntry>,
     pub active_level_set: Option<usize>,
     pub(crate) interaction: GameplayInteractionState,
@@ -43,6 +45,7 @@ impl Default for GameplayUiState {
         Self {
             surface_width: DEFAULT_GAMEPLAY_WIDTH,
             surface_height: DEFAULT_GAMEPLAY_HEIGHT,
+            max_cell_size: DEFAULT_GAMEPLAY_MAX_CELL_SIZE,
             level_sets: Vec::new(),
             active_level_set: None,
             interaction: GameplayInteractionState::default(),
@@ -63,6 +66,10 @@ pub fn set_gameplay_double_tap_window(gameplay: &mut GameplayUiState, window: Du
     gameplay.interaction.double_tap_window = window;
 }
 
+pub fn set_gameplay_max_cell_size(gameplay: &mut GameplayUiState, max_cell_size: u32) {
+    gameplay.max_cell_size = max_cell_size.max(1);
+}
+
 pub fn set_gameplay_level_sets(
     gameplay: &mut GameplayUiState,
     level_sets: Vec<LevelSetCatalogEntry>,
@@ -73,13 +80,22 @@ pub fn set_gameplay_level_sets(
 }
 
 pub fn build_gameplay_viewport(gameplay: &GameplayUiState, board: &BoardView) -> BoardViewport {
-    fit_board_viewport_for_controls(gameplay.surface_width, gameplay.surface_height, board)
+    fit_board_viewport_for_controls_capped(
+        gameplay.surface_width,
+        gameplay.surface_height,
+        board,
+        gameplay.max_cell_size,
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{GameplayUiState, set_gameplay_level_sets};
+    use super::{
+        DEFAULT_GAMEPLAY_MAX_CELL_SIZE, GameplayUiState, build_gameplay_viewport,
+        set_gameplay_level_sets, set_gameplay_max_cell_size,
+    };
     use crate::persistence::{LevelSetCatalogEntry, LevelSetKind};
+    use sokobanitron_gameplay::{BoardView, TileKind};
 
     fn sample_level_sets() -> Vec<LevelSetCatalogEntry> {
         vec![
@@ -96,6 +112,19 @@ mod tests {
                 total_puzzle_count: 12,
             },
         ]
+    }
+
+    fn board_with_tile(width: u32, height: u32, tile: TileKind) -> BoardView {
+        let len = (width * height) as usize;
+        BoardView::new(
+            width,
+            height,
+            vec![tile; len],
+            vec![false; len],
+            None,
+            None,
+            false,
+        )
     }
 
     #[test]
@@ -126,5 +155,23 @@ mod tests {
 
         assert_eq!(gameplay.active_level_set, None);
         assert_eq!(gameplay.level_sets.len(), 2);
+    }
+
+    #[test]
+    fn gameplay_defaults_to_standard_max_cell_size() {
+        let gameplay = GameplayUiState::default();
+
+        assert_eq!(gameplay.max_cell_size, DEFAULT_GAMEPLAY_MAX_CELL_SIZE);
+    }
+
+    #[test]
+    fn gameplay_viewport_respects_configured_max_cell_size() {
+        let mut gameplay = GameplayUiState::default();
+        let board = board_with_tile(1, 1, TileKind::Floor);
+        set_gameplay_max_cell_size(&mut gameplay, 12);
+
+        let viewport = build_gameplay_viewport(&gameplay, &board);
+
+        assert_eq!(viewport.cell_size, 12);
     }
 }

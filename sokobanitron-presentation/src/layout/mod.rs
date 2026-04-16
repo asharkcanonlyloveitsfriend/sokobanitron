@@ -40,6 +40,15 @@ pub fn fit_board_viewport_for_controls(
     height: u32,
     board: &BoardView,
 ) -> BoardViewport {
+    fit_board_viewport_for_controls_capped(width, height, board, u32::MAX)
+}
+
+pub fn fit_board_viewport_for_controls_capped(
+    width: u32,
+    height: u32,
+    board: &BoardView,
+    max_cell_size: u32,
+) -> BoardViewport {
     let board_cols = board.width().max(1);
     let board_rows = board.height().max(1);
     let top_safe_margin = BOARD_VERTICAL_MARGIN;
@@ -48,9 +57,9 @@ pub fn fit_board_viewport_for_controls(
 
     let max_cell_w = width / board_cols;
     let max_cell_h = height.saturating_sub(top_safe_margin) / board_rows;
-    let max_cell_size = max_cell_w.min(max_cell_h).max(1);
+    let max_candidate_cell_size = clamp_cell_size(max_cell_w.min(max_cell_h), max_cell_size);
 
-    for cell_size in (1..=max_cell_size).rev() {
+    for cell_size in (1..=max_candidate_cell_size).rev() {
         let board_pixel_width = board_cols * cell_size;
         let board_pixel_height = board_rows * cell_size;
 
@@ -106,6 +115,13 @@ pub fn fit_board_viewport_for_controls(
         height.saturating_sub(top_safe_margin).max(1),
         board,
         BoardViewportOptions::fill_available_space(),
+    );
+    clamp_viewport_cell_size(
+        &mut viewport,
+        width.max(1),
+        height.saturating_sub(top_safe_margin).max(1),
+        board,
+        max_cell_size,
     );
     viewport.origin_y += top_safe_margin as i32;
     viewport
@@ -168,12 +184,49 @@ fn overlaps_forbidden_buttons(
     })
 }
 
+fn clamp_cell_size(cell_size: u32, max_cell_size: u32) -> u32 {
+    cell_size.min(max_cell_size.max(1)).max(1)
+}
+
+fn clamp_viewport_cell_size(
+    viewport: &mut BoardViewport,
+    window_width: u32,
+    window_height: u32,
+    board: &BoardView,
+    max_cell_size: u32,
+) {
+    let clamped_cell_size = clamp_cell_size(viewport.cell_size, max_cell_size);
+    if clamped_cell_size == viewport.cell_size {
+        return;
+    }
+
+    let margin = viewport.outer_margin_tiles;
+    let cols = board
+        .width()
+        .saturating_add(margin.saturating_mul(2))
+        .max(1);
+    let rows = board
+        .height()
+        .saturating_add(margin.saturating_mul(2))
+        .max(1);
+    let board_pixel_width = cols * clamped_cell_size;
+    let board_pixel_height = rows * clamped_cell_size;
+
+    viewport.origin_x = ((window_width as i32) - (board_pixel_width as i32)) / 2;
+    viewport.origin_y = ((window_height as i32) - (board_pixel_height as i32)) / 2;
+    viewport.cell_size = clamped_cell_size;
+    viewport.board_pixel_width = board_pixel_width;
+    viewport.board_pixel_height = board_pixel_height;
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        PixelRect, fit_board_viewport_for_controls, overlaps_forbidden_buttons, to_pixel_rect,
+        BOARD_VERTICAL_MARGIN, PixelRect, fit_board_viewport_for_controls,
+        fit_board_viewport_for_controls_capped, overlaps_forbidden_buttons, to_pixel_rect,
         top_left_level_button_rect,
     };
+    use crate::layout::{BoardViewport, BoardViewportOptions};
     use sokobanitron_gameplay::{BoardView, TileKind};
 
     fn board_with_tile(width: u32, height: u32, tile: TileKind) -> BoardView {
@@ -210,5 +263,57 @@ mod tests {
         let board = board_with_tile(8, 8, TileKind::Floor);
         let viewport = fit_board_viewport_for_controls(670, 905, &board);
         assert!((viewport.origin_x as u32) < 76);
+    }
+
+    #[test]
+    fn fitted_viewport_respects_max_cell_size() {
+        let board = board_with_tile(1, 1, TileKind::Floor);
+        let viewport = fit_board_viewport_for_controls_capped(670, 905, &board, 42);
+
+        assert_eq!(viewport.cell_size, 42);
+    }
+
+    #[test]
+    fn fallback_viewport_clamps_to_max_cell_size() {
+        let width: u32 = 300;
+        let height: u32 = 140;
+        let max_cell_size: u32 = 1;
+        let board = board_with_tile(140, 20, TileKind::Floor);
+        let solid_cells = board.cells().collect::<Vec<_>>();
+        let forbidden: [PixelRect; 1] = [to_pixel_rect(top_left_level_button_rect())];
+        let centered_origin_x = (width.saturating_sub(board.width() * max_cell_size) / 2) as i32;
+        let centered_origin_y = {
+            let below_top = height.saturating_sub(BOARD_VERTICAL_MARGIN);
+            BOARD_VERTICAL_MARGIN + below_top.saturating_sub(board.height() * max_cell_size) / 2
+        };
+
+        assert!(overlaps_forbidden_buttons(
+            centered_origin_x,
+            centered_origin_y as i32,
+            max_cell_size,
+            &solid_cells,
+            &forbidden,
+        ));
+        assert!(overlaps_forbidden_buttons(
+            centered_origin_x,
+            BOARD_VERTICAL_MARGIN as i32,
+            max_cell_size,
+            &solid_cells,
+            &forbidden,
+        ));
+
+        let uncapped_fallback = BoardViewport::fit_to_window_with_options(
+            width,
+            height.saturating_sub(BOARD_VERTICAL_MARGIN).max(1),
+            &board,
+            BoardViewportOptions::fill_available_space(),
+        );
+        assert!(uncapped_fallback.cell_size > max_cell_size);
+
+        let viewport = fit_board_viewport_for_controls_capped(width, height, &board, max_cell_size);
+
+        assert_eq!(viewport.cell_size, max_cell_size);
+        assert_eq!(viewport.board_pixel_width, board.width() * max_cell_size);
+        assert_eq!(viewport.board_pixel_height, board.height() * max_cell_size);
     }
 }
