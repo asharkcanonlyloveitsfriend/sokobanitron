@@ -11,6 +11,8 @@ KINDLE_LOG=$KINDLE_APP_ROOT/$DEVICE_BIN.log
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BUILD_PROFILE="${1:-release}"
+DIRTY_FB_WRITE="${SOKOBANITRON_KINDLE_DIRTY_FB_WRITE:-0}"
+PRESENT_METRICS="${SOKOBANITRON_KINDLE_PRESENT_METRICS:-0}"
 
 if [[ "$BUILD_PROFILE" != "release" && "$BUILD_PROFILE" != "debug" ]]; then
   echo "Usage: $0 [release|debug]"
@@ -41,5 +43,5 @@ scp "$REPO_ROOT/target/$TARGET/$BUILD_PROFILE/$LOCAL_BIN" "$KINDLE_HOST:$KINDLE_
 
 ssh "$KINDLE_HOST" <<EOF
 /sbin/initctl stop lab126_gui || true
-nohup "$KINDLE_PATH" >"$KINDLE_LOG" 2>&1 </dev/null &
+SOKOBANITRON_KINDLE_DIRTY_FB_WRITE="$DIRTY_FB_WRITE" SOKOBANITRON_KINDLE_PRESENT_METRICS="$PRESENT_METRICS" nohup "$KINDLE_PATH" >"$KINDLE_LOG" 2>&1 </dev/null &
 EOF

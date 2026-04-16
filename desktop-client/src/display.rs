@@ -27,14 +27,20 @@ impl App {
 
     pub(crate) fn render_active_gameplay_presentation(&mut self) {
         if let Some(pixels) = &mut self.pixels {
-            let frame = &mut self.gray_frame;
-            self.gameplay_presentation.draw(
+            let damage = self
+                .gameplay_presentation
+                .advance_presentation_with_damage();
+            let gray_frame = &mut self.gray_frame;
+            // Desktop keeps full RGBA presentation, but still reuses the shared partial gameplay
+            // redraw path inside the persistent grayscale buffer.
+            self.gameplay_presentation.draw_damage(
                 &mut self.renderer,
-                frame,
+                gray_frame,
                 self.surface_width,
                 self.surface_height,
+                &damage,
             );
-            copy_gray_to_rgba(frame, pixels.frame_mut());
+            copy_gray_to_rgba(gray_frame, pixels.frame_mut());
             pixels.render().expect("render");
             if self.gameplay_presentation.has_active_animation() {
                 self.request_window_redraw();
@@ -46,15 +52,18 @@ impl App {
         match request {
             FrameRequest::Gameplay { update, .. } => {
                 if let Some(pixels) = &mut self.pixels {
-                    self.gameplay_presentation.replace_update(update.clone());
-                    let frame = &mut self.gray_frame;
-                    self.gameplay_presentation.draw(
+                    let damage = self
+                        .gameplay_presentation
+                        .replace_update_with_damage(update.clone());
+                    let gray_frame = &mut self.gray_frame;
+                    self.gameplay_presentation.draw_damage(
                         &mut self.renderer,
-                        frame,
+                        gray_frame,
                         self.surface_width,
                         self.surface_height,
+                        &damage,
                     );
-                    copy_gray_to_rgba(frame, pixels.frame_mut());
+                    copy_gray_to_rgba(gray_frame, pixels.frame_mut());
                     pixels.render().expect("render");
                     if self.gameplay_presentation.has_active_animation() {
                         self.request_window_redraw();
@@ -62,97 +71,102 @@ impl App {
                 }
             }
             FrameRequest::GameplayMenu { screen } => {
+                self.gameplay_presentation.clear();
                 if let Some(pixels) = &mut self.pixels {
-                    let frame = &mut self.gray_frame;
+                    let gray_frame = &mut self.gray_frame;
                     self.renderer.draw_background_only(
-                        frame,
+                        gray_frame,
                         self.surface_width,
                         self.surface_height,
                     );
-                    draw_top_menu_toggle(frame, self.surface_width, self.surface_height, true);
+                    draw_top_menu_toggle(gray_frame, self.surface_width, self.surface_height, true);
                     if screen.show_change_level_set {
                         draw_gameplay_menu_level_set_button(
-                            frame,
+                            gray_frame,
                             self.surface_width,
                             self.surface_height,
                         );
                     }
                     if let Some(icon) = screen.primary_action_icon {
                         draw_overlay_primary_action_button(
-                            frame,
+                            gray_frame,
                             self.surface_width,
                             self.surface_height,
                             icon,
                             BUTTON_TEXT_COLOR,
                         );
                     }
-                    copy_gray_to_rgba(frame, pixels.frame_mut());
+                    copy_gray_to_rgba(gray_frame, pixels.frame_mut());
                     pixels.render().expect("render");
                 }
             }
             FrameRequest::LevelSelect { screen, .. } => {
+                self.gameplay_presentation.clear();
                 if let Some(pixels) = &mut self.pixels {
-                    let frame = &mut self.gray_frame;
+                    let gray_frame = &mut self.gray_frame;
                     self.renderer.draw_background_only(
-                        frame,
+                        gray_frame,
                         self.surface_width,
                         self.surface_height,
                     );
                     self.renderer.draw_level_select_menu_contents(
-                        frame,
+                        gray_frame,
                         self.surface_width,
                         self.surface_height,
                         &self.preview_boards,
                         screen.resume_level,
                         screen.page_start,
                     );
-                    draw_controls_ui(frame, self.surface_width, self.surface_height, true);
-                    copy_gray_to_rgba(frame, pixels.frame_mut());
+                    draw_controls_ui(gray_frame, self.surface_width, self.surface_height, true);
+                    copy_gray_to_rgba(gray_frame, pixels.frame_mut());
                     pixels.render().expect("render");
                 }
             }
             FrameRequest::LevelSetSelect { screen, .. } => {
+                self.gameplay_presentation.clear();
                 if let Some(pixels) = &mut self.pixels {
-                    let frame = &mut self.gray_frame;
+                    let gray_frame = &mut self.gray_frame;
                     self.renderer.draw_background_only(
-                        frame,
+                        gray_frame,
                         self.surface_width,
                         self.surface_height,
                     );
                     self.renderer.draw_level_set_select_menu_contents(
-                        frame,
+                        gray_frame,
                         self.surface_width,
                         self.surface_height,
                         screen,
                     );
-                    draw_controls_ui(frame, self.surface_width, self.surface_height, true);
-                    copy_gray_to_rgba(frame, pixels.frame_mut());
+                    draw_controls_ui(gray_frame, self.surface_width, self.surface_height, true);
+                    copy_gray_to_rgba(gray_frame, pixels.frame_mut());
                     pixels.render().expect("render");
                 }
             }
             FrameRequest::Editor { screen } => {
+                self.gameplay_presentation.clear();
                 if let Some(pixels) = &mut self.pixels {
-                    let frame = &mut self.gray_frame;
+                    let gray_frame = &mut self.gray_frame;
                     self.renderer.draw_editor_screen(
-                        frame,
+                        gray_frame,
                         self.surface_width,
                         self.surface_height,
                         screen,
                     );
-                    copy_gray_to_rgba(frame, pixels.frame_mut());
+                    copy_gray_to_rgba(gray_frame, pixels.frame_mut());
                     pixels.render().expect("render");
                 }
             }
             FrameRequest::EditorMenu { screen } => {
+                self.gameplay_presentation.clear();
                 if let Some(pixels) = &mut self.pixels {
-                    let frame = &mut self.gray_frame;
+                    let gray_frame = &mut self.gray_frame;
                     self.renderer.draw_editor_menu(
-                        frame,
+                        gray_frame,
                         self.surface_width,
                         self.surface_height,
                         screen,
                     );
-                    copy_gray_to_rgba(frame, pixels.frame_mut());
+                    copy_gray_to_rgba(gray_frame, pixels.frame_mut());
                     pixels.render().expect("render");
                 }
             }

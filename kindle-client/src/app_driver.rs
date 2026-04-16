@@ -4,7 +4,7 @@ use sokobanitron_app::{
     AppPreferences,
     app::{
         AppDriverContext, AppInput, AppInteractionMode, AppRuntimeMut, AppState, AppliedUpdate,
-        apply_input_and_render_in_context,
+        PresentMode, apply_input_and_render_in_context,
     },
     gameplay::{
         interpret_gameplay_pointer_event, resize_gameplay_surface, set_gameplay_level_sets,
@@ -129,15 +129,30 @@ impl KindleApp {
     }
 
     fn render_active_gameplay_presentation(&mut self) -> Result<()> {
+        let damage = self
+            .gameplay_presentation
+            .advance_presentation_with_damage();
+        let scene = self.gameplay_presentation.current_scene().cloned();
         let (renderer, gray, display) =
             (&mut self.renderer, &mut self.gray_frame, &mut self.display);
-        self.gameplay_presentation.draw(
+        self.gameplay_presentation.draw_damage(
             renderer,
             gray,
             config::WIDTH as u32,
             config::HEIGHT as u32,
+            &damage,
         );
-        display.present_gray_fast_partial(gray)
+        let Some(scene) = scene else {
+            return Ok(());
+        };
+        crate::display::present_gameplay_damage(
+            display,
+            &scene,
+            &damage,
+            gray,
+            PresentMode::FastPartial,
+        )?;
+        Ok(())
     }
 
     fn sync_sleep_state(&mut self) -> Result<SleepSyncOutcome> {

@@ -20,7 +20,9 @@ pub mod screen_requests;
 
 pub use assets::{UiIcon, draw_ui_icon_in_rect};
 pub use gameplay_animation::GameplayPresentationConfig;
-pub use gameplay_presentation::GameplayPresentationState;
+pub use gameplay_presentation::{
+    GameplayDamage, GameplayPresentationState, gameplay_damage_union_rect,
+};
 pub use hit_test::{
     ControlsButtonAction, GameplaySurfaceLayer, GameplaySurfaceModel, GameplaySurfaceTarget,
     LevelSelectSurfaceTarget, LevelSetSelectSurfaceTarget, MenuNavAction,

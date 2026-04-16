@@ -209,6 +209,7 @@ impl ApplicationHandler for App {
         self.surface_width = size.width.max(1);
         self.surface_height = size.height.max(1);
         self.gray_frame = vec![0; (self.surface_width as usize) * (self.surface_height as usize)];
+        self.gameplay_presentation.clear();
         resize_gameplay_surface(
             &mut self.app_state.gameplay,
             self.surface_width,
@@ -252,6 +253,7 @@ impl ApplicationHandler for App {
                 );
                 self.gray_frame =
                     vec![0; (self.surface_width as usize) * (self.surface_height as usize)];
+                self.gameplay_presentation.clear();
                 resize_editor_surface(&mut self.app_state, self.surface_width, self.surface_height);
                 self.render_current();
             }
@@ -273,6 +275,7 @@ impl ApplicationHandler for App {
                     );
                     self.gray_frame =
                         vec![0; (self.surface_width as usize) * (self.surface_height as usize)];
+                    self.gameplay_presentation.clear();
                     resize_editor_surface(
                         &mut self.app_state,
                         self.surface_width,

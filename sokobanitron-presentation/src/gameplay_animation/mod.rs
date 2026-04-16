@@ -11,6 +11,7 @@ use crate::renderer::Renderer;
 use crate::screen_requests::{
     GameplayPresentationCause, GameplayPresentationUpdate, GameplayScreenRequest,
 };
+use sokobanitron_gameplay::BoardCell;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
@@ -48,6 +49,10 @@ pub(crate) trait GameplayAnimation {
         false
     }
 
+    fn dirty_cells(&self) -> Vec<BoardCell> {
+        Vec::new()
+    }
+
     fn draw_under_entities(
         &self,
         _renderer: &mut Renderer,
@@ -55,6 +60,7 @@ pub(crate) trait GameplayAnimation {
         _width: u32,
         _height: u32,
         _scene: &GameplayScreenRequest,
+        _clip_cell: Option<BoardCell>,
     ) {
     }
 
@@ -65,6 +71,7 @@ pub(crate) trait GameplayAnimation {
         _width: u32,
         _height: u32,
         _scene: &GameplayScreenRequest,
+        _clip_cell: Option<BoardCell>,
     ) {
     }
 
@@ -105,31 +112,58 @@ impl GameplayAnimationRunner {
         self.queue.clear();
     }
 
-    pub(crate) fn advance_to(&mut self, now: Instant) {
+    pub(crate) fn clear_damage(&mut self) -> Vec<BoardCell> {
+        let dirty = self.current_dirty_cells();
+        self.clear();
+        dirty
+    }
+
+    pub(crate) fn advance_to_with_damage(&mut self, now: Instant) -> Vec<BoardCell> {
+        let mut dirty = Vec::new();
         loop {
-            let Some(active) = self.active.as_mut() else {
+            if self.active.is_none() {
                 if self.queue.is_empty() {
-                    return;
+                    return normalize_cells(dirty);
                 }
                 self.start_next(now);
+                dirty.extend(self.current_dirty_cells());
                 continue;
-            };
+            }
 
-            let Some(next_step_at) = active.next_step_at else {
+            let next_step_at = self
+                .active
+                .as_ref()
+                .expect("active animation checked above")
+                .next_step_at;
+            let Some(next_step_at) = next_step_at else {
                 self.finish_active(now);
+                dirty.extend(self.current_dirty_cells());
                 continue;
             };
             if next_step_at > now {
-                return;
+                return normalize_cells(dirty);
             }
 
-            active.animation.step();
-            active.next_step_at = active.animation.ticks_until_next_step().map(|ticks| {
-                now + Duration::from_millis(ANIMATION_TICK.as_millis() as u64 * u64::from(ticks))
-            });
+            let finished = {
+                let active = self
+                    .active
+                    .as_mut()
+                    .expect("active animation checked above");
+                let previous_dirty = active.animation.dirty_cells();
+                active.animation.step();
+                active.next_step_at = active.animation.ticks_until_next_step().map(|ticks| {
+                    now + Duration::from_millis(
+                        ANIMATION_TICK.as_millis() as u64 * u64::from(ticks),
+                    )
+                });
+                dirty.extend(previous_dirty);
+                dirty.extend(active.animation.dirty_cells());
+                active.next_step_at.is_none()
+            };
 
-            if active.next_step_at.is_none() {
+            if finished {
                 self.finish_active(now);
+                dirty.extend(self.current_dirty_cells());
             }
         }
     }
@@ -151,11 +185,12 @@ impl GameplayAnimationRunner {
         width: u32,
         height: u32,
         scene: &GameplayScreenRequest,
+        clip_cell: Option<BoardCell>,
     ) {
         if let Some(active) = self.active.as_ref() {
             active
                 .animation
-                .draw_under_entities(renderer, frame, width, height, scene);
+                .draw_under_entities(renderer, frame, width, height, scene, clip_cell);
         }
     }
 
@@ -166,12 +201,24 @@ impl GameplayAnimationRunner {
         width: u32,
         height: u32,
         scene: &GameplayScreenRequest,
+        clip_cell: Option<BoardCell>,
     ) {
         if let Some(active) = self.active.as_ref() {
             active
                 .animation
-                .draw_over_entities(renderer, frame, width, height, scene);
+                .draw_over_entities(renderer, frame, width, height, scene, clip_cell);
         }
+    }
+
+    pub(crate) fn enqueue_blink(&mut self, player_position: BoardCell, now: Instant) {
+        self.enqueue(Box::new(BlinkAnimation::new(player_position)), now);
+    }
+
+    pub(crate) fn current_dirty_cells(&self) -> Vec<BoardCell> {
+        self.active
+            .as_ref()
+            .map(|active| normalize_cells(active.animation.dirty_cells()))
+            .unwrap_or_default()
     }
 
     fn enqueue(&mut self, animation: Box<dyn GameplayAnimation>, now: Instant) {
@@ -219,7 +266,11 @@ fn animations_for_update(
     if config.enable_entity_flash_animation
         && is_state_change_flash_cause(&update.cause)
         && let Some(animation) = previous_scene.and_then(|previous_scene| {
-            EntityFlashAnimation::from_scenes(previous_scene, &update.scene)
+            EntityFlashAnimation::from_scenes(
+                previous_scene,
+                &update.scene,
+                matches!(update.cause, GameplayPresentationCause::BoxMoved { .. }),
+            )
         })
     {
         animations.push(Box::new(animation) as Box<dyn GameplayAnimation>);
@@ -259,6 +310,12 @@ fn is_state_change_flash_cause(cause: &GameplayPresentationCause) -> bool {
             | GameplayPresentationCause::UndoApplied
             | GameplayPresentationCause::Restarted
     )
+}
+
+fn normalize_cells(mut cells: Vec<BoardCell>) -> Vec<BoardCell> {
+    cells.sort_by_key(|cell| (cell.y, cell.x));
+    cells.dedup();
+    cells
 }
 
 #[cfg(test)]
@@ -324,7 +381,7 @@ mod tests {
 
         assert!(runner.has_active_animation());
         assert!(!runner.hides_player());
-        runner.advance_to(now + Duration::from_millis(400));
+        let _ = runner.advance_to_with_damage(now + Duration::from_millis(400));
         assert!(runner.has_active_animation());
     }
 
@@ -381,6 +438,44 @@ mod tests {
             now,
         ));
 
+        assert!(runner.has_active_animation());
+        assert!(!runner.hides_player());
+    }
+
+    #[test]
+    fn box_move_entity_flash_hides_player_until_box_path_runs() {
+        let now = Instant::now();
+        let previous = update_with_state(
+            GameplayPresentationCause::CurrentState,
+            Some(BoardCell::new(1, 0)),
+            vec![false, false, true, false, false, false, false, false],
+        );
+        let update = update_with_state(
+            GameplayPresentationCause::BoxMoved {
+                path: vec![
+                    BoardCell::new(2, 0),
+                    BoardCell::new(3, 0),
+                    BoardCell::new(3, 1),
+                ],
+            },
+            Some(BoardCell::new(2, 0)),
+            vec![false, false, false, true, false, false, false, false],
+        );
+        let mut runner = GameplayAnimationRunner::default();
+
+        assert!(runner.enqueue_for_update(
+            Some(&previous.scene),
+            &update,
+            GameplayPresentationConfig::default(),
+            now,
+        ));
+
+        assert!(runner.has_active_animation());
+        assert!(runner.hides_player());
+        let _ = runner.advance_to_with_damage(now + Duration::from_millis(50));
+        assert!(runner.has_active_animation());
+        assert!(runner.hides_player());
+        let _ = runner.advance_to_with_damage(now + Duration::from_millis(100));
         assert!(runner.has_active_animation());
         assert!(runner.hides_player());
     }

@@ -1,5 +1,6 @@
 use crate::config;
 use sokobanitron_app::shared::PointerPhase;
+use std::env;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Result, Write};
 use std::os::fd::AsRawFd;
@@ -34,6 +35,8 @@ const TEMP_USE_AMBIENT: i32 = 0x1000;
 const LIPC_GET_PROP: &str = "/usr/bin/lipc-get-prop";
 const LIPC_SET_PROP: &str = "/usr/bin/lipc-set-prop";
 const LIPC_SEND_EVENT: &str = "/usr/bin/lipc-send-event";
+const DIRTY_FRAMEBUFFER_WRITE_ENV: &str = "SOKOBANITRON_KINDLE_DIRTY_FB_WRITE";
+const PRESENT_METRICS_ENV: &str = "SOKOBANITRON_KINDLE_PRESENT_METRICS";
 const POWERD_SERVICE: &str = "com.lab126.powerd";
 const POWERD_DEBUG_SERVICE: &str = "com.lab126.powerd.debug";
 const BLANKET_SERVICE: &str = "com.lab126.blanket";
@@ -162,7 +165,7 @@ impl UpdateAbi {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Region {
     pub left: usize,
     pub top: usize,
@@ -178,6 +181,18 @@ pub struct Display {
     update_marker: u32,
     update_abi: Option<UpdateAbi>,
     logged_ioctl_failure: bool,
+    dirty_framebuffer_writes: bool,
+    log_present_metrics: bool,
+}
+
+struct PresentMetric<'a> {
+    path: &'a str,
+    mode: &'a str,
+    region: Option<Region>,
+    measured_scan_elapsed: Duration,
+    write: Option<(Duration, usize)>,
+    refresh_elapsed: Option<Duration>,
+    present_start: Instant,
 }
 
 impl Display {
@@ -199,6 +214,8 @@ impl Display {
             update_marker: 1,
             update_abi,
             logged_ioctl_failure: false,
+            dirty_framebuffer_writes: dirty_framebuffer_writes_enabled(),
+            log_present_metrics: present_metrics_enabled(),
         })
     }
 
@@ -210,11 +227,21 @@ impl Display {
         self.present_gray_inner(gray, Some(WAVEFORM_MODE_DU))
     }
 
+    pub fn present_gray_region(&mut self, gray: &[u8], region: Region) -> Result<()> {
+        self.present_gray_region_inner(gray, region, None)
+    }
+
+    pub fn present_gray_region_fast_partial(&mut self, gray: &[u8], region: Region) -> Result<()> {
+        self.present_gray_region_inner(gray, region, Some(WAVEFORM_MODE_DU))
+    }
+
     pub fn force_full_refresh_next(&mut self) {
         self.has_previous_gray = false;
     }
 
     fn present_gray_inner(&mut self, gray: &[u8], partial_waveform: Option<u32>) -> Result<()> {
+        let present_start = Instant::now();
+        let scan_start = Instant::now();
         let dirty = if self.has_previous_gray {
             update_grayscale_framebuffer_from_gray_diff(
                 gray,
@@ -225,28 +252,162 @@ impl Display {
             copy_gray_framebuffer_full(gray, &mut self.framebuffer);
             None
         };
+        let scan_elapsed = scan_start.elapsed();
 
         if self.has_previous_gray && dirty.is_none() {
+            self.log_present_metric(PresentMetric {
+                path: "gray_diff",
+                mode: "noop",
+                region: None,
+                measured_scan_elapsed: scan_elapsed,
+                write: None,
+                refresh_elapsed: None,
+                present_start,
+            });
             return Ok(());
         }
 
-        // Keep kernel framebuffer memory fully synchronized with current app frame.
-        // Dirty-rect is used for EPDC update region, not for framebuffer write scope.
-        write_full_framebuffer(&self.fb, &self.framebuffer)?;
-
         match dirty {
             None => {
+                let write_start = Instant::now();
+                write_full_framebuffer(&self.fb, &self.framebuffer)?;
+                let write_elapsed = write_start.elapsed();
+                let refresh_start = Instant::now();
                 self.request_full_refresh()?;
+                let refresh_elapsed = refresh_start.elapsed();
                 self.previous_gray.copy_from_slice(gray);
+                self.log_present_metric(PresentMetric {
+                    path: "gray_diff",
+                    mode: "full",
+                    region: None,
+                    measured_scan_elapsed: scan_elapsed,
+                    write: Some((write_elapsed, self.framebuffer.len())),
+                    refresh_elapsed: Some(refresh_elapsed),
+                    present_start,
+                });
             }
             Some(region) => {
+                let write_start = Instant::now();
+                let bytes_written;
+                if self.dirty_framebuffer_writes {
+                    bytes_written = framebuffer_region_byte_len(region);
+                    write_framebuffer_region(&self.fb, &self.framebuffer, region)?;
+                } else {
+                    // Baseline path: dirty-rect is used for EPDC update region, not for
+                    // framebuffer write scope.
+                    bytes_written = self.framebuffer.len();
+                    write_full_framebuffer(&self.fb, &self.framebuffer)?;
+                }
+                let write_elapsed = write_start.elapsed();
+                let refresh_start = Instant::now();
                 self.request_partial_refresh(region, partial_waveform)?;
+                let refresh_elapsed = refresh_start.elapsed();
                 copy_gray_region(gray, &mut self.previous_gray, region);
+                self.log_present_metric(PresentMetric {
+                    path: "gray_diff",
+                    mode: "partial",
+                    region: Some(region),
+                    measured_scan_elapsed: scan_elapsed,
+                    write: Some((write_elapsed, bytes_written)),
+                    refresh_elapsed: Some(refresh_elapsed),
+                    present_start,
+                });
             }
         }
 
         self.has_previous_gray = true;
         Ok(())
+    }
+
+    fn present_gray_region_inner(
+        &mut self,
+        gray: &[u8],
+        region: Region,
+        partial_waveform: Option<u32>,
+    ) -> Result<()> {
+        if !self.has_previous_gray {
+            return self.present_gray_inner(gray, partial_waveform);
+        }
+
+        let present_start = Instant::now();
+        let prepare_start = Instant::now();
+        let bytes_written = if self.dirty_framebuffer_writes {
+            copy_gray_framebuffer_region(gray, &mut self.framebuffer, region);
+            framebuffer_region_byte_len(region)
+        } else {
+            copy_gray_framebuffer_full(gray, &mut self.framebuffer);
+            self.framebuffer.len()
+        };
+        let prepare_elapsed = prepare_start.elapsed();
+
+        let write_start = Instant::now();
+        if self.dirty_framebuffer_writes {
+            write_framebuffer_region(&self.fb, &self.framebuffer, region)?;
+        } else {
+            write_full_framebuffer(&self.fb, &self.framebuffer)?;
+        }
+        let write_elapsed = write_start.elapsed();
+
+        let refresh_start = Instant::now();
+        self.request_partial_refresh(region, partial_waveform)?;
+        let refresh_elapsed = refresh_start.elapsed();
+
+        copy_gray_region(gray, &mut self.previous_gray, aligned_region(region));
+        self.log_present_metric(PresentMetric {
+            path: "declared_dirty",
+            mode: "partial",
+            region: Some(region),
+            measured_scan_elapsed: prepare_elapsed,
+            write: Some((write_elapsed, bytes_written)),
+            refresh_elapsed: Some(refresh_elapsed),
+            present_start,
+        });
+
+        self.has_previous_gray = true;
+        Ok(())
+    }
+
+    fn log_present_metric(&self, metric: PresentMetric<'_>) {
+        if !self.log_present_metrics {
+            return;
+        }
+        let region = metric
+            .region
+            .map(|region| {
+                let aligned = align_region_for_epdc(region);
+                format!(
+                    "{}x{}+{}+{} aligned={}x{}+{}+{}",
+                    region.width,
+                    region.height,
+                    region.left,
+                    region.top,
+                    aligned.width,
+                    aligned.height,
+                    aligned.left,
+                    aligned.top
+                )
+            })
+            .unwrap_or_else(|| "full".to_string());
+        let (write_us, bytes_written) = metric
+            .write
+            .map(|(elapsed, bytes)| (elapsed.as_micros(), bytes))
+            .unwrap_or((0, 0));
+        let refresh_us = metric
+            .refresh_elapsed
+            .map(|elapsed| elapsed.as_micros())
+            .unwrap_or(0);
+        eprintln!(
+            "present path={} mode={} region={} dirty_fb_write={} scan_us={} write_us={} refresh_request_us={} total_us={} bytes_written={}",
+            metric.path,
+            metric.mode,
+            region,
+            self.dirty_framebuffer_writes,
+            metric.measured_scan_elapsed.as_micros(),
+            write_us,
+            refresh_us,
+            metric.present_start.elapsed().as_micros(),
+            bytes_written,
+        );
     }
 
     fn request_partial_refresh(
@@ -829,6 +990,22 @@ fn copy_gray_framebuffer_full(gray: &[u8], framebuffer: &mut [u8]) {
     }
 }
 
+fn copy_gray_framebuffer_region(gray: &[u8], framebuffer: &mut [u8], region: Region) {
+    let region = aligned_region(region);
+    let left = region.left.min(config::WIDTH);
+    let top = region.top.min(config::HEIGHT);
+    let right = (region.left + region.width).min(config::WIDTH);
+    let bottom = (region.top + region.height).min(config::HEIGHT);
+
+    for y in top..bottom {
+        let src_row_start = y * config::WIDTH + left;
+        let src_row_end = y * config::WIDTH + right;
+        let dst_row_start = y * config::STRIDE + left;
+        let dst_row_end = y * config::STRIDE + right;
+        framebuffer[dst_row_start..dst_row_end].copy_from_slice(&gray[src_row_start..src_row_end]);
+    }
+}
+
 fn update_grayscale_framebuffer_from_gray_diff(
     gray: &[u8],
     previous_gray: &[u8],
@@ -886,6 +1063,49 @@ fn copy_gray_region(gray: &[u8], previous_gray: &mut [u8], region: Region) {
 fn write_full_framebuffer(fb: &File, frame: &[u8]) -> Result<()> {
     fb.write_all_at(frame, 0)?;
     Ok(())
+}
+
+fn write_framebuffer_region(fb: &File, frame: &[u8], region: Region) -> Result<()> {
+    let aligned = align_region_for_epdc(region);
+    let row_bytes = aligned.width;
+    for y in aligned.top..aligned.top + aligned.height {
+        let row_start = y * config::STRIDE + aligned.left;
+        let row_end = row_start + row_bytes;
+        fb.write_all_at(&frame[row_start..row_end], row_start as u64)?;
+    }
+    Ok(())
+}
+
+fn framebuffer_region_byte_len(region: Region) -> usize {
+    let aligned = align_region_for_epdc(region);
+    aligned.width * aligned.height
+}
+
+fn aligned_region(region: Region) -> Region {
+    let aligned = align_region_for_epdc(region);
+    Region {
+        left: aligned.left,
+        top: aligned.top,
+        width: aligned.width,
+        height: aligned.height,
+    }
+}
+
+fn dirty_framebuffer_writes_enabled() -> bool {
+    env_flag_enabled(DIRTY_FRAMEBUFFER_WRITE_ENV)
+}
+
+fn present_metrics_enabled() -> bool {
+    env_flag_enabled(PRESENT_METRICS_ENV)
+}
+
+fn env_flag_enabled(name: &str) -> bool {
+    matches!(
+        env::var(name)
+            .as_deref()
+            .map(str::to_ascii_lowercase),
+        Ok(value) if matches!(value.as_str(), "1" | "true" | "yes" | "on")
+    )
 }
 
 #[derive(Clone, Copy)]

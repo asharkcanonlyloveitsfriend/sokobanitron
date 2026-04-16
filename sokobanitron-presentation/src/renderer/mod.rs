@@ -112,7 +112,8 @@ pub(crate) const BLACK: Rgba = [0, 0, 0, 255];
 pub enum EntityVisualStyle {
     #[default]
     Standard,
-    Solved,
+    SolvedClean,
+    SolvedDirty,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

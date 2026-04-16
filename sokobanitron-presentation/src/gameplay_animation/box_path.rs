@@ -32,6 +32,14 @@ impl GameplayAnimation for BoxPathAnimation {
         true
     }
 
+    fn dirty_cells(&self) -> Vec<BoardCell> {
+        if self.path_progress_segments >= self.total_segments as f32 {
+            Vec::new()
+        } else {
+            normalize_cells(self.path.clone())
+        }
+    }
+
     fn draw_under_entities(
         &self,
         _renderer: &mut crate::renderer::Renderer,
@@ -39,10 +47,12 @@ impl GameplayAnimation for BoxPathAnimation {
         width: u32,
         height: u32,
         scene: &GameplayScreenRequest,
+        clip_cell: Option<BoardCell>,
     ) {
         if self.total_segments == 0 {
             return;
         }
+        let clip_rect = clip_cell.map(|cell| scene.viewport.cell_to_screen_rect(cell));
         let consumed = self.path_progress_segments.min(self.total_segments as f32);
         let start_segment = consumed
             .floor()
@@ -76,7 +86,9 @@ impl GameplayAnimation for BoxPathAnimation {
         let line_width = (scene.viewport.cell_size as f32 * 0.2).max(1.0);
         let mut previous = (start_x, start_y);
         for &next in &points[(start_segment + 1)..] {
-            draw_thick_line(frame, width, height, previous, next, line_width, PATH_COLOR);
+            draw_thick_line(
+                frame, width, height, previous, next, line_width, PATH_COLOR, clip_rect,
+            );
             previous = next;
         }
     }
@@ -94,6 +106,7 @@ impl GameplayAnimation for BoxPathAnimation {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_thick_line(
     frame: &mut [u8],
     width: u32,
@@ -102,6 +115,7 @@ fn draw_thick_line(
     end: (f32, f32),
     thickness: f32,
     color: [u8; 4],
+    clip_rect: Option<(i32, i32, u32, u32)>,
 ) {
     let radius = thickness / 2.0;
     let dx = end.0 - start.0;
@@ -118,10 +132,12 @@ fn draw_thick_line(
             start.1 + dy * t,
             radius,
             color,
+            clip_rect,
         );
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_filled_circle(
     frame: &mut [u8],
     width: u32,
@@ -130,11 +146,30 @@ fn draw_filled_circle(
     cy: f32,
     radius: f32,
     color: [u8; 4],
+    clip_rect: Option<(i32, i32, u32, u32)>,
 ) {
-    let min_x = (cx - radius).floor().max(0.0) as u32;
-    let max_x = (cx + radius).ceil().min(width.saturating_sub(1) as f32) as u32;
-    let min_y = (cy - radius).floor().max(0.0) as u32;
-    let max_y = (cy + radius).ceil().min(height.saturating_sub(1) as f32) as u32;
+    let clip_left = clip_rect.map(|rect| rect.0.max(0) as u32).unwrap_or(0);
+    let clip_top = clip_rect.map(|rect| rect.1.max(0) as u32).unwrap_or(0);
+    let clip_right = clip_rect
+        .map(|rect| (rect.0 + rect.2 as i32).clamp(0, width as i32) as u32)
+        .unwrap_or(width);
+    let clip_bottom = clip_rect
+        .map(|rect| (rect.1 + rect.3 as i32).clamp(0, height as i32) as u32)
+        .unwrap_or(height);
+    if clip_left >= clip_right || clip_top >= clip_bottom {
+        return;
+    }
+    let min_x = (cx - radius).floor().max(clip_left as f32) as u32;
+    let max_x = (cx + radius)
+        .ceil()
+        .min(clip_right.saturating_sub(1) as f32) as u32;
+    let min_y = (cy - radius).floor().max(clip_top as f32) as u32;
+    let max_y = (cy + radius)
+        .ceil()
+        .min(clip_bottom.saturating_sub(1) as f32) as u32;
+    if min_x > max_x || min_y > max_y {
+        return;
+    }
     let radius_sq = radius * radius;
     for y in min_y..=max_y {
         for x in min_x..=max_x {
@@ -149,6 +184,12 @@ fn draw_filled_circle(
     }
 }
 
+fn normalize_cells(mut cells: Vec<BoardCell>) -> Vec<BoardCell> {
+    cells.sort_by_key(|cell| (cell.y, cell.x));
+    cells.dedup();
+    cells
+}
+
 #[cfg(test)]
 mod tests {
     use super::draw_filled_circle;
@@ -157,7 +198,7 @@ mod tests {
     fn filled_circle_composites_alpha_into_gray_frame() {
         let mut frame = vec![100];
 
-        draw_filled_circle(&mut frame, 1, 1, 0.5, 0.5, 1.0, [200, 200, 200, 128]);
+        draw_filled_circle(&mut frame, 1, 1, 0.5, 0.5, 1.0, [200, 200, 200, 128], None);
 
         assert_eq!(frame, vec![149]);
     }

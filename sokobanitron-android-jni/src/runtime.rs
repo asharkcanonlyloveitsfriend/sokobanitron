@@ -3,7 +3,10 @@ use presentation::renderer::{
     Renderer, draw_controls_ui, draw_gameplay_menu_level_set_button,
     draw_overlay_primary_action_button, draw_top_menu_toggle,
 };
-use presentation::{GameplayPresentationState, Renderer as GameplayRenderer};
+use presentation::{
+    GameplayDamage, GameplayPresentationState, Renderer as GameplayRenderer, ScreenRect,
+    gameplay_damage_union_rect,
+};
 use sokobanitron_app::{
     app::{
         AppDriverContext, AppInput, AppInteractionMode, AppRuntimeMut, AppScreen, AppState,
@@ -38,7 +41,7 @@ pub struct AndroidApp {
     gameplay_presentation: GameplayPresentationState,
     gray_frame: Vec<u8>,
     current_request: FrameRequest,
-    frame_dirty: bool,
+    pending_present_damage: FrameDamage,
     preview_boards: Vec<BoardView>,
     controller: GameplayController,
     app_state: AppState,
@@ -47,10 +50,6 @@ pub struct AndroidApp {
     surface_height: u32,
     editor: LevelEditor,
     native_window: Option<NativeWindow>,
-    // Tracks presentation events separately from animation redraws so a stored animated request is
-    // applied once, then subsequent frames only advance/draw the active animation.
-    presentation_generation: u64,
-    applied_presentation_generation: Option<u64>,
 }
 
 impl AndroidApp {
@@ -86,12 +85,12 @@ impl AndroidApp {
         let editor = LevelEditor::new();
         let current_request = build_android_frame_request(&controller, &app_state, &editor);
 
-        Ok(Self {
+        let mut app = Self {
             renderer: Renderer::new(),
             gameplay_presentation: GameplayPresentationState::new(),
             gray_frame: allocate_gray_frame(surface_width, surface_height),
             current_request,
-            frame_dirty: true,
+            pending_present_damage: FrameDamage::Noop,
             preview_boards,
             controller,
             app_state,
@@ -100,9 +99,9 @@ impl AndroidApp {
             surface_height,
             editor,
             native_window: None,
-            presentation_generation: 0,
-            applied_presentation_generation: None,
-        })
+        };
+        app.render_full_current_request();
+        Ok(app)
     }
 
     pub fn resize(&mut self, surface_width: u32, surface_height: u32) {
@@ -116,61 +115,61 @@ impl AndroidApp {
         );
         resize_editor_surface(&mut self.app_state, self.surface_width, self.surface_height);
         self.configure_native_window();
-        self.render_current();
+        self.render_full_current_request();
     }
 
     pub fn handle_pointer_event(&mut self, id: u64, phase: PointerPhase, x: f64, y: f64) -> bool {
-        let presentation_generation_before = self.presentation_generation;
         match self.app_state.interaction_mode() {
             AppInteractionMode::Gameplay => self.on_gameplay_pointer_event(id, phase, x, y),
             AppInteractionMode::Editor => self.on_editor_touch(id, phase, x, y),
             AppInteractionMode::Overlay(_) => self.on_overlay_pointer_event(id, phase, x, y),
         }
-        self.presentation_generation != presentation_generation_before
+        self.needs_present()
     }
 
     pub fn set_native_window(&mut self, native_window: Option<NativeWindow>) {
         self.native_window = native_window;
         self.configure_native_window();
         if self.native_window.is_some() {
-            self.frame_dirty = true;
+            self.mark_frame_damage(FrameDamage::Full);
         }
     }
 
     pub fn present_frame(&mut self) -> bool {
-        if !self.frame_dirty {
+        if !self.needs_present() {
             return true;
         }
         let Some(mut window) = self.native_window.take() else {
             return false;
         };
-        // Temporarily move the window out so we can render into app-owned buffers and then present
-        // through the window without holding overlapping borrows on `self`.
-        let request = self.current_request.clone();
+        if matches!(self.pending_present_damage, FrameDamage::Noop)
+            && self.app_state.is_gameplay_screen()
+            && self.gameplay_presentation.has_active_animation()
+        {
+            let damage = self.render_active_gameplay_presentation_into_frame();
+            self.mark_frame_damage(damage);
+        }
         let surface_width = self.surface_width;
         let surface_height = self.surface_height;
-        let apply_request =
-            self.applied_presentation_generation != Some(self.presentation_generation);
-        let mut frame = std::mem::take(&mut self.gray_frame);
-        self.render_request_into(
-            &request,
-            &mut frame,
-            surface_width,
-            surface_height,
-            apply_request,
-        );
-        let presented = window.present_gray(&frame, surface_width, surface_height);
-        self.gray_frame = frame;
+        let damage = self.pending_present_damage;
+        let presented = match damage {
+            FrameDamage::Full => {
+                window.present_gray(&self.gray_frame, surface_width, surface_height)
+            }
+            FrameDamage::Noop => true,
+            FrameDamage::Region(region) => {
+                window.present_gray_region(&self.gray_frame, surface_width, surface_height, region)
+            }
+        };
         self.native_window = Some(window);
         if presented {
-            self.applied_presentation_generation = Some(self.presentation_generation);
-            self.frame_dirty = self.gameplay_presentation.has_active_animation();
+            self.pending_present_damage = FrameDamage::Noop;
         }
         presented
     }
 
     pub fn has_active_gameplay_animation(&self) -> bool {
-        self.gameplay_presentation.has_active_animation()
+        self.app_state.is_gameplay_screen() && self.gameplay_presentation.has_active_animation()
     }
 
     fn apply_app_input(&mut self, input: AppInput) -> Option<AppliedUpdate> {
@@ -227,7 +226,7 @@ impl AndroidApp {
         apply_editor_ui_action(action, runtime.with_editor(&mut self.editor));
         let after_request = self.build_current_request();
         if after_request != before_request {
-            self.queue_changed_request(after_request);
+            self.render_changed_request(after_request);
         }
     }
 
@@ -243,7 +242,7 @@ impl AndroidApp {
 
     fn render_current(&mut self) {
         let request = self.build_current_request();
-        self.queue_changed_request(request);
+        self.render_changed_request(request);
     }
 
     fn build_current_request(&self) -> FrameRequest {
@@ -252,19 +251,39 @@ impl AndroidApp {
 
     fn render_active_gameplay_screen(&mut self) {
         let request = build_current_frame_request(&self.controller, &self.app_state);
-        self.queue_changed_request(request);
+        self.render_changed_request(request);
     }
 
-    fn queue_changed_request(&mut self, request: FrameRequest) {
+    fn render_changed_request(&mut self, request: FrameRequest) {
         if self.current_request != request {
-            self.queue_presentation_request(request);
+            self.render_presentation_request(request);
         }
     }
 
-    fn queue_presentation_request(&mut self, request: FrameRequest) {
+    fn render_full_current_request(&mut self) {
+        let request = self.build_current_request();
+        self.render_full_request(request);
+    }
+
+    fn render_presentation_request(&mut self, request: FrameRequest) {
+        let damage = self.render_request_into_frame(&request);
         self.current_request = request;
-        self.frame_dirty = true;
-        self.presentation_generation = self.presentation_generation.wrapping_add(1);
+        self.mark_frame_damage(damage);
+    }
+
+    fn render_full_request(&mut self, request: FrameRequest) {
+        self.draw_full_request_into_frame(&request);
+        self.current_request = request;
+        self.mark_frame_damage(FrameDamage::Full);
+    }
+
+    fn mark_frame_damage(&mut self, damage: FrameDamage) {
+        self.pending_present_damage = self.pending_present_damage.merge(damage);
+    }
+
+    fn needs_present(&self) -> bool {
+        !matches!(self.pending_present_damage, FrameDamage::Noop)
+            || self.has_active_gameplay_animation()
     }
 
     fn configure_native_window(&mut self) {
@@ -279,76 +298,206 @@ impl AndroidApp {
         }
     }
 
-    fn render_request_into(
-        &mut self,
-        request: &FrameRequest,
-        frame: &mut [u8],
-        surface_width: u32,
-        surface_height: u32,
-        apply_request: bool,
-    ) {
+    fn render_request_into_frame(&mut self, request: &FrameRequest) -> FrameDamage {
         match request {
             FrameRequest::Gameplay { update, .. } => {
-                if apply_request || self.gameplay_presentation.current_scene().is_none() {
-                    self.gameplay_presentation.replace_update(update.clone());
-                }
-                self.gameplay_presentation.draw(
+                let damage = self
+                    .gameplay_presentation
+                    .replace_update_with_damage(update.clone());
+                self.gameplay_presentation.draw_damage(
                     &mut self.renderer,
-                    frame,
-                    surface_width,
-                    surface_height,
+                    &mut self.gray_frame,
+                    self.surface_width,
+                    self.surface_height,
+                    &damage,
                 );
+                FrameDamage::from_gameplay_damage(
+                    &update.scene,
+                    &damage,
+                    self.surface_width,
+                    self.surface_height,
+                )
             }
             FrameRequest::GameplayMenu { screen } => {
-                self.renderer
-                    .draw_background_only(frame, surface_width, surface_height);
-                draw_top_menu_toggle(frame, surface_width, surface_height, true);
+                self.gameplay_presentation.clear();
+                self.renderer.draw_background_only(
+                    &mut self.gray_frame,
+                    self.surface_width,
+                    self.surface_height,
+                );
+                draw_top_menu_toggle(
+                    &mut self.gray_frame,
+                    self.surface_width,
+                    self.surface_height,
+                    true,
+                );
                 if screen.show_change_level_set {
-                    draw_gameplay_menu_level_set_button(frame, surface_width, surface_height);
+                    draw_gameplay_menu_level_set_button(
+                        &mut self.gray_frame,
+                        self.surface_width,
+                        self.surface_height,
+                    );
                 }
                 if let Some(icon) = screen.primary_action_icon {
                     draw_overlay_primary_action_button(
-                        frame,
-                        surface_width,
-                        surface_height,
+                        &mut self.gray_frame,
+                        self.surface_width,
+                        self.surface_height,
                         icon,
                         BUTTON_TEXT_COLOR,
                     );
                 }
+                FrameDamage::Full
             }
             FrameRequest::LevelSelect { screen, .. } => {
-                self.renderer
-                    .draw_background_only(frame, surface_width, surface_height);
+                self.gameplay_presentation.clear();
+                self.renderer.draw_background_only(
+                    &mut self.gray_frame,
+                    self.surface_width,
+                    self.surface_height,
+                );
                 self.renderer.draw_level_select_menu_contents(
-                    frame,
-                    surface_width,
-                    surface_height,
+                    &mut self.gray_frame,
+                    self.surface_width,
+                    self.surface_height,
                     &self.preview_boards,
                     screen.resume_level,
                     screen.page_start,
                 );
-                draw_controls_ui(frame, surface_width, surface_height, true);
+                draw_controls_ui(
+                    &mut self.gray_frame,
+                    self.surface_width,
+                    self.surface_height,
+                    true,
+                );
+                FrameDamage::Full
             }
             FrameRequest::LevelSetSelect { screen, .. } => {
-                self.renderer
-                    .draw_background_only(frame, surface_width, surface_height);
+                self.gameplay_presentation.clear();
+                self.renderer.draw_background_only(
+                    &mut self.gray_frame,
+                    self.surface_width,
+                    self.surface_height,
+                );
                 self.renderer.draw_level_set_select_menu_contents(
-                    frame,
-                    surface_width,
-                    surface_height,
+                    &mut self.gray_frame,
+                    self.surface_width,
+                    self.surface_height,
                     screen,
                 );
-                draw_controls_ui(frame, surface_width, surface_height, true);
+                draw_controls_ui(
+                    &mut self.gray_frame,
+                    self.surface_width,
+                    self.surface_height,
+                    true,
+                );
+                FrameDamage::Full
             }
             FrameRequest::Editor { screen } => {
-                self.renderer
-                    .draw_editor_screen(frame, surface_width, surface_height, screen);
+                self.gameplay_presentation.clear();
+                self.renderer.draw_editor_screen(
+                    &mut self.gray_frame,
+                    self.surface_width,
+                    self.surface_height,
+                    screen,
+                );
+                FrameDamage::Full
             }
             FrameRequest::EditorMenu { screen } => {
-                self.renderer
-                    .draw_editor_menu(frame, surface_width, surface_height, screen);
+                self.gameplay_presentation.clear();
+                self.renderer.draw_editor_menu(
+                    &mut self.gray_frame,
+                    self.surface_width,
+                    self.surface_height,
+                    screen,
+                );
+                FrameDamage::Full
             }
         }
+    }
+
+    fn render_active_gameplay_presentation_into_frame(&mut self) -> FrameDamage {
+        let Some(scene) = self.gameplay_presentation.current_scene().cloned() else {
+            return FrameDamage::Noop;
+        };
+        let damage = self
+            .gameplay_presentation
+            .advance_presentation_with_damage();
+        self.gameplay_presentation.draw_damage(
+            &mut self.renderer,
+            &mut self.gray_frame,
+            self.surface_width,
+            self.surface_height,
+            &damage,
+        );
+        FrameDamage::from_gameplay_damage(&scene, &damage, self.surface_width, self.surface_height)
+    }
+
+    fn draw_full_request_into_frame(&mut self, request: &FrameRequest) {
+        match request {
+            FrameRequest::Gameplay { update, .. } => {
+                self.gameplay_presentation.replace_update(update.clone());
+                self.gameplay_presentation.draw(
+                    &mut self.renderer,
+                    &mut self.gray_frame,
+                    self.surface_width,
+                    self.surface_height,
+                );
+            }
+            FrameRequest::GameplayMenu { .. }
+            | FrameRequest::LevelSelect { .. }
+            | FrameRequest::LevelSetSelect { .. }
+            | FrameRequest::Editor { .. }
+            | FrameRequest::EditorMenu { .. } => {
+                let _ = self.render_request_into_frame(request);
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FrameDamage {
+    Full,
+    Region(ScreenRect),
+    Noop,
+}
+
+impl FrameDamage {
+    fn from_gameplay_damage(
+        scene: &presentation::GameplayScreenRequest,
+        damage: &GameplayDamage,
+        surface_width: u32,
+        surface_height: u32,
+    ) -> Self {
+        match damage {
+            GameplayDamage::Full => Self::Full,
+            GameplayDamage::Cells(cells) if cells.is_empty() => Self::Noop,
+            GameplayDamage::Cells(_) => Self::Region(
+                gameplay_damage_union_rect(scene, damage, surface_width, surface_height)
+                    .expect("non-empty gameplay damage should map to an Android screen rect"),
+            ),
+        }
+    }
+
+    fn merge(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Full, _) | (_, Self::Full) => Self::Full,
+            (Self::Noop, damage) | (damage, Self::Noop) => damage,
+            (Self::Region(a), Self::Region(b)) => Self::Region(union_screen_rect(a, b)),
+        }
+    }
+}
+
+fn union_screen_rect(a: ScreenRect, b: ScreenRect) -> ScreenRect {
+    let left = a.x.min(b.x);
+    let top = a.y.min(b.y);
+    let right = a.x.saturating_add(a.w).max(b.x.saturating_add(b.w));
+    let bottom = a.y.saturating_add(a.h).max(b.y.saturating_add(b.h));
+    ScreenRect {
+        x: left,
+        y: top,
+        w: right - left,
+        h: bottom - top,
     }
 }
 
@@ -372,7 +521,7 @@ impl FrameSink for AndroidApp {
         if !self.app_state.is_gameplay_screen() {
             return Ok(());
         }
-        self.queue_presentation_request(request.clone());
+        self.render_presentation_request(request.clone());
         Ok(())
     }
 }
@@ -394,6 +543,6 @@ fn allocate_gray_frame(surface_width: u32, surface_height: u32) -> Vec<u8> {
 
 fn frame_len(surface_width: u32, surface_height: u32) -> usize {
     usize::try_from(surface_width)
-        .unwrap_or(1)
-        .saturating_mul(usize::try_from(surface_height).unwrap_or(1))
+        .expect("surface width should fit usize")
+        .saturating_mul(usize::try_from(surface_height).expect("surface height should fit usize"))
 }

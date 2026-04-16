@@ -55,6 +55,14 @@ impl BoxVanishAnimation {
 }
 
 impl GameplayAnimation for BoxVanishAnimation {
+    fn dirty_cells(&self) -> Vec<BoardCell> {
+        if BOX_VANISH_PHASES.get(self.phase_index).is_some() {
+            vec![self.position]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn draw_over_entities(
         &self,
         renderer: &mut Renderer,
@@ -62,7 +70,11 @@ impl GameplayAnimation for BoxVanishAnimation {
         width: u32,
         height: u32,
         scene: &GameplayScreenRequest,
+        clip_cell: Option<BoardCell>,
     ) {
+        if clip_cell.is_some_and(|cell| cell != self.position) {
+            return;
+        }
         let Some(phase) = BOX_VANISH_PHASES.get(self.phase_index) else {
             return;
         };

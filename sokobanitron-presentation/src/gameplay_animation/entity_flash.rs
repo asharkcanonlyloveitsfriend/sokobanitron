@@ -10,6 +10,7 @@ const FLASH_LIGHT_COLOR: [u8; 4] = [242, 242, 242, 255];
 
 pub(super) struct EntityFlashAnimation {
     player_position: BoardCell,
+    hide_player: bool,
     box_positions: Vec<BoardCell>,
     phase: EntityFlashPhase,
 }
@@ -25,6 +26,7 @@ impl EntityFlashAnimation {
     pub(super) fn from_scenes(
         previous: &GameplayScreenRequest,
         current: &GameplayScreenRequest,
+        hide_player: bool,
     ) -> Option<Self> {
         let player_position = previous.board.player()?;
         let player_changed = Some(player_position) != current.board.player();
@@ -34,6 +36,7 @@ impl EntityFlashAnimation {
         }
         Some(Self {
             player_position,
+            hide_player,
             box_positions,
             phase: EntityFlashPhase::FlashDark,
         })
@@ -50,7 +53,16 @@ impl EntityFlashAnimation {
 
 impl GameplayAnimation for EntityFlashAnimation {
     fn hides_player(&self) -> bool {
-        true
+        self.hide_player
+    }
+
+    fn dirty_cells(&self) -> Vec<BoardCell> {
+        let Some(_) = self.flash_color() else {
+            return Vec::new();
+        };
+        let mut dirty = self.box_positions.clone();
+        dirty.push(self.player_position);
+        dirty
     }
 
     fn draw_over_entities(
@@ -60,21 +72,26 @@ impl GameplayAnimation for EntityFlashAnimation {
         width: u32,
         height: u32,
         scene: &GameplayScreenRequest,
+        clip_cell: Option<BoardCell>,
     ) {
         let Some(color) = self.flash_color() else {
             return;
         };
-        draw_tinted_player(
-            renderer,
-            frame,
-            width,
-            height,
-            scene,
-            self.player_position,
-            color,
-        );
+        if clip_cell.is_none_or(|cell| cell == self.player_position) {
+            draw_tinted_player(
+                renderer,
+                frame,
+                width,
+                height,
+                scene,
+                self.player_position,
+                color,
+            );
+        }
         for &position in &self.box_positions {
-            draw_tinted_box(renderer, frame, width, height, scene, position, color);
+            if clip_cell.is_none_or(|cell| cell == position) {
+                draw_tinted_box(renderer, frame, width, height, scene, position, color);
+            }
         }
     }
 

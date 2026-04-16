@@ -24,7 +24,7 @@ fn rgb_hex(color: [u8; 4]) -> String {
 
 impl Renderer {
     #[allow(clippy::too_many_arguments)]
-    fn draw_box_at(
+    pub(crate) fn draw_box_at(
         &mut self,
         frame: &mut [u8],
         frame_width: u32,
@@ -40,7 +40,10 @@ impl Renderer {
         let Some((box_x, box_y, icon_size)) = self.box_sprite_rect_at(viewport, cell) else {
             return;
         };
-        let icon = if entity_visual_style == EntityVisualStyle::Solved && board.is_solved() {
+        let icon = if matches!(
+            entity_visual_style,
+            EntityVisualStyle::SolvedClean | EntityVisualStyle::SolvedDirty
+        ) {
             self.box_bitmap(icon_size, BoxSpriteVariant::Solved)
         } else if board.selected_box() == Some(cell) {
             self.box_bitmap(icon_size, BoxSpriteVariant::Selected)
@@ -152,7 +155,7 @@ impl Renderer {
         };
         let variant = if sleeping {
             PlayerSpriteVariant::Sleeping
-        } else if entity_visual_style == EntityVisualStyle::Solved && board.is_solved() {
+        } else if entity_visual_style == EntityVisualStyle::SolvedClean {
             PlayerSpriteVariant::Squint
         } else {
             PlayerSpriteVariant::Standard
@@ -377,7 +380,6 @@ mod tests {
     use super::{BoxSpriteVariant, PlayerSpriteVariant, Renderer};
     use crate::layout::fit_board_viewport_for_controls;
     use crate::renderer::EntityVisualStyle;
-    use crate::screen_requests::{GameplayScreenMode, GameplayScreenRequest};
     use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
 
     fn board(is_solved: bool) -> BoardView {
@@ -400,15 +402,6 @@ mod tests {
             None,
             is_solved,
         )
-    }
-
-    fn gameplay_request(board: BoardView, mode: GameplayScreenMode) -> GameplayScreenRequest {
-        GameplayScreenRequest {
-            viewport: fit_board_viewport_for_controls(64, 64, &board),
-            board,
-            level_number: 1,
-            mode,
-        }
     }
 
     #[test]
@@ -470,23 +463,66 @@ mod tests {
 
     #[test]
     fn gameplay_scene_uses_solved_visuals_when_opted_in() {
-        let request = gameplay_request(board(true), GameplayScreenMode::Normal);
+        let board = board(true);
+        let viewport = fit_board_viewport_for_controls(64, 64, &board);
         let mut renderer = Renderer::new();
         let mut frame = vec![0; 64 * 64];
 
-        renderer.draw_gameplay_scene(&mut frame, 64, 64, &request);
+        renderer.draw_board_on_frame(
+            &mut frame,
+            64,
+            64,
+            &board,
+            &viewport,
+            true,
+            EntityVisualStyle::SolvedClean,
+            false,
+        );
 
         assert!(!renderer.solved_box_bitmap_cache.is_empty());
         assert!(!renderer.squint_player_bitmap_cache.is_empty());
     }
 
     #[test]
-    fn sleep_mode_keeps_sleeping_player_on_solved_gameplay_board() {
-        let request = gameplay_request(board(true), GameplayScreenMode::Sleep);
+    fn dirty_solved_visuals_keep_standard_player() {
+        let board = board(true);
+        let viewport = fit_board_viewport_for_controls(64, 64, &board);
         let mut renderer = Renderer::new();
         let mut frame = vec![0; 64 * 64];
 
-        renderer.draw_gameplay_scene(&mut frame, 64, 64, &request);
+        renderer.draw_board_on_frame(
+            &mut frame,
+            64,
+            64,
+            &board,
+            &viewport,
+            true,
+            EntityVisualStyle::SolvedDirty,
+            false,
+        );
+
+        assert!(!renderer.solved_box_bitmap_cache.is_empty());
+        assert!(!renderer.player_bitmap_cache.is_empty());
+        assert!(renderer.squint_player_bitmap_cache.is_empty());
+    }
+
+    #[test]
+    fn sleep_mode_keeps_sleeping_player_on_solved_gameplay_board() {
+        let board = board(true);
+        let viewport = fit_board_viewport_for_controls(64, 64, &board);
+        let mut renderer = Renderer::new();
+        let mut frame = vec![0; 64 * 64];
+
+        renderer.draw_board_on_frame(
+            &mut frame,
+            64,
+            64,
+            &board,
+            &viewport,
+            true,
+            EntityVisualStyle::SolvedClean,
+            true,
+        );
 
         assert!(!renderer.solved_box_bitmap_cache.is_empty());
         assert!(!renderer.sleeping_player_bitmap_cache.is_empty());

@@ -25,6 +25,13 @@ impl BlinkAnimation {
 }
 
 impl GameplayAnimation for BlinkAnimation {
+    fn dirty_cells(&self) -> Vec<BoardCell> {
+        match self.phase {
+            BlinkPhase::Blinking => vec![self.player_position],
+            BlinkPhase::Waiting | BlinkPhase::Complete => Vec::new(),
+        }
+    }
+
     fn draw_over_entities(
         &self,
         renderer: &mut Renderer,
@@ -32,8 +39,11 @@ impl GameplayAnimation for BlinkAnimation {
         width: u32,
         height: u32,
         scene: &GameplayScreenRequest,
+        clip_cell: Option<BoardCell>,
     ) {
-        if self.phase != BlinkPhase::Blinking {
+        if self.phase != BlinkPhase::Blinking
+            || clip_cell.is_some_and(|cell| cell != self.player_position)
+        {
             return;
         }
         let Some((player_x, player_y, icon_size)) =
