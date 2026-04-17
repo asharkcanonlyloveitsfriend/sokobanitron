@@ -1,6 +1,6 @@
 use super::GameplayAnimation;
 use crate::gameplay_animation::GameplayAnimationPolicy;
-use crate::renderer::{Renderer, composite_straight_rgba_over_gray, fill_rect};
+use crate::renderer::{Gray, Renderer, fill_rect};
 use crate::screen_requests::GameplayScreenRequest;
 use sokobanitron_gameplay::BoardCell;
 
@@ -222,7 +222,7 @@ fn draw_path_from_progress(
             previous,
             next,
             line_width,
-            context.renderer.theme.light_3,
+            context.renderer.theme.gray_3,
             clip_rect,
         );
         previous = next;
@@ -273,8 +273,8 @@ fn limited_box_path_outline_color(
     renderer: &Renderer,
     _scene: &GameplayScreenRequest,
     _cell: BoardCell,
-) -> [u8; 4] {
-    renderer.theme.light_3
+) -> Gray {
+    renderer.theme.gray_3
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -286,7 +286,7 @@ fn draw_outlined_rounded_rect(
     y: i32,
     w: u32,
     h: u32,
-    color: [u8; 4],
+    color: Gray,
 ) {
     if w == 0 || h == 0 {
         return;
@@ -380,7 +380,7 @@ fn draw_corner_pixel(
     frame_height: u32,
     x: i32,
     y: i32,
-    color: [u8; 4],
+    color: Gray,
 ) {
     fill_rect(
         frame,
@@ -402,7 +402,7 @@ fn draw_thick_line(
     start: (f32, f32),
     end: (f32, f32),
     thickness: f32,
-    color: [u8; 4],
+    color: Gray,
     clip_rect: Option<(i32, i32, u32, u32)>,
 ) {
     let radius = thickness / 2.0;
@@ -433,7 +433,7 @@ fn draw_filled_circle(
     cx: f32,
     cy: f32,
     radius: f32,
-    color: [u8; 4],
+    color: Gray,
     clip_rect: Option<(i32, i32, u32, u32)>,
 ) {
     let clip_left = clip_rect.map(|rect| rect.0.max(0) as u32).unwrap_or(0);
@@ -466,7 +466,7 @@ fn draw_filled_circle(
             let dist_sq = (px - cx) * (px - cx) + (py - cy) * (py - cy);
             if dist_sq <= radius_sq {
                 let idx = (y * width + x) as usize;
-                frame[idx] = composite_straight_rgba_over_gray(frame[idx], color);
+                frame[idx] = color;
             }
         }
     }
@@ -493,9 +493,9 @@ mod tests {
     fn filled_circle_composites_alpha_into_gray_frame() {
         let mut frame = vec![100];
 
-        draw_filled_circle(&mut frame, 1, 1, 0.5, 0.5, 1.0, [200, 200, 200, 128], None);
+        draw_filled_circle(&mut frame, 1, 1, 0.5, 0.5, 1.0, 200, None);
 
-        assert_eq!(frame, vec![149]);
+        assert_eq!(frame, vec![200]);
     }
 
     #[test]
@@ -514,7 +514,7 @@ mod tests {
     }
 
     #[test]
-    fn limited_box_path_outline_uses_light_3_on_floor_and_goal() {
+    fn limited_box_path_outline_uses_gray_3_on_floor_and_goal() {
         let board = BoardView::new(
             2,
             1,
@@ -534,16 +534,16 @@ mod tests {
 
         assert_eq!(
             limited_box_path_outline_color(&renderer, &scene, BoardCell::new(0, 0)),
-            renderer.theme.light_3
+            renderer.theme.gray_3
         );
         assert_eq!(
             limited_box_path_outline_color(&renderer, &scene, BoardCell::new(1, 0)),
-            renderer.theme.light_3
+            renderer.theme.gray_3
         );
     }
 
     #[test]
-    fn full_box_path_uses_light_3_theme_color() {
+    fn full_box_path_uses_gray_3_theme_color() {
         let board = BoardView::new(
             2,
             1,
@@ -575,6 +575,6 @@ mod tests {
             0.0,
         );
 
-        assert!(frame.contains(&renderer.theme.light_3[0]));
+        assert!(frame.contains(&renderer.theme.gray_3));
     }
 }

@@ -82,8 +82,8 @@ impl Renderer {
         );
         match composition.chrome {
             GameplayChromePhase::GameplayControls { level_number } => {
-                chrome::draw_controls_ui(frame, width, height, false);
-                chrome::draw_top_left_level_button(frame, width, height, level_number);
+                chrome::draw_controls_ui(frame, width, height, false, self.theme);
+                chrome::draw_top_left_level_button(frame, width, height, level_number, self.theme);
             }
             GameplayChromePhase::Sleep => self.draw_gameplay_sleep_chrome(frame, width, height),
         }
@@ -226,6 +226,6 @@ impl Renderer {
             h: UI_BUTTON_MARGIN + UI_BUTTON_SIZE,
         };
         self.restore_background_rect(frame, width, height, rect);
-        chrome::draw_sleep_label(frame, width, height, rect);
+        chrome::draw_sleep_label(frame, width, height, rect, self.theme);
     }
 }

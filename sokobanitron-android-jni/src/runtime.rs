@@ -1,6 +1,6 @@
 use crate::native_window::NativeWindow;
 use presentation::renderer::{
-    Renderer, draw_controls_ui, draw_gameplay_menu_level_set_button,
+    Renderer, RendererOverrides, draw_controls_ui, draw_gameplay_menu_level_set_button,
     draw_overlay_primary_action_button, draw_top_menu_toggle,
 };
 use presentation::{
@@ -34,7 +34,6 @@ use std::time::Duration;
 const ANDROID_GAMEPLAY_TAP_SLOP_PX: i32 = 24;
 const ANDROID_EDITOR_TAP_SLOP_PX: i32 = 24;
 const ANDROID_EDITOR_DOUBLE_TAP_WINDOW: Duration = Duration::from_millis(750);
-const BUTTON_TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
 
 pub struct AndroidApp {
     renderer: GameplayRenderer,
@@ -86,7 +85,7 @@ impl AndroidApp {
         let current_request = build_android_frame_request(&controller, &app_state, &editor);
 
         let mut app = Self {
-            renderer: Renderer::new(),
+            renderer: Renderer::with_overrides(android_renderer_overrides()),
             gameplay_presentation: GameplayPresentationState::new(),
             gray_frame: allocate_gray_frame(surface_width, surface_height),
             current_request,
@@ -330,12 +329,14 @@ impl AndroidApp {
                     self.surface_width,
                     self.surface_height,
                     true,
+                    self.renderer.theme(),
                 );
                 if screen.show_change_level_set {
                     draw_gameplay_menu_level_set_button(
                         &mut self.gray_frame,
                         self.surface_width,
                         self.surface_height,
+                        self.renderer.theme(),
                     );
                 }
                 if let Some(icon) = screen.primary_action_icon {
@@ -344,7 +345,7 @@ impl AndroidApp {
                         self.surface_width,
                         self.surface_height,
                         icon,
-                        BUTTON_TEXT_COLOR,
+                        self.renderer.theme().gray_2,
                     );
                 }
                 FrameDamage::Full
@@ -369,6 +370,7 @@ impl AndroidApp {
                     self.surface_width,
                     self.surface_height,
                     true,
+                    self.renderer.theme(),
                 );
                 FrameDamage::Full
             }
@@ -390,6 +392,7 @@ impl AndroidApp {
                     self.surface_width,
                     self.surface_height,
                     true,
+                    self.renderer.theme(),
                 );
                 FrameDamage::Full
             }
@@ -452,6 +455,25 @@ impl AndroidApp {
                 let _ = self.render_request_into_frame(request);
             }
         }
+    }
+}
+
+fn android_renderer_overrides() -> RendererOverrides {
+    RendererOverrides {
+        gray_1: Some(236),
+        gray_2: Some(224),
+        gray_3: Some(212),
+        gray_4: Some(200),
+        gray_5: Some(190),
+        gray_6: Some(180),
+        gray_7: Some(170),
+        gray_8: Some(158),
+        gray_9: Some(146),
+        gray_10: Some(134),
+        gray_11: Some(122),
+        gray_12: Some(112),
+        gray_13: Some(102),
+        gray_14: Some(90),
     }
 }
 

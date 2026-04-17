@@ -1,17 +1,23 @@
 use crate::layout::level_select_scrollbar::{ScrollbarState, layout};
 
-use super::pixels::fill_rect;
+use super::{RendererTheme, pixels::fill_rect};
 
-pub(crate) fn draw(frame: &mut [u8], frame_width: u32, frame_height: u32, state: ScrollbarState) {
+pub(crate) fn draw(
+    frame: &mut [u8],
+    frame_width: u32,
+    frame_height: u32,
+    theme: RendererTheme,
+    state: ScrollbarState,
+) {
     let Some(layout) = layout(frame_width, frame_height, state) else {
         return;
     };
 
     let base = layout.base;
-    let line_color = [188, 188, 188, 255];
-    let jump_color = [214, 214, 214, 255];
-    let thumb_color = [228, 228, 228, 255];
-    let current_color = [246, 246, 246, 255];
+    let line_color = theme.gray_4;
+    let jump_color = theme.gray_2;
+    let thumb_color = theme.gray_2;
+    let current_color = theme.gray_1;
 
     fill_rect(
         frame,
@@ -79,7 +85,7 @@ fn draw_jump_indicator(
     width: u32,
     thickness: u32,
     secondary_below: bool,
-    color: [u8; 4],
+    color: u8,
 ) {
     let thickness = thickness.max(1);
     let y = center_y - thickness as i32 / 2;

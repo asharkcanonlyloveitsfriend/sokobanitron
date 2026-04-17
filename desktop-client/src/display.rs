@@ -9,8 +9,6 @@ use sokobanitron_app::{
     gameplay::build_current_frame_request,
 };
 
-const BUTTON_TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
-
 impl App {
     pub(crate) fn render_current(&mut self) {
         let request = match self.app_state.active_screen() {
@@ -79,12 +77,20 @@ impl App {
                         self.surface_width,
                         self.surface_height,
                     );
-                    draw_top_menu_toggle(gray_frame, self.surface_width, self.surface_height, true);
+                    let theme = self.renderer.theme();
+                    draw_top_menu_toggle(
+                        gray_frame,
+                        self.surface_width,
+                        self.surface_height,
+                        true,
+                        theme,
+                    );
                     if screen.show_change_level_set {
                         draw_gameplay_menu_level_set_button(
                             gray_frame,
                             self.surface_width,
                             self.surface_height,
+                            theme,
                         );
                     }
                     if let Some(icon) = screen.primary_action_icon {
@@ -93,7 +99,7 @@ impl App {
                             self.surface_width,
                             self.surface_height,
                             icon,
-                            BUTTON_TEXT_COLOR,
+                            theme.gray_2,
                         );
                     }
                     copy_gray_to_rgba(gray_frame, pixels.frame_mut());
@@ -117,7 +123,13 @@ impl App {
                         screen.resume_level,
                         screen.page_start,
                     );
-                    draw_controls_ui(gray_frame, self.surface_width, self.surface_height, true);
+                    draw_controls_ui(
+                        gray_frame,
+                        self.surface_width,
+                        self.surface_height,
+                        true,
+                        self.renderer.theme(),
+                    );
                     copy_gray_to_rgba(gray_frame, pixels.frame_mut());
                     pixels.render().expect("render");
                 }
@@ -137,7 +149,13 @@ impl App {
                         self.surface_height,
                         screen,
                     );
-                    draw_controls_ui(gray_frame, self.surface_width, self.surface_height, true);
+                    draw_controls_ui(
+                        gray_frame,
+                        self.surface_width,
+                        self.surface_height,
+                        true,
+                        self.renderer.theme(),
+                    );
                     copy_gray_to_rgba(gray_frame, pixels.frame_mut());
                     pixels.render().expect("render");
                 }

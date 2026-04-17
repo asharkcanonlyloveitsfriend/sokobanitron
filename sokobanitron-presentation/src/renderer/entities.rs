@@ -2,7 +2,7 @@ use crate::assets::rasterize_svg;
 use crate::layout::BoardViewport;
 use sokobanitron_gameplay::{BoardCell, BoardView};
 
-use super::{BLACK, EntityVisualStyle, Renderer, WHITE, blit_premultiplied_gray_alpha};
+use super::{EntityVisualStyle, Gray, Renderer, blit_premultiplied_gray_alpha};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BoxSpriteVariant {
@@ -18,8 +18,8 @@ enum PlayerSpriteVariant {
     Squint,
 }
 
-fn rgb_hex(color: [u8; 4]) -> String {
-    format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2])
+fn gray_hex(color: Gray) -> String {
+    format!("#{:02x}{:02x}{:02x}", color, color, color)
 }
 
 impl Renderer {
@@ -204,9 +204,9 @@ impl Renderer {
             BoxSpriteVariant::Standard => self.box_bitmap_cache.entry(size).or_insert_with(|| {
                 Self::rasterize_box_bitmap(
                     size,
-                    self.theme.mid_3,
-                    self.theme.mid_1,
-                    self.theme.dark_1,
+                    self.theme.gray_11,
+                    self.theme.gray_7,
+                    self.theme.gray_14,
                 )
             }),
             BoxSpriteVariant::Selected => self
@@ -215,35 +215,31 @@ impl Renderer {
                 .or_insert_with(|| {
                     Self::rasterize_box_bitmap(
                         size,
-                        self.theme.mid_5,
-                        self.theme.mid_2,
-                        self.theme.dark_2,
+                        self.theme.gray_13,
+                        self.theme.gray_9,
+                        self.theme.black,
                     )
                 }),
             BoxSpriteVariant::Solved => {
                 self.solved_box_bitmap_cache.entry(size).or_insert_with(|| {
                     Self::rasterize_solved_box_bitmap(
                         size,
-                        BLACK,
-                        WHITE,
-                        self.theme.mid_3,
-                        WHITE,
-                        self.theme.dark_1,
+                        self.theme.black,
+                        self.theme.white,
+                        self.theme.gray_11,
+                        self.theme.white,
+                        self.theme.gray_13,
+                        self.theme.black,
                     )
                 })
             }
         }
     }
 
-    fn rasterize_box_bitmap(
-        size: u32,
-        primary: [u8; 4],
-        highlight: [u8; 4],
-        shadow: [u8; 4],
-    ) -> Vec<u8> {
-        let c1 = rgb_hex(primary);
-        let c2 = rgb_hex(highlight);
-        let c3 = rgb_hex(shadow);
+    fn rasterize_box_bitmap(size: u32, primary: Gray, highlight: Gray, shadow: Gray) -> Vec<u8> {
+        let c1 = gray_hex(primary);
+        let c2 = gray_hex(highlight);
+        let c3 = gray_hex(shadow);
         let svg = format!(
             "<svg xmlns='http://www.w3.org/2000/svg' width='{s}' height='{s}' viewBox='0 0 100 100'>\
              <path d='M28,14L72,14A14,14 0,0 1,86 28L86,72A14,14 0,0 1,72 86L28,86A14,14 0,0 1,14 72L14,28A14,14 0,0 1,28 14z' fill='{c1}'/>\
@@ -261,8 +257,8 @@ impl Renderer {
 
     pub(crate) fn player_blink_overlay_bitmap(&mut self, size: u32) -> &[u8] {
         self.blink_player_bitmap_cache.entry(size).or_insert_with(|| {
-            let body = rgb_hex(self.theme.mid_1);
-            let eye = rgb_hex(BLACK);
+            let body = gray_hex(self.theme.gray_8);
+            let eye = gray_hex(self.theme.black);
             let svg = format!(
                 "<svg xmlns='http://www.w3.org/2000/svg' width='{s}' height='{s}' viewBox='0 0 100 100'>\
                  <path d='M31,36h38v13h-38z' fill='{body}'/>\
@@ -279,18 +275,19 @@ impl Renderer {
 
     fn rasterize_solved_box_bitmap(
         size: u32,
-        outer: [u8; 4],
-        frame: [u8; 4],
-        body: [u8; 4],
-        sparkle: [u8; 4],
-        shadow: [u8; 4],
+        outer: Gray,
+        frame: Gray,
+        body: Gray,
+        sparkle: Gray,
+        shadow: Gray,
+        black: Gray,
     ) -> Vec<u8> {
-        let outer = rgb_hex(outer);
-        let frame = rgb_hex(frame);
-        let body = rgb_hex(body);
-        let sparkle = rgb_hex(sparkle);
-        let shadow = rgb_hex(shadow);
-        let black = rgb_hex(BLACK);
+        let outer = gray_hex(outer);
+        let frame = gray_hex(frame);
+        let body = gray_hex(body);
+        let sparkle = gray_hex(sparkle);
+        let shadow = gray_hex(shadow);
+        let black = gray_hex(black);
         let svg = format!(
             "<svg xmlns='http://www.w3.org/2000/svg' width='{s}' height='{s}' viewBox='0 0 100 100' aria-label='Stylized bordered square preview'>\
              <path d='M25,8L75,8A17,15 0,0 1,92 25L92,75A17,15 0,0 1,75 92L25,92A17,15 0,0 1,8 75L8,25A17,15 0,0 1,25 8z' fill='{outer}'/>\
@@ -313,10 +310,10 @@ impl Renderer {
     }
 
     fn player_bitmap(&mut self, size: u32, variant: PlayerSpriteVariant) -> &[u8] {
-        let body = self.theme.mid_1;
-        let shine = WHITE;
-        let eye = BLACK;
-        let limb = self.theme.mid_4;
+        let body = self.theme.gray_8;
+        let shine = self.theme.white;
+        let eye = self.theme.black;
+        let limb = self.theme.gray_10;
         let cache = match variant {
             PlayerSpriteVariant::Standard => &mut self.player_bitmap_cache,
             PlayerSpriteVariant::Sleeping => &mut self.sleeping_player_bitmap_cache,
@@ -329,16 +326,16 @@ impl Renderer {
 
     fn rasterize_player_bitmap(
         size: u32,
-        body: [u8; 4],
-        shine: [u8; 4],
-        eye: [u8; 4],
-        limb: [u8; 4],
+        body: Gray,
+        shine: Gray,
+        eye: Gray,
+        limb: Gray,
         variant: PlayerSpriteVariant,
     ) -> Vec<u8> {
-        let body = rgb_hex(body);
-        let shine = rgb_hex(shine);
-        let eye = rgb_hex(eye);
-        let limb = rgb_hex(limb);
+        let body = gray_hex(body);
+        let shine = gray_hex(shine);
+        let eye = gray_hex(eye);
+        let limb = gray_hex(limb);
         let eyes = match variant {
             PlayerSpriteVariant::Standard => format!(
                 "<path d='M33,37h10v10h-10z' fill='{eye}'/>\

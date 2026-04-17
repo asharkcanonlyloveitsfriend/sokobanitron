@@ -1,5 +1,5 @@
 use crate::layout::ScreenRect;
-use crate::renderer::draw_icon_bits_in_rect;
+use crate::renderer::{Gray, draw_icon_bits_in_rect};
 
 pub const UI_ICON_SIZE: usize = 9;
 pub const UI_ICON_SCALE: usize = 3;
@@ -68,7 +68,7 @@ pub fn draw_ui_icon_in_rect(
     height: u32,
     rect: ScreenRect,
     icon: UiIcon,
-    color: [u8; 4],
+    color: Gray,
 ) {
     let bits = match icon {
         UiIcon::Draw => ICON_DRAW_PENCIL,

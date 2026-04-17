@@ -5,15 +5,15 @@ use crate::layout::{
 };
 use crate::screen_requests::{LevelSetListEntry, LevelSetSelectScreenRequest};
 
-use super::{Renderer, draw_text, level_select_scrollbar, measure_text_width, pixels::fill_rect};
+use super::{
+    Renderer, RendererTheme, draw_text, level_select_scrollbar, measure_text_width,
+    pixels::fill_rect,
+};
 
 const TITLE_SCALE: usize = 3;
 const TITLE_SPACING: usize = 1;
 const PROGRESS_TEXT_SCALE: usize = 2;
 const PROGRESS_TEXT_SPACING: usize = 1;
-const TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
-const SUBTLE_LINE_COLOR: [u8; 4] = [72, 80, 92, 255];
-
 impl Renderer {
     pub fn draw_level_set_select_menu_contents(
         &mut self,
@@ -38,10 +38,10 @@ impl Renderer {
                 continue;
             };
             let rect = row_rects[slot_index];
-            draw_level_set_row(frame, width, height, rect, entry);
-            draw_row_separator(frame, width, height, rect);
+            draw_level_set_row(frame, width, height, rect, entry, self.theme);
+            draw_row_separator(frame, width, height, rect, self.theme);
             if screen.active_level_set == Some(level_set_index) {
-                draw_selection_brackets(frame, width, height, rect);
+                draw_selection_brackets(frame, width, height, rect, self.theme);
             }
         }
 
@@ -49,6 +49,7 @@ impl Renderer {
             frame,
             width,
             height,
+            self.theme,
             ScrollbarState {
                 level_count: screen.entries.len(),
                 visible_count: level_set_rows_per_page().min(screen.entries.len()).max(1),
@@ -68,6 +69,7 @@ fn draw_level_set_row(
     height: u32,
     rect: ScreenRect,
     entry: &LevelSetListEntry,
+    theme: RendererTheme,
 ) {
     let horizontal_pad = UI_BUTTON_MARGIN.max(10) as usize;
     let progress_text = format!(
@@ -106,7 +108,7 @@ fn draw_level_set_row(
             &title,
             TITLE_SCALE,
             TITLE_SPACING,
-            TEXT_COLOR,
+            theme.gray_2,
         );
     }
 
@@ -119,7 +121,7 @@ fn draw_level_set_row(
         &progress_text,
         PROGRESS_TEXT_SCALE,
         PROGRESS_TEXT_SPACING,
-        TEXT_COLOR,
+        theme.gray_2,
     );
 }
 
@@ -146,7 +148,13 @@ fn fit_title_to_width(text: &str, max_width: usize, scale: usize, spacing: usize
     fitted
 }
 
-fn draw_row_separator(frame: &mut [u8], width: u32, height: u32, rect: ScreenRect) {
+fn draw_row_separator(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    rect: ScreenRect,
+    theme: RendererTheme,
+) {
     fill_rect(
         frame,
         width,
@@ -155,7 +163,7 @@ fn draw_row_separator(frame: &mut [u8], width: u32, height: u32, rect: ScreenRec
         rect.y.saturating_add(rect.h.saturating_sub(1)) as i32,
         rect.w.saturating_sub(UI_BUTTON_MARGIN.saturating_mul(2)),
         1,
-        SUBTLE_LINE_COLOR,
+        theme.gray_10,
     );
 }
 
@@ -164,6 +172,7 @@ fn draw_selection_brackets(
     frame_width: u32,
     frame_height: u32,
     rect: ScreenRect,
+    theme: RendererTheme,
 ) {
     let x = rect.x as i32;
     let y = rect.y as i32;
@@ -171,7 +180,7 @@ fn draw_selection_brackets(
     let h = rect.h;
     let len = (w.min(h) / 6).max(8) as i32;
     let thickness = 4;
-    let color = [200, 200, 200, 255];
+    let color = theme.gray_3;
     fill_rect(
         frame,
         frame_width,

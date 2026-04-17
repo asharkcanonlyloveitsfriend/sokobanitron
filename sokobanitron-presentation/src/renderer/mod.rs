@@ -1,7 +1,7 @@
 //! Drawing implementation for the presentation system.
 //!
 //! `Renderer` owns device-agnostic pixel composition for shared presentation requests. It draws
-//! into caller-provided RGBA buffers, but it does not own frame scheduling, invalidation, or
+//! into caller-provided grayscale buffers, but it does not own frame scheduling, invalidation, or
 //! platform refresh policy. Those remain client concerns.
 
 mod background;
@@ -31,11 +31,10 @@ pub use pixel_ui::{
     measure_text_width,
 };
 pub(crate) use pixels::{
-    blit_premultiplied_gray_alpha, composite_straight_rgba_over_gray, fill_rect,
-    premultiply_straight_gray, rgba_to_gray,
+    blit_premultiplied_gray_alpha, fill_rect, premultiply_straight_gray, rgba_to_gray,
 };
 
-pub type Rgba = [u8; 4];
+pub type Gray = u8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PlayerSceneComposition {
@@ -105,8 +104,6 @@ impl BoardSceneComposition {
 
 const BG_SPACE_PNG: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/bg_space.png"));
-pub(crate) const WHITE: Rgba = [255, 255, 255, 255];
-pub(crate) const BLACK: Rgba = [0, 0, 0, 255];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum EntityVisualStyle {
@@ -128,80 +125,108 @@ pub(crate) struct BoardSceneCacheKey {
 
 #[derive(Debug, Clone, Copy)]
 pub struct RendererTheme {
-    pub light_1: Rgba,
-    pub light_2: Rgba,
-    pub light_3: Rgba,
-    pub mid_1: Rgba,
-    pub mid_2: Rgba,
-    pub mid_3: Rgba,
-    pub mid_4: Rgba,
-    pub mid_5: Rgba,
-    pub dark_1: Rgba,
-    pub dark_2: Rgba,
+    pub white: Gray,
+    pub gray_1: Gray,
+    pub gray_2: Gray,
+    pub gray_3: Gray,
+    pub gray_4: Gray,
+    pub gray_5: Gray,
+    pub gray_6: Gray,
+    pub gray_7: Gray,
+    pub gray_8: Gray,
+    pub gray_9: Gray,
+    pub gray_10: Gray,
+    pub gray_11: Gray,
+    pub gray_12: Gray,
+    pub gray_13: Gray,
+    pub gray_14: Gray,
+    pub black: Gray,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RendererOverrides {
-    pub light_1: Option<Rgba>,
-    pub light_2: Option<Rgba>,
-    pub light_3: Option<Rgba>,
-    pub mid_1: Option<Rgba>,
-    pub mid_2: Option<Rgba>,
-    pub mid_3: Option<Rgba>,
-    pub mid_4: Option<Rgba>,
-    pub mid_5: Option<Rgba>,
-    pub dark_1: Option<Rgba>,
-    pub dark_2: Option<Rgba>,
+    pub gray_1: Option<Gray>,
+    pub gray_2: Option<Gray>,
+    pub gray_3: Option<Gray>,
+    pub gray_4: Option<Gray>,
+    pub gray_5: Option<Gray>,
+    pub gray_6: Option<Gray>,
+    pub gray_7: Option<Gray>,
+    pub gray_8: Option<Gray>,
+    pub gray_9: Option<Gray>,
+    pub gray_10: Option<Gray>,
+    pub gray_11: Option<Gray>,
+    pub gray_12: Option<Gray>,
+    pub gray_13: Option<Gray>,
+    pub gray_14: Option<Gray>,
 }
 
 impl Default for RendererTheme {
     fn default() -> Self {
         Self {
-            light_1: [240, 240, 240, 255],
-            light_2: [224, 224, 224, 255],
-            light_3: [211, 211, 211, 255],
-            mid_1: [156, 163, 175, 255],
-            mid_2: [123, 133, 150, 255],
-            mid_3: [120, 129, 144, 255],
-            mid_4: [107, 114, 128, 255],
-            mid_5: [95, 103, 117, 255],
-            dark_1: [75, 85, 99, 255],
-            dark_2: [74, 81, 96, 255],
+            white: 255,
+            gray_1: 238,
+            gray_2: 221,
+            gray_3: 204,
+            gray_4: 187,
+            gray_5: 170,
+            gray_6: 153,
+            gray_7: 136,
+            gray_8: 119,
+            gray_9: 102,
+            gray_10: 85,
+            gray_11: 68,
+            gray_12: 51,
+            gray_13: 34,
+            gray_14: 17,
+            black: 0,
         }
     }
 }
 
 impl RendererTheme {
     pub fn apply_overrides(mut self, overrides: RendererOverrides) -> Self {
-        if let Some(v) = overrides.light_1 {
-            self.light_1 = v;
+        if let Some(v) = overrides.gray_1 {
+            self.gray_1 = v;
         }
-        if let Some(v) = overrides.light_2 {
-            self.light_2 = v;
+        if let Some(v) = overrides.gray_2 {
+            self.gray_2 = v;
         }
-        if let Some(v) = overrides.light_3 {
-            self.light_3 = v;
+        if let Some(v) = overrides.gray_3 {
+            self.gray_3 = v;
         }
-        if let Some(v) = overrides.mid_1 {
-            self.mid_1 = v;
+        if let Some(v) = overrides.gray_4 {
+            self.gray_4 = v;
         }
-        if let Some(v) = overrides.mid_2 {
-            self.mid_2 = v;
+        if let Some(v) = overrides.gray_5 {
+            self.gray_5 = v;
         }
-        if let Some(v) = overrides.mid_3 {
-            self.mid_3 = v;
+        if let Some(v) = overrides.gray_6 {
+            self.gray_6 = v;
         }
-        if let Some(v) = overrides.mid_4 {
-            self.mid_4 = v;
+        if let Some(v) = overrides.gray_7 {
+            self.gray_7 = v;
         }
-        if let Some(v) = overrides.mid_5 {
-            self.mid_5 = v;
+        if let Some(v) = overrides.gray_8 {
+            self.gray_8 = v;
         }
-        if let Some(v) = overrides.dark_1 {
-            self.dark_1 = v;
+        if let Some(v) = overrides.gray_9 {
+            self.gray_9 = v;
         }
-        if let Some(v) = overrides.dark_2 {
-            self.dark_2 = v;
+        if let Some(v) = overrides.gray_10 {
+            self.gray_10 = v;
+        }
+        if let Some(v) = overrides.gray_11 {
+            self.gray_11 = v;
+        }
+        if let Some(v) = overrides.gray_12 {
+            self.gray_12 = v;
+        }
+        if let Some(v) = overrides.gray_13 {
+            self.gray_13 = v;
+        }
+        if let Some(v) = overrides.gray_14 {
+            self.gray_14 = v;
         }
         self
     }
@@ -254,6 +279,10 @@ impl Renderer {
             squint_player_bitmap_cache: HashMap::new(),
             sleeping_player_bitmap_cache: HashMap::new(),
         }
+    }
+
+    pub fn theme(&self) -> RendererTheme {
+        self.theme
     }
 
     pub fn draw(

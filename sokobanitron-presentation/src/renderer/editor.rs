@@ -8,10 +8,8 @@ use sokobanitron_level_editor::PullHintStatus;
 
 use super::chrome::{draw_overlay_primary_action_button, draw_top_menu_toggle};
 use super::pixel_ui::{PIXEL_FONT_HEIGHT, draw_centered_text_in_rect, measure_text_width};
-use super::{BoardSceneComposition, Renderer};
+use super::{BoardSceneComposition, Renderer, RendererTheme};
 
-const BUTTON_TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
-const HINT_TEXT_COLOR: [u8; 4] = [172, 172, 172, 255];
 const UI_TEXT_SCALE: usize = 4;
 
 struct EditorControlsState {
@@ -50,13 +48,13 @@ impl Renderer {
         request: &EditorMenuScreenRequest,
     ) {
         self.draw_background_only(frame, width, height);
-        draw_top_menu_toggle(frame, width, height, true);
+        draw_top_menu_toggle(frame, width, height, true, self.theme);
         draw_overlay_primary_action_button(
             frame,
             width,
             height,
             request.primary_action_icon,
-            BUTTON_TEXT_COLOR,
+            button_text_color(self.theme),
         );
         if request.show_save_button {
             draw_centered_text_in_rect(
@@ -67,7 +65,7 @@ impl Renderer {
                 "SAVE",
                 UI_TEXT_SCALE,
                 1,
-                BUTTON_TEXT_COLOR,
+                button_text_color(self.theme),
             );
         }
     }
@@ -86,7 +84,7 @@ impl Renderer {
                 height,
                 count.rect,
                 &count.count.to_string(),
-                BUTTON_TEXT_COLOR,
+                button_text_color(self.theme),
             );
         }
         for hint in &request.pull_destination_hints {
@@ -94,7 +92,14 @@ impl Renderer {
                 PullHintStatus::Pending => "?".to_string(),
                 PullHintStatus::Ready(count) => count.min(99).to_string(),
             };
-            draw_count_label(frame, width, height, hint.rect, &label, HINT_TEXT_COLOR);
+            draw_count_label(
+                frame,
+                width,
+                height,
+                hint.rect,
+                &label,
+                hint_text_color(self.theme),
+            );
         }
     }
 
@@ -109,6 +114,7 @@ impl Renderer {
             frame,
             width,
             height,
+            self.theme,
             EditorControlsState {
                 draw_mode_active: request.draw_mode_active,
                 can_zoom_out: request.can_zoom_out,
@@ -117,11 +123,17 @@ impl Renderer {
                 can_restart: request.can_restart,
             },
         );
-        draw_top_menu_toggle(frame, width, height, false);
+        draw_top_menu_toggle(frame, width, height, false, self.theme);
     }
 }
 
-fn draw_editor_controls(frame: &mut [u8], width: u32, height: u32, controls: EditorControlsState) {
+fn draw_editor_controls(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    theme: RendererTheme,
+    controls: EditorControlsState,
+) {
     let mode_icon = if controls.draw_mode_active {
         UiIcon::Draw
     } else {
@@ -133,7 +145,7 @@ fn draw_editor_controls(frame: &mut [u8], width: u32, height: u32, controls: Edi
         height,
         top_left_level_button_rect(),
         mode_icon,
-        BUTTON_TEXT_COLOR,
+        button_text_color(theme),
     );
 
     if controls.draw_mode_active {
@@ -146,7 +158,7 @@ fn draw_editor_controls(frame: &mut [u8], width: u32, height: u32, controls: Edi
                 "-",
                 UI_TEXT_SCALE,
                 0,
-                BUTTON_TEXT_COLOR,
+                button_text_color(theme),
             );
         }
         if controls.can_zoom_in {
@@ -158,7 +170,7 @@ fn draw_editor_controls(frame: &mut [u8], width: u32, height: u32, controls: Edi
                 "+",
                 UI_TEXT_SCALE,
                 0,
-                BUTTON_TEXT_COLOR,
+                button_text_color(theme),
             );
         }
     } else {
@@ -169,7 +181,7 @@ fn draw_editor_controls(frame: &mut [u8], width: u32, height: u32, controls: Edi
                 height,
                 editor_bottom_left_button_rect(height),
                 UiIcon::Undo,
-                BUTTON_TEXT_COLOR,
+                button_text_color(theme),
             );
         }
         if controls.can_restart {
@@ -179,7 +191,7 @@ fn draw_editor_controls(frame: &mut [u8], width: u32, height: u32, controls: Edi
                 height,
                 editor_bottom_right_button_rect(width, height),
                 UiIcon::Restart,
-                BUTTON_TEXT_COLOR,
+                button_text_color(theme),
             );
         }
     }
@@ -191,7 +203,7 @@ fn draw_count_label(
     height: u32,
     rect: ScreenRect,
     text: &str,
-    color: [u8; 4],
+    color: u8,
 ) {
     let max_text_width = measure_text_width("99", 1, 0).max(1);
     let scale_x = (rect.w as usize / max_text_width).max(1);
@@ -199,6 +211,14 @@ fn draw_count_label(
     let max_fit_scale = scale_x.min(scale_y).max(1);
     let scale = ((max_fit_scale * 5) / 25).max(1);
     draw_centered_text_in_rect(frame, width, height, rect, text, scale, 0, color);
+}
+
+fn button_text_color(theme: RendererTheme) -> u8 {
+    theme.gray_2
+}
+
+fn hint_text_color(theme: RendererTheme) -> u8 {
+    theme.gray_5
 }
 
 #[cfg(test)]

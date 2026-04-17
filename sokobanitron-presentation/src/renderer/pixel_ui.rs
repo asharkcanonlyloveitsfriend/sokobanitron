@@ -1,4 +1,5 @@
 use crate::layout::ScreenRect;
+use crate::renderer::Gray;
 
 pub const PIXEL_FONT_HEIGHT: usize = 7;
 
@@ -23,7 +24,7 @@ pub fn draw_centered_text_in_rect(
     text: &str,
     scale: usize,
     spacing: usize,
-    color: [u8; 4],
+    color: Gray,
 ) {
     let text_width = measure_text_width(text, scale, spacing);
     let text_height = PIXEL_FONT_HEIGHT * scale;
@@ -42,7 +43,7 @@ pub fn draw_text(
     text: &str,
     scale: usize,
     spacing: usize,
-    color: [u8; 4],
+    color: Gray,
 ) {
     let mut cursor_x = x;
     for ch in text.chars() {
@@ -60,7 +61,7 @@ pub fn draw_icon_bits_in_rect(
     icon_rows: &[u16],
     icon_size: usize,
     scale: usize,
-    color: [u8; 4],
+    color: Gray,
 ) {
     let icon_w = icon_size * scale;
     let icon_h = icon_size * scale;
@@ -94,7 +95,7 @@ fn draw_glyph(
     y: usize,
     ch: char,
     scale: usize,
-    color: [u8; 4],
+    color: Gray,
 ) {
     let glyph = glyph_pattern(ch);
     for (row_idx, row_bits) in glyph.iter().enumerate() {
@@ -292,7 +293,7 @@ fn draw_rect_gray(
     y: usize,
     w: usize,
     h: usize,
-    color: [u8; 4],
+    color: Gray,
 ) {
     let x_end = x.saturating_add(w).min(frame_width);
     let y_end = y.saturating_add(h).min(frame_height);
@@ -300,7 +301,7 @@ fn draw_rect_gray(
         let row = yy * frame_width;
         for xx in x..x_end {
             let idx = row + xx;
-            frame[idx] = super::composite_straight_rgba_over_gray(frame[idx], color);
+            frame[idx] = color;
         }
     }
 }
@@ -310,11 +311,11 @@ mod tests {
     use super::draw_rect_gray;
 
     #[test]
-    fn draw_rect_gray_composites_alpha() {
+    fn draw_rect_gray_replaces_destination() {
         let mut frame = vec![100];
 
-        draw_rect_gray(&mut frame, 1, 1, 0, 0, 1, 1, [200, 200, 200, 128]);
+        draw_rect_gray(&mut frame, 1, 1, 0, 0, 1, 1, 200);
 
-        assert_eq!(frame, vec![149]);
+        assert_eq!(frame, vec![200]);
     }
 }

@@ -1,15 +1,10 @@
 use super::GameplayAnimation;
 use crate::gameplay_animation::GameplayAnimationPolicy;
-use crate::renderer::{
-    Renderer, blit_premultiplied_gray_alpha, premultiply_straight_gray, rgba_to_gray,
-};
+use crate::renderer::{Renderer, blit_premultiplied_gray_alpha, premultiply_straight_gray};
 use crate::screen_requests::{
     GameplayPresentationCause, GameplayPresentationUpdate, GameplayScreenRequest,
 };
 use sokobanitron_gameplay::BoardCell;
-
-const FLASH_DARK_COLOR: [u8; 4] = [142, 142, 142, 255];
-const FLASH_LIGHT_COLOR: [u8; 4] = [242, 242, 242, 255];
 
 pub(super) struct EntityFlashAnimation {
     player_position: BoardCell,
@@ -45,10 +40,10 @@ impl EntityFlashAnimation {
         })
     }
 
-    fn flash_color(&self) -> Option<[u8; 4]> {
+    fn flash_color(&self, renderer: &Renderer) -> Option<u8> {
         match self.phase {
-            EntityFlashPhase::FlashDark => Some(FLASH_DARK_COLOR),
-            EntityFlashPhase::FlashLight => Some(FLASH_LIGHT_COLOR),
+            EntityFlashPhase::FlashDark => Some(renderer.theme.gray_13),
+            EntityFlashPhase::FlashLight => Some(renderer.theme.gray_1),
             EntityFlashPhase::Complete => None,
         }
     }
@@ -78,7 +73,10 @@ impl GameplayAnimation for EntityFlashAnimation {
     }
 
     fn dirty_cells(&self) -> Vec<BoardCell> {
-        let Some(_) = self.flash_color() else {
+        let Some(_) = (match self.phase {
+            EntityFlashPhase::FlashDark | EntityFlashPhase::FlashLight => Some(()),
+            EntityFlashPhase::Complete => None,
+        }) else {
             return Vec::new();
         };
         let mut dirty = self.box_positions.clone();
@@ -95,7 +93,7 @@ impl GameplayAnimation for EntityFlashAnimation {
         scene: &GameplayScreenRequest,
         clip_cell: Option<BoardCell>,
     ) {
-        let Some(color) = self.flash_color() else {
+        let Some(color) = self.flash_color(renderer) else {
             return;
         };
         if clip_cell.is_none_or(|cell| cell == self.player_position) {
@@ -156,7 +154,7 @@ fn draw_tinted_player(
     height: u32,
     scene: &GameplayScreenRequest,
     position: BoardCell,
-    color: [u8; 4],
+    color: u8,
 ) {
     let Some((player_x, player_y, icon_size)) =
         renderer.player_sprite_rect_at(&scene.viewport, position)
@@ -177,7 +175,7 @@ fn draw_tinted_box(
     height: u32,
     scene: &GameplayScreenRequest,
     position: BoardCell,
-    color: [u8; 4],
+    color: u8,
 ) {
     let Some((box_x, box_y, icon_size)) = renderer.box_sprite_rect_at(&scene.viewport, position)
     else {
@@ -192,16 +190,12 @@ fn draw_tinted_box(
 
 /// Recolors a premultiplied gray+alpha bitmap and returns the same premultiplied format.
 ///
-/// `bitmap` is `[premultiplied_gray, alpha]` pairs. The tint color is straight RGBA; its alpha
-/// modulates the bitmap alpha before the output gray channel is premultiplied.
-fn tint_premultiplied_gray_alpha(bitmap: &[u8], color: [u8; 4]) -> Vec<u8> {
-    let color_alpha = color[3];
-    let color = rgba_to_gray(color);
+/// `bitmap` is `[premultiplied_gray, alpha]` pairs. The tint color is straight grayscale.
+fn tint_premultiplied_gray_alpha(bitmap: &[u8], color: u8) -> Vec<u8> {
     let mut tinted = Vec::with_capacity(bitmap.len());
     for pixel in bitmap.chunks_exact(2) {
-        let alpha = (u16::from(pixel[1]) * u16::from(color_alpha) / 255) as u8;
-        tinted.push(premultiply_straight_gray(color, alpha));
-        tinted.push(alpha);
+        tinted.push(premultiply_straight_gray(color, pixel[1]));
+        tinted.push(pixel[1]);
     }
     tinted
 }
@@ -214,12 +208,12 @@ mod tests {
     #[test]
     fn tint_premultiplied_gray_alpha_preserves_composited_alpha_behavior() {
         let bitmap = vec![200, 128];
-        let tinted = tint_premultiplied_gray_alpha(&bitmap, [200, 200, 200, 128]);
+        let tinted = tint_premultiplied_gray_alpha(&bitmap, 200);
         let mut frame = vec![100];
 
         blit_premultiplied_gray_alpha(&mut frame, 1, 1, &tinted, 1, 1, 0, 0);
 
-        assert_eq!(tinted, vec![50, 64]);
-        assert_eq!(frame, vec![124]);
+        assert_eq!(tinted, vec![100, 128]);
+        assert_eq!(frame, vec![149]);
     }
 }

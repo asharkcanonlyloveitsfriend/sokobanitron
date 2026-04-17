@@ -1,6 +1,6 @@
 use super::GameplayAnimation;
 use crate::gameplay_animation::GameplayAnimationPolicy;
-use crate::renderer::{Renderer, composite_straight_rgba_over_gray, fill_rect};
+use crate::renderer::{Renderer, fill_rect};
 use crate::screen_requests::GameplayScreenRequest;
 use sokobanitron_gameplay::BoardCell;
 
@@ -199,7 +199,7 @@ fn draw_limited_vanishing_box_at(
         box_y + offset,
         scaled_size,
         scaled_size,
-        renderer.theme.mid_3,
+        renderer.theme.gray_11,
     );
 }
 
@@ -216,7 +216,7 @@ fn draw_filled_rounded_rect(
     y: i32,
     w: u32,
     h: u32,
-    color: [u8; 4],
+    color: u8,
 ) {
     if w == 0 || h == 0 {
         return;
@@ -296,7 +296,7 @@ fn draw_filled_circle(
     cx: f32,
     cy: f32,
     radius: f32,
-    color: [u8; 4],
+    color: u8,
 ) {
     let min_x = (cx - radius).floor().max(0.0) as u32;
     let max_x = (cx + radius).ceil().min(width.saturating_sub(1) as f32) as u32;
@@ -313,7 +313,7 @@ fn draw_filled_circle(
             let dist_sq = (px - cx) * (px - cx) + (py - cy) * (py - cy);
             if dist_sq <= radius_sq {
                 let idx = (y * width + x) as usize;
-                frame[idx] = composite_straight_rgba_over_gray(frame[idx], color);
+                frame[idx] = color;
             }
         }
     }

@@ -9,7 +9,7 @@ use presentation::screen_requests::{
 use presentation::{
     GameplayDamage, gameplay_damage_union_rect,
     renderer::{
-        Renderer, RendererOverrides, draw_controls_ui, draw_gameplay_menu_level_set_button,
+        Renderer, draw_controls_ui, draw_gameplay_menu_level_set_button,
         draw_overlay_primary_action_button, draw_top_menu_toggle,
     },
 };
@@ -20,23 +20,9 @@ use sokobanitron_app::{
 use sokobanitron_gameplay::BoardCell;
 use std::io::Result;
 
-const KINDLE_MID_1: [u8; 4] = [117, 117, 117, 255];
-const KINDLE_MID_3: [u8; 4] = [60, 63, 66, 255];
-const KINDLE_MID_4: [u8; 4] = [80, 80, 80, 255];
-const KINDLE_DARK_1: [u8; 4] = [30, 31, 33, 255];
-
 impl KindleApp {
     pub(crate) fn build_renderer() -> Renderer {
-        Renderer::with_overrides(RendererOverrides {
-            mid_1: Some(KINDLE_MID_1),
-            mid_2: Some(config::KINDLE_MID_2),
-            mid_3: Some(KINDLE_MID_3),
-            mid_4: Some(KINDLE_MID_4),
-            mid_5: Some(config::KINDLE_MID_5),
-            dark_1: Some(KINDLE_DARK_1),
-            dark_2: Some(config::KINDLE_DARK_2),
-            ..RendererOverrides::default()
-        })
+        Renderer::new()
     }
 
     pub(crate) fn render(&mut self) -> Result<()> {
@@ -76,12 +62,20 @@ impl KindleApp {
                 let (renderer, gray, display) =
                     (&mut self.renderer, &mut self.gray_frame, &mut self.display);
                 renderer.draw_background_only(gray, config::WIDTH as u32, config::HEIGHT as u32);
-                draw_top_menu_toggle(gray, config::WIDTH as u32, config::HEIGHT as u32, true);
+                let theme = renderer.theme();
+                draw_top_menu_toggle(
+                    gray,
+                    config::WIDTH as u32,
+                    config::HEIGHT as u32,
+                    true,
+                    theme,
+                );
                 if screen.show_change_level_set {
                     draw_gameplay_menu_level_set_button(
                         gray,
                         config::WIDTH as u32,
                         config::HEIGHT as u32,
+                        theme,
                     );
                 }
                 if let Some(icon) = screen.primary_action_icon {
@@ -90,7 +84,7 @@ impl KindleApp {
                         config::WIDTH as u32,
                         config::HEIGHT as u32,
                         icon,
-                        [220, 220, 220, 255],
+                        theme.gray_2,
                     );
                 }
                 display.present_gray(gray)
@@ -115,7 +109,13 @@ impl KindleApp {
                     screen.resume_level,
                     screen.page_start,
                 );
-                draw_controls_ui(gray, config::WIDTH as u32, config::HEIGHT as u32, true);
+                draw_controls_ui(
+                    gray,
+                    config::WIDTH as u32,
+                    config::HEIGHT as u32,
+                    true,
+                    renderer.theme(),
+                );
                 if matches!(present_mode, PresentMode::FastPartial) {
                     display.present_gray_fast_partial(gray)
                 } else {
@@ -136,7 +136,13 @@ impl KindleApp {
                     config::HEIGHT as u32,
                     screen,
                 );
-                draw_controls_ui(gray, config::WIDTH as u32, config::HEIGHT as u32, true);
+                draw_controls_ui(
+                    gray,
+                    config::WIDTH as u32,
+                    config::HEIGHT as u32,
+                    true,
+                    renderer.theme(),
+                );
                 if matches!(present_mode, PresentMode::FastPartial) {
                     display.present_gray_fast_partial(gray)
                 } else {

@@ -53,7 +53,7 @@ impl Renderer {
                 BoardSceneComposition::static_scene(),
             );
             if level_idx == resume_level {
-                draw_selection_brackets(frame, width, height, sx, sy, sw, sh);
+                draw_selection_brackets(frame, width, height, sx, sy, sw, sh, self.theme.gray_3);
             }
         }
 
@@ -61,6 +61,7 @@ impl Renderer {
             frame,
             width,
             height,
+            self.theme,
             ScrollbarState {
                 level_count: preview_boards.len(),
                 visible_count: crate::layout::menu_slots_per_page(),
@@ -71,6 +72,7 @@ impl Renderer {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_selection_brackets(
     frame: &mut [u8],
     frame_width: u32,
@@ -79,10 +81,10 @@ fn draw_selection_brackets(
     y: i32,
     w: u32,
     h: u32,
+    color: u8,
 ) {
     let len = (w.min(h) / 6).max(8) as i32;
     let thickness = 4;
-    let color = [200, 200, 200, 255];
     fill_rect(
         frame,
         frame_width,

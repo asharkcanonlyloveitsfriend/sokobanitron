@@ -7,7 +7,7 @@ pub(crate) fn fill_rect(
     y: i32,
     w: u32,
     h: u32,
-    color: [u8; 4],
+    color: u8,
 ) {
     let start_x = x.max(0) as u32;
     let start_y = y.max(0) as u32;
@@ -19,7 +19,7 @@ pub(crate) fn fill_rect(
     for py in start_y..end_y {
         for px in start_x..end_x {
             let idx = (py * frame_width + px) as usize;
-            frame[idx] = composite_straight_rgba_over_gray(frame[idx], color);
+            frame[idx] = color;
         }
     }
 }
@@ -102,18 +102,13 @@ pub(crate) fn composite_premultiplied_gray_over(
 ///
 /// This is the helper to use when the source gray value has not yet been premultiplied.
 #[inline]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn composite_straight_gray_alpha_over(dst_gray: u8, src_gray: u8, src_alpha: u8) -> u8 {
     composite_premultiplied_gray_over(
         dst_gray,
         premultiply_straight_gray(src_gray, src_alpha),
         src_alpha,
     )
-}
-
-/// Composites a straight RGBA color over an opaque grayscale destination pixel.
-#[inline]
-pub(crate) fn composite_straight_rgba_over_gray(dst_gray: u8, src: [u8; 4]) -> u8 {
-    composite_straight_gray_alpha_over(dst_gray, rgba_to_gray(src), src[3])
 }
 
 #[cfg(test)]
@@ -144,19 +139,10 @@ mod tests {
     }
 
     #[test]
-    fn fill_rect_composites_alpha_from_rgba_color() {
+    fn fill_rect_replaces_destination_with_gray_color() {
         let mut frame = vec![100];
 
-        fill_rect(&mut frame, 1, 1, 0, 0, 1, 1, [200, 200, 200, 128]);
-
-        assert_eq!(frame, vec![149]);
-    }
-
-    #[test]
-    fn fill_rect_opaque_color_replaces_destination() {
-        let mut frame = vec![100];
-
-        fill_rect(&mut frame, 1, 1, 0, 0, 1, 1, [200, 200, 200, 255]);
+        fill_rect(&mut frame, 1, 1, 0, 0, 1, 1, 200);
 
         assert_eq!(frame, vec![200]);
     }
