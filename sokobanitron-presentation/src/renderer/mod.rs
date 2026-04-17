@@ -31,8 +31,8 @@ pub use pixel_ui::{
     measure_text_width,
 };
 pub(crate) use pixels::{
-    blit_premultiplied_gray_alpha, composite_straight_rgba_over_gray, premultiply_straight_gray,
-    rgba_to_gray,
+    blit_premultiplied_gray_alpha, composite_straight_rgba_over_gray, fill_rect,
+    premultiply_straight_gray, rgba_to_gray,
 };
 
 pub type Rgba = [u8; 4];
@@ -130,6 +130,7 @@ pub(crate) struct BoardSceneCacheKey {
 pub struct RendererTheme {
     pub light_1: Rgba,
     pub light_2: Rgba,
+    pub light_3: Rgba,
     pub mid_1: Rgba,
     pub mid_2: Rgba,
     pub mid_3: Rgba,
@@ -143,6 +144,7 @@ pub struct RendererTheme {
 pub struct RendererOverrides {
     pub light_1: Option<Rgba>,
     pub light_2: Option<Rgba>,
+    pub light_3: Option<Rgba>,
     pub mid_1: Option<Rgba>,
     pub mid_2: Option<Rgba>,
     pub mid_3: Option<Rgba>,
@@ -157,6 +159,7 @@ impl Default for RendererTheme {
         Self {
             light_1: [240, 240, 240, 255],
             light_2: [224, 224, 224, 255],
+            light_3: [211, 211, 211, 255],
             mid_1: [156, 163, 175, 255],
             mid_2: [123, 133, 150, 255],
             mid_3: [120, 129, 144, 255],
@@ -175,6 +178,9 @@ impl RendererTheme {
         }
         if let Some(v) = overrides.light_2 {
             self.light_2 = v;
+        }
+        if let Some(v) = overrides.light_3 {
+            self.light_3 = v;
         }
         if let Some(v) = overrides.mid_1 {
             self.mid_1 = v;

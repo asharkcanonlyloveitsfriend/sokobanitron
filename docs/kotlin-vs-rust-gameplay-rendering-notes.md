@@ -203,7 +203,7 @@ Important current behavior:
 - derives flash targets from `previous_scene` and `current_scene` at enqueue time
 - flashes previous player position if player moved
 - flashes boxes present in the previous scene but absent at those cells in the current scene
-- disabled by Kindle's blink-only presentation config
+- disabled by Kindle's limited-animation presentation config
 
 ### Shared gameplay renderer
 

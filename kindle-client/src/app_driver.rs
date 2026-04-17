@@ -1,5 +1,5 @@
 use crate::{config, platform};
-use presentation::{GameplayPresentationConfig, GameplayPresentationState, Renderer};
+use presentation::{GameplayAnimationPolicy, GameplayPresentationState, Renderer};
 use sokobanitron_app::{
     AppPreferences,
     app::{
@@ -78,8 +78,8 @@ impl KindleApp {
         );
         Ok(Self {
             renderer: Self::build_renderer(),
-            gameplay_presentation: GameplayPresentationState::with_config(
-                GameplayPresentationConfig::blink_only(),
+            gameplay_presentation: GameplayPresentationState::with_animation_policy(
+                GameplayAnimationPolicy::Limited,
             ),
             gray_frame: vec![0; config::WIDTH * config::HEIGHT],
             sleep_state: AppSleepState::Awake,

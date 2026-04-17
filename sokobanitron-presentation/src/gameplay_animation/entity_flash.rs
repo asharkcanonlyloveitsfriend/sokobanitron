@@ -1,8 +1,11 @@
 use super::GameplayAnimation;
+use crate::gameplay_animation::GameplayAnimationPolicy;
 use crate::renderer::{
     Renderer, blit_premultiplied_gray_alpha, premultiply_straight_gray, rgba_to_gray,
 };
-use crate::screen_requests::GameplayScreenRequest;
+use crate::screen_requests::{
+    GameplayPresentationCause, GameplayPresentationUpdate, GameplayScreenRequest,
+};
 use sokobanitron_gameplay::BoardCell;
 
 const FLASH_DARK_COLOR: [u8; 4] = [142, 142, 142, 255];
@@ -23,7 +26,7 @@ enum EntityFlashPhase {
 }
 
 impl EntityFlashAnimation {
-    pub(super) fn from_scenes(
+    fn from_scenes(
         previous: &GameplayScreenRequest,
         current: &GameplayScreenRequest,
         hide_player: bool,
@@ -49,6 +52,24 @@ impl EntityFlashAnimation {
             EntityFlashPhase::Complete => None,
         }
     }
+}
+
+pub(super) fn entity_flash_animation_for_policy(
+    policy: GameplayAnimationPolicy,
+    previous_scene: Option<&GameplayScreenRequest>,
+    update: &GameplayPresentationUpdate,
+) -> Option<Box<dyn GameplayAnimation>> {
+    if policy != GameplayAnimationPolicy::Full {
+        return None;
+    }
+
+    let previous_scene = previous_scene?;
+    let animation = EntityFlashAnimation::from_scenes(
+        previous_scene,
+        &update.scene,
+        matches!(update.cause, GameplayPresentationCause::BoxMoved { .. }),
+    )?;
+    Some(Box::new(animation))
 }
 
 impl GameplayAnimation for EntityFlashAnimation {

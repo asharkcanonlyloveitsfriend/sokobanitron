@@ -19,7 +19,7 @@ pub mod renderer;
 pub mod screen_requests;
 
 pub use assets::{UiIcon, draw_ui_icon_in_rect};
-pub use gameplay_animation::GameplayPresentationConfig;
+pub use gameplay_animation::GameplayAnimationPolicy;
 pub use gameplay_presentation::{
     GameplayDamage, GameplayPresentationState, gameplay_damage_union_rect,
 };

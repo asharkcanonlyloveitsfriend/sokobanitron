@@ -3,7 +3,9 @@ use crate::{
     config,
     platform::{Display, Region},
 };
-use presentation::screen_requests::GameplayScreenRequest;
+use presentation::screen_requests::{
+    GameplayPresentationCause, GameplayPresentationUpdate, GameplayScreenRequest,
+};
 use presentation::{
     GameplayDamage, gameplay_damage_union_rect,
     renderer::{
@@ -48,6 +50,7 @@ impl KindleApp {
                 update,
                 present_mode,
             } => {
+                let effective_present_mode = kindle_gameplay_present_mode(update, *present_mode);
                 let damage = self
                     .gameplay_presentation
                     .replace_update_with_damage(update.clone());
@@ -60,7 +63,13 @@ impl KindleApp {
                     config::HEIGHT as u32,
                     &damage,
                 );
-                present_gameplay_damage(display, &update.scene, &damage, gray, *present_mode)
+                present_gameplay_damage(
+                    display,
+                    &update.scene,
+                    &damage,
+                    gray,
+                    effective_present_mode,
+                )
             }
             FrameRequest::GameplayMenu { screen } => {
                 self.gameplay_presentation.clear();
@@ -182,6 +191,31 @@ pub(crate) fn present_gameplay_damage(
     }
 }
 
+fn kindle_gameplay_present_mode(
+    update: &GameplayPresentationUpdate,
+    requested: PresentMode,
+) -> PresentMode {
+    if matches!(requested, PresentMode::FastPartial) || kindle_cause_starts_animation(&update.cause)
+    {
+        PresentMode::FastPartial
+    } else {
+        requested
+    }
+}
+
+fn kindle_cause_starts_animation(cause: &GameplayPresentationCause) -> bool {
+    matches!(
+        cause,
+        GameplayPresentationCause::PlayerMoved { .. }
+            | GameplayPresentationCause::BoxMoved { .. }
+            | GameplayPresentationCause::BoxRemoved { .. }
+            | GameplayPresentationCause::BoxMoveRejected
+            | GameplayPresentationCause::PuzzleSolved { .. }
+            | GameplayPresentationCause::UndoApplied
+            | GameplayPresentationCause::Restarted
+    )
+}
+
 fn kindle_gameplay_damage_submission(
     scene: &GameplayScreenRequest,
     damage: &GameplayDamage,
@@ -229,11 +263,12 @@ impl FrameSink for KindleApp {
 mod tests {
     use super::{
         GameplayDamageSubmission, gameplay_damage_region, kindle_gameplay_damage_submission,
+        kindle_gameplay_present_mode,
     };
     use presentation::screen_requests::{GameplayPresentationCause, GameplayPresentationUpdate};
-    use presentation::{GameplayDamage, GameplayPresentationConfig, GameplayPresentationState};
+    use presentation::{GameplayAnimationPolicy, GameplayDamage, GameplayPresentationState};
     use sokobanitron_app::app::presentation::PresentationStep;
-    use sokobanitron_app::app::{AppAction, AppState, FrameRequest, apply_action};
+    use sokobanitron_app::app::{AppAction, AppState, FrameRequest, PresentMode, apply_action};
     use sokobanitron_app::gameplay::build_current_gameplay_frame_request;
     use sokobanitron_gameplay::{BoardCell, GameplayController};
 
@@ -249,12 +284,45 @@ mod tests {
     }
 
     #[test]
+    fn animation_start_gameplay_requests_upgrade_to_fast_partial() {
+        let update = gameplay_update(FrameRequest::Gameplay {
+            update: GameplayPresentationUpdate {
+                scene: gameplay_update(build_current_gameplay_frame_request(
+                    &GameplayController::new(vec!["###\n#@#\n###".to_string()], None),
+                    &AppState::default(),
+                ))
+                .scene,
+                cause: GameplayPresentationCause::BoxMoveRejected,
+            },
+            present_mode: PresentMode::Full,
+        });
+
+        assert_eq!(
+            kindle_gameplay_present_mode(&update, PresentMode::Full),
+            PresentMode::FastPartial
+        );
+    }
+
+    #[test]
+    fn non_animated_gameplay_requests_keep_requested_present_mode() {
+        let update = gameplay_update(build_current_gameplay_frame_request(
+            &GameplayController::new(vec!["###\n#@#\n###".to_string()], None),
+            &AppState::default(),
+        ));
+
+        assert_eq!(
+            kindle_gameplay_present_mode(&update, PresentMode::Full),
+            PresentMode::Full
+        );
+    }
+
+    #[test]
     fn solving_move_reaches_kindle_gameplay_partial_path() {
-        let level = "#####\n#@$.#\n#####".to_string();
+        let level = "########\n#@$   .#\n########".to_string();
         let mut controller = GameplayController::new(vec![level], None);
         let mut app_state = AppState::default();
         let mut presentation =
-            GameplayPresentationState::with_config(GameplayPresentationConfig::blink_only());
+            GameplayPresentationState::with_animation_policy(GameplayAnimationPolicy::Limited);
 
         let initial = gameplay_update(build_current_gameplay_frame_request(
             &controller,
@@ -281,7 +349,7 @@ mod tests {
         let solved_move = apply_action(
             &mut controller,
             &mut app_state,
-            AppAction::TapBoardCell(cell(3, 1)),
+            AppAction::TapBoardCell(cell(6, 1)),
         );
         let Some(plan) = solved_move.presentation_plan else {
             panic!("expected solved move render");
@@ -299,7 +367,7 @@ mod tests {
         assert_eq!(
             move_update.cause,
             GameplayPresentationCause::BoxMoved {
-                path: vec![cell(2, 1), cell(3, 1)]
+                path: vec![cell(2, 1), cell(3, 1), cell(4, 1), cell(5, 1), cell(6, 1)]
             }
         );
         assert!(move_update.scene.board.is_solved());
@@ -309,7 +377,14 @@ mod tests {
         );
         assert!(solved_update.scene.board.is_solved());
 
-        let expected_cells = vec![cell(1, 1), cell(2, 1), cell(3, 1)];
+        let expected_cells = vec![
+            cell(1, 1),
+            cell(2, 1),
+            cell(3, 1),
+            cell(4, 1),
+            cell(5, 1),
+            cell(6, 1),
+        ];
         let damage = presentation.replace_update_with_damage(move_update.clone());
         assert_eq!(damage, GameplayDamage::Cells(expected_cells.clone()));
         assert_eq!(
@@ -320,18 +395,8 @@ mod tests {
             )
         );
 
-        let solved_expected_cells = vec![cell(2, 1), cell(3, 1)];
         let solved_damage = presentation.replace_update_with_damage(solved_update.clone());
-        assert_eq!(
-            solved_damage,
-            GameplayDamage::Cells(solved_expected_cells.clone())
-        );
-        assert_eq!(
-            kindle_gameplay_damage_submission(&solved_update.scene, &solved_damage),
-            GameplayDamageSubmission::UnionRegion(
-                gameplay_damage_region(&solved_update.scene, &solved_expected_cells)
-                    .expect("clean solved entity cells should map to a Kindle region"),
-            )
-        );
+        assert_eq!(solved_damage, GameplayDamage::Cells(Vec::new()));
+        assert!(presentation.has_active_animation());
     }
 }

@@ -3,7 +3,7 @@
 //! This module owns the currently displayed gameplay scene at the presentation layer. It stores
 //! the latest gameplay scene and delegates drawing to the shared gameplay renderer.
 
-use crate::gameplay_animation::{GameplayAnimationRunner, GameplayPresentationConfig};
+use crate::gameplay_animation::{GameplayAnimationPolicy, GameplayAnimationRunner};
 use crate::layout::ScreenRect;
 use crate::renderer::{EntityVisualStyle, Renderer};
 use crate::screen_requests::{
@@ -46,7 +46,7 @@ pub fn gameplay_damage_union_rect(
 }
 
 pub struct GameplayPresentationState {
-    config: GameplayPresentationConfig,
+    animation_policy: GameplayAnimationPolicy,
     current_scene: Option<GameplayScreenRequest>,
     pending_effects: VecDeque<QueuedGameplayEffect>,
     visual_effect: GameplayVisualEffect,
@@ -61,12 +61,12 @@ impl Default for GameplayPresentationState {
 
 impl GameplayPresentationState {
     pub fn new() -> Self {
-        Self::with_config(GameplayPresentationConfig::default())
+        Self::with_animation_policy(GameplayAnimationPolicy::Full)
     }
 
-    pub fn with_config(config: GameplayPresentationConfig) -> Self {
+    pub fn with_animation_policy(animation_policy: GameplayAnimationPolicy) -> Self {
         Self {
-            config,
+            animation_policy,
             current_scene: None,
             pending_effects: VecDeque::new(),
             visual_effect: GameplayVisualEffect::default(),
@@ -90,12 +90,26 @@ impl GameplayPresentationState {
         update: GameplayPresentationUpdate,
         now: Instant,
     ) -> GameplayDamage {
+        self.replace_update_at_internal(update, now, false)
+    }
+
+    fn replace_update_at_internal(
+        &mut self,
+        update: GameplayPresentationUpdate,
+        now: Instant,
+        suspend_presentation_effects: bool,
+    ) -> GameplayDamage {
         let queued_effect = queued_effect_for_update(&update);
         let previous_scene = self.current_scene.clone();
         let previous_scene_ref = previous_scene.as_ref();
         let scene_unchanged = previous_scene_ref == Some(&update.scene);
         let mut damage = gameplay_damage(previous_scene_ref, &update.scene);
-        if scene_unchanged {
+        if suspend_presentation_effects {
+            if !scene_unchanged && gameplay_board_state_changed(previous_scene_ref, &update.scene) {
+                self.pending_effects.clear();
+                self.visual_effect = GameplayVisualEffect::default();
+            }
+        } else if scene_unchanged {
             damage = merge_damage(damage, self.advance_ready_presentation_at(now));
         } else {
             damage = merge_damage(
@@ -108,10 +122,16 @@ impl GameplayPresentationState {
             }
         }
         self.current_scene = Some(update.scene.clone());
+        if suspend_presentation_effects {
+            return damage;
+        }
         let was_hiding_player = self.animation_runner.hides_player();
-        let animation_enqueued =
-            self.animation_runner
-                .enqueue_for_update(previous_scene_ref, &update, self.config, now);
+        let animation_enqueued = self.animation_runner.enqueue_for_update(
+            previous_scene_ref,
+            &update,
+            self.animation_policy,
+            now,
+        );
         if let Some(effect) = queued_effect {
             self.pending_effects.push_back(effect);
         }
@@ -127,6 +147,15 @@ impl GameplayPresentationState {
         }
         damage = merge_damage(damage, self.apply_ready_effects(now));
         damage
+    }
+
+    #[cfg(test)]
+    pub(crate) fn replace_update_without_presentation_effects_at(
+        &mut self,
+        update: GameplayPresentationUpdate,
+        now: Instant,
+    ) -> GameplayDamage {
+        self.replace_update_at_internal(update, now, true)
     }
 
     pub fn current_scene(&self) -> Option<&GameplayScreenRequest> {
@@ -488,7 +517,7 @@ fn gameplay_board_state_changed(
 #[cfg(test)]
 mod tests {
     use super::{GameplayDamage, GameplayPresentationState};
-    use crate::gameplay_animation::GameplayPresentationConfig;
+    use crate::gameplay_animation::GameplayAnimationPolicy;
     use crate::layout::fit_board_viewport_for_controls;
     use crate::renderer::Renderer;
     use crate::screen_requests::{
@@ -610,13 +639,44 @@ mod tests {
                 path: vec![cell(2, 1), cell(3, 1)],
             },
         );
+        let mut state = GameplayPresentationState::new();
+        let now = Instant::now();
+
+        let _ = state.replace_update_without_presentation_effects_at(previous, now);
+        let damage = state.replace_update_without_presentation_effects_at(current, now);
+
+        assert_eq!(damage, GameplayDamage::Cells(vec![cell(2, 1), cell(3, 1)]));
+    }
+
+    #[test]
+    fn limited_box_path_damage_includes_sampled_interior_cells_only() {
+        let previous = update_from_board(
+            floor_board(7, 3, vec![cell(2, 1)], Some(cell(1, 1)), None, false),
+            GameplayPresentationCause::CurrentState,
+        );
+        let current = update_from_board(
+            floor_board(7, 3, vec![cell(6, 1)], Some(cell(5, 1)), None, false),
+            GameplayPresentationCause::BoxMoved {
+                path: vec![cell(2, 1), cell(3, 1), cell(4, 1), cell(5, 1), cell(6, 1)],
+            },
+        );
         let mut state =
-            GameplayPresentationState::with_config(GameplayPresentationConfig::blink_only());
+            GameplayPresentationState::with_animation_policy(GameplayAnimationPolicy::Limited);
 
         state.replace_update(previous);
         let damage = state.replace_update_with_damage(current);
 
-        assert_eq!(damage, GameplayDamage::Cells(vec![cell(2, 1), cell(3, 1)]));
+        assert_eq!(
+            damage,
+            GameplayDamage::Cells(vec![
+                cell(1, 1),
+                cell(2, 1),
+                cell(3, 1),
+                cell(4, 1),
+                cell(5, 1),
+                cell(6, 1)
+            ])
+        );
     }
 
     #[test]
@@ -643,8 +703,7 @@ mod tests {
             ),
             GameplayPresentationCause::PuzzleSolved { clean: true },
         );
-        let mut state =
-            GameplayPresentationState::with_config(GameplayPresentationConfig::blink_only());
+        let mut state = GameplayPresentationState::new();
 
         state.replace_update(previous);
         let damage = state.replace_update_with_damage(current);
@@ -680,8 +739,7 @@ mod tests {
             GameplayPresentationCause::PuzzleSolved { clean: false },
         );
         let start = Instant::now();
-        let mut state =
-            GameplayPresentationState::with_config(GameplayPresentationConfig::blink_only());
+        let mut state = GameplayPresentationState::new();
 
         state.replace_update_at(previous, start);
         let damage = state.replace_update_at(current, start);
@@ -719,17 +777,17 @@ mod tests {
             ),
             GameplayPresentationCause::CurrentState,
         );
-        let mut state =
-            GameplayPresentationState::with_config(GameplayPresentationConfig::blink_only());
+        let mut state = GameplayPresentationState::new();
+        let now = Instant::now();
 
-        state.replace_update(previous);
-        let damage = state.replace_update_with_damage(current);
+        let _ = state.replace_update_without_presentation_effects_at(previous, now);
+        let damage = state.replace_update_without_presentation_effects_at(current, now);
 
         assert_eq!(damage, GameplayDamage::Cells(Vec::new()));
     }
 
     #[test]
-    fn puzzle_solved_effect_waits_for_box_path_animation() {
+    fn puzzle_solved_effect_waits_for_full_policy_box_move_animation() {
         let previous = update_from_board(
             floor_board(5, 3, vec![cell(2, 1)], Some(cell(1, 1)), None, false),
             GameplayPresentationCause::CurrentState,
@@ -745,14 +803,16 @@ mod tests {
             ..current.clone()
         };
         let start = Instant::now();
-        let mut state = GameplayPresentationState::with_config(GameplayPresentationConfig {
-            enable_box_path_animation: true,
-            enable_box_vanish_animation: false,
-            enable_entity_flash_animation: false,
-        });
+        let mut state = GameplayPresentationState::new();
 
-        state.replace_update_at(previous, start);
-        let _ = state.replace_update_at(current, start);
+        let _ = state.replace_update_without_presentation_effects_at(previous, start);
+        let _ = state.replace_update_without_presentation_effects_at(current.clone(), start);
+        assert!(state.animation_runner.enqueue_for_update(
+            None,
+            &current,
+            GameplayAnimationPolicy::Full,
+            start,
+        ));
         let solved_damage = state.replace_update_at(solved, start);
 
         assert_eq!(solved_damage, GameplayDamage::Cells(Vec::new()));
@@ -818,15 +878,10 @@ mod tests {
                 path: vec![cell(2, 1), cell(3, 1)],
             },
         );
-        let start = Instant::now();
-        let mut state = GameplayPresentationState::with_config(GameplayPresentationConfig {
-            enable_box_path_animation: false,
-            enable_box_vanish_animation: false,
-            enable_entity_flash_animation: true,
-        });
+        let mut state = GameplayPresentationState::new();
 
-        state.replace_update_at(previous, start);
-        let damage = state.replace_update_at(current, start);
+        state.replace_update(previous);
+        let damage = state.replace_update_with_damage(current);
 
         assert_eq!(
             damage,
@@ -838,11 +893,11 @@ mod tests {
     fn level_change_falls_back_to_full_damage() {
         let first = gameplay_scene(1);
         let second = gameplay_scene(2);
-        let mut state =
-            GameplayPresentationState::with_config(GameplayPresentationConfig::blink_only());
+        let mut state = GameplayPresentationState::new();
+        let now = Instant::now();
 
-        state.replace_update(first);
-        let damage = state.replace_update_with_damage(second);
+        let _ = state.replace_update_without_presentation_effects_at(first, now);
+        let damage = state.replace_update_without_presentation_effects_at(second, now);
 
         assert_eq!(damage, GameplayDamage::Full);
     }
@@ -866,16 +921,16 @@ mod tests {
                 path: vec![cell(2, 1), cell(3, 1)],
             },
         );
-        let mut state =
-            GameplayPresentationState::with_config(GameplayPresentationConfig::blink_only());
+        let mut state = GameplayPresentationState::new();
         let mut partial_renderer = Renderer::new();
         let mut full_renderer = Renderer::new();
         let mut partial_frame = vec![0; 96 * 64];
         let mut full_frame = vec![0; 96 * 64];
+        let now = Instant::now();
 
-        state.replace_update(previous);
+        let _ = state.replace_update_without_presentation_effects_at(previous, now);
         state.draw(&mut partial_renderer, &mut partial_frame, 96, 64);
-        let damage = state.replace_update_with_damage(current.clone());
+        let damage = state.replace_update_without_presentation_effects_at(current.clone(), now);
         state.draw_damage(&mut partial_renderer, &mut partial_frame, 96, 64, &damage);
         full_renderer.draw_gameplay_scene(&mut full_frame, 96, 64, &current.scene);
 
@@ -922,16 +977,16 @@ mod tests {
                 path: vec![cell(0, 1), cell(1, 0)],
             },
         );
-        let mut state =
-            GameplayPresentationState::with_config(GameplayPresentationConfig::blink_only());
+        let mut state = GameplayPresentationState::new();
         let mut partial_renderer = Renderer::new();
         let mut full_renderer = Renderer::new();
         let mut partial_frame = vec![0; 96 * 64];
         let mut full_frame = vec![0; 96 * 64];
+        let now = Instant::now();
 
-        state.replace_update(previous);
+        let _ = state.replace_update_without_presentation_effects_at(previous, now);
         state.draw(&mut partial_renderer, &mut partial_frame, 96, 64);
-        let damage = state.replace_update_with_damage(current.clone());
+        let damage = state.replace_update_without_presentation_effects_at(current.clone(), now);
         state.draw_damage(&mut partial_renderer, &mut partial_frame, 96, 64, &damage);
         full_renderer.draw_gameplay_scene(&mut full_frame, 96, 64, &current.scene);
 
