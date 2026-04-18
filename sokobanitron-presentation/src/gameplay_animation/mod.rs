@@ -1,12 +1,12 @@
 mod blink;
-mod box_path;
+mod box_move;
 mod box_path_drawing;
 mod box_vanish;
 mod box_vanish_drawing;
 mod entity_flash;
 
 use self::blink::BlinkAnimation;
-use self::box_path::box_path_animation_for_policy;
+use self::box_move::box_move_animation_for_policy;
 use self::box_vanish::box_vanish_animation_for_policy;
 use self::entity_flash::entity_flash_animation_for_policy;
 use crate::renderer::Renderer;
@@ -280,7 +280,7 @@ fn ordered_animations_for_update(
 ) -> Vec<Box<dyn GameplayAnimation>> {
     let mut ordered = OrderedAnimations::default();
     enqueue_state_change_flash(&mut ordered, previous_scene, update, policy);
-    enqueue_cause_animations(&mut ordered, update, policy);
+    enqueue_cause_animations(&mut ordered, previous_scene, update, policy);
     ordered.into_vec()
 }
 
@@ -301,12 +301,17 @@ fn enqueue_state_change_flash(
 
 fn enqueue_cause_animations(
     ordered: &mut OrderedAnimations,
+    previous_scene: Option<&GameplayScreenRequest>,
     update: &GameplayPresentationUpdate,
     policy: GameplayAnimationPolicy,
 ) {
     match &update.cause {
-        GameplayPresentationCause::BoxMoved { path } => {
-            ordered.push_optional(box_path_animation_for_policy(policy, path.clone()));
+        GameplayPresentationCause::BoxMoved { .. } => {
+            ordered.push_optional(box_move_animation_for_policy(
+                policy,
+                previous_scene,
+                update,
+            ));
         }
         GameplayPresentationCause::BoxRemoved { to } => {
             enqueue_box_removed_animations(ordered, update, policy, *to);
@@ -332,7 +337,6 @@ fn is_state_change_flash_cause(cause: &GameplayPresentationCause) -> bool {
     matches!(
         cause,
         GameplayPresentationCause::PlayerMoved { .. }
-            | GameplayPresentationCause::BoxMoved { .. }
             | GameplayPresentationCause::BoxRemoved { .. }
             | GameplayPresentationCause::PuzzleSolved { .. }
             | GameplayPresentationCause::UndoApplied
@@ -414,7 +418,7 @@ mod tests {
     }
 
     #[test]
-    fn limited_box_path_skips_short_paths() {
+    fn limited_box_move_skips_short_paths() {
         let now = Instant::now();
         let path = vec![
             BoardCell::new(0, 0),
@@ -435,7 +439,7 @@ mod tests {
     }
 
     #[test]
-    fn limited_box_path_uses_sampled_frames_without_hiding_player() {
+    fn limited_box_move_uses_sampled_frames_without_hiding_player() {
         let now = Instant::now();
         let path = vec![
             BoardCell::new(0, 0),
@@ -513,7 +517,7 @@ mod tests {
     }
 
     #[test]
-    fn box_move_entity_flash_hides_player_until_box_path_runs() {
+    fn full_box_move_hides_player_through_cleanup_phase() {
         let now = Instant::now();
         let previous = update_with_state(
             GameplayPresentationCause::CurrentState,
@@ -546,12 +550,11 @@ mod tests {
         assert!(runner.has_active_animation());
         assert!(runner.hides_player());
         let _ = runner.advance_to_with_damage(now + Duration::from_millis(100));
-        assert!(runner.has_active_animation());
-        assert!(runner.hides_player());
+        assert!(!runner.has_active_animation());
     }
 
     #[test]
-    fn box_move_uses_entity_flash_before_box_path() {
+    fn full_box_move_flash_draws_path_before_cleanup_phase() {
         let now = Instant::now();
         let previous = update_with_state(
             GameplayPresentationCause::CurrentState,
@@ -580,8 +583,60 @@ mod tests {
 
         assert_eq!(
             runner.current_dirty_cells(),
+            vec![
+                BoardCell::new(1, 0),
+                BoardCell::new(2, 0),
+                BoardCell::new(3, 0),
+                BoardCell::new(3, 1)
+            ]
+        );
+
+        let _ = runner.advance_to_with_damage(now + Duration::from_millis(50));
+        assert_eq!(
+            runner.current_dirty_cells(),
             vec![BoardCell::new(1, 0), BoardCell::new(2, 0)]
         );
+
+        let _ = runner.advance_to_with_damage(now + Duration::from_millis(100));
+        assert_eq!(runner.current_dirty_cells(), Vec::<BoardCell>::new());
+    }
+
+    #[test]
+    fn short_full_box_move_does_not_draw_path_during_flash() {
+        let now = Instant::now();
+        let previous = update_with_state(
+            GameplayPresentationCause::CurrentState,
+            Some(BoardCell::new(1, 0)),
+            vec![false, false, true, false, false, false, false, false],
+        );
+        let update = update_with_state(
+            GameplayPresentationCause::BoxMoved {
+                path: vec![BoardCell::new(2, 0), BoardCell::new(3, 0)],
+            },
+            Some(BoardCell::new(2, 0)),
+            vec![false, false, false, true, false, false, false, false],
+        );
+        let mut runner = GameplayAnimationRunner::default();
+
+        assert!(runner.enqueue_for_update(
+            Some(&previous.scene),
+            &update,
+            GameplayAnimationPolicy::Full,
+            now,
+        ));
+
+        assert_eq!(
+            runner.current_dirty_cells(),
+            vec![BoardCell::new(1, 0), BoardCell::new(2, 0)]
+        );
+        let _ = runner.advance_to_with_damage(now + Duration::from_millis(100));
+        assert!(runner.has_active_animation());
+        let final_damage = runner.advance_to_with_damage(now + Duration::from_millis(150));
+        assert_eq!(
+            final_damage,
+            vec![BoardCell::new(1, 0), BoardCell::new(2, 0)]
+        );
+        assert!(!runner.has_active_animation());
     }
 
     #[test]

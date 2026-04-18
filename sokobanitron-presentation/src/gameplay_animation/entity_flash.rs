@@ -7,44 +7,81 @@ use crate::screen_requests::{
 use sokobanitron_gameplay::BoardCell;
 
 pub(super) struct EntityFlashAnimation {
-    player_position: BoardCell,
+    targets: FlashTargets,
     hide_player: bool,
-    box_positions: Vec<BoardCell>,
     phase: EntityFlashPhase,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EntityFlashPhase {
+pub(super) enum EntityFlashPhase {
     FlashDark,
     FlashLight,
     Complete,
 }
 
-impl EntityFlashAnimation {
-    fn from_scenes(
-        previous: &GameplayScreenRequest,
-        current: &GameplayScreenRequest,
-        hide_player: bool,
-    ) -> Option<Self> {
-        let player_position = previous.board.player()?;
-        let player_changed = Some(player_position) != current.board.player();
-        let box_positions = removed_box_positions(previous, current);
-        if !player_changed && box_positions.is_empty() {
-            return None;
-        }
-        Some(Self {
-            player_position,
-            hide_player,
-            box_positions,
-            phase: EntityFlashPhase::FlashDark,
-        })
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct FlashTargets {
+    player_position: BoardCell,
+    box_positions: Vec<BoardCell>,
+}
 
-    fn flash_color(&self, renderer: &Renderer) -> Option<u8> {
-        match self.phase {
-            EntityFlashPhase::FlashDark => Some(renderer.theme.gray_13),
-            EntityFlashPhase::FlashLight => Some(renderer.theme.gray_1),
-            EntityFlashPhase::Complete => None,
+pub(super) fn flash_targets_from_scenes(
+    previous: &GameplayScreenRequest,
+    current: &GameplayScreenRequest,
+) -> Option<FlashTargets> {
+    let player_position = previous.board.player()?;
+    let player_changed = Some(player_position) != current.board.player();
+    let box_positions = removed_box_positions(previous, current);
+    if !player_changed && box_positions.is_empty() {
+        return None;
+    }
+    Some(FlashTargets {
+        player_position,
+        box_positions,
+    })
+}
+
+pub(super) fn flash_color(phase: EntityFlashPhase, renderer: &Renderer) -> Option<u8> {
+    match phase {
+        EntityFlashPhase::FlashDark => Some(renderer.theme.gray_13),
+        EntityFlashPhase::FlashLight => Some(renderer.theme.gray_1),
+        EntityFlashPhase::Complete => None,
+    }
+}
+
+pub(super) fn flash_dirty_cells(targets: &FlashTargets) -> Vec<BoardCell> {
+    let mut dirty = targets.box_positions.clone();
+    dirty.push(targets.player_position);
+    dirty.sort_by_key(|cell| (cell.y, cell.x));
+    dirty.dedup();
+    dirty
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn draw_flashing_entities(
+    targets: &FlashTargets,
+    renderer: &mut Renderer,
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    scene: &GameplayScreenRequest,
+    clip_cell: Option<BoardCell>,
+    color: u8,
+) {
+    if clip_cell.is_none_or(|cell| cell == targets.player_position) {
+        draw_tinted_player(
+            renderer,
+            frame,
+            width,
+            height,
+            scene,
+            targets.player_position,
+            color,
+        );
+    }
+    for &position in &targets.box_positions {
+        if clip_cell.is_none_or(|cell| cell == position) {
+            draw_tinted_box(renderer, frame, width, height, scene, position, color);
         }
     }
 }
@@ -59,11 +96,12 @@ pub(super) fn entity_flash_animation_for_policy(
     }
 
     let previous_scene = previous_scene?;
-    let animation = EntityFlashAnimation::from_scenes(
-        previous_scene,
-        &update.scene,
-        matches!(update.cause, GameplayPresentationCause::BoxMoved { .. }),
-    )?;
+    let targets = flash_targets_from_scenes(previous_scene, &update.scene)?;
+    let animation = EntityFlashAnimation {
+        targets,
+        hide_player: matches!(update.cause, GameplayPresentationCause::BoxMoved { .. }),
+        phase: EntityFlashPhase::FlashDark,
+    };
     Some(Box::new(animation))
 }
 
@@ -73,15 +111,12 @@ impl GameplayAnimation for EntityFlashAnimation {
     }
 
     fn dirty_cells(&self) -> Vec<BoardCell> {
-        let Some(_) = (match self.phase {
-            EntityFlashPhase::FlashDark | EntityFlashPhase::FlashLight => Some(()),
-            EntityFlashPhase::Complete => None,
-        }) else {
-            return Vec::new();
-        };
-        let mut dirty = self.box_positions.clone();
-        dirty.push(self.player_position);
-        dirty
+        match self.phase {
+            EntityFlashPhase::FlashDark | EntityFlashPhase::FlashLight => {
+                flash_dirty_cells(&self.targets)
+            }
+            EntityFlashPhase::Complete => Vec::new(),
+        }
     }
 
     fn draw_over_entities(
@@ -93,25 +128,19 @@ impl GameplayAnimation for EntityFlashAnimation {
         scene: &GameplayScreenRequest,
         clip_cell: Option<BoardCell>,
     ) {
-        let Some(color) = self.flash_color(renderer) else {
+        let Some(color) = flash_color(self.phase, renderer) else {
             return;
         };
-        if clip_cell.is_none_or(|cell| cell == self.player_position) {
-            draw_tinted_player(
-                renderer,
-                frame,
-                width,
-                height,
-                scene,
-                self.player_position,
-                color,
-            );
-        }
-        for &position in &self.box_positions {
-            if clip_cell.is_none_or(|cell| cell == position) {
-                draw_tinted_box(renderer, frame, width, height, scene, position, color);
-            }
-        }
+        draw_flashing_entities(
+            &self.targets,
+            renderer,
+            frame,
+            width,
+            height,
+            scene,
+            clip_cell,
+            color,
+        );
     }
 
     fn ticks_until_next_step(&self) -> Option<u32> {

@@ -134,7 +134,7 @@ fn gameplay_damage_for_box_move_is_normalized_dirty_cells() {
 }
 
 #[test]
-fn limited_box_path_damage_includes_sampled_interior_cells_only() {
+fn limited_box_move_damage_includes_sampled_interior_cells_only() {
     let previous = update_from_board(
         floor_board(7, 3, vec![cell(2, 1)], Some(cell(1, 1)), None, false),
         GameplayPresentationCause::CurrentState,
@@ -293,10 +293,10 @@ fn puzzle_solved_effect_waits_for_full_policy_box_move_animation() {
     let start = Instant::now();
     let mut state = GameplayPresentationState::new();
 
-    let _ = state.replace_update_without_presentation_effects_at(previous, start);
+    let _ = state.replace_update_without_presentation_effects_at(previous.clone(), start);
     let _ = state.replace_update_without_presentation_effects_at(current.clone(), start);
     assert!(state.animation_runner.enqueue_for_update(
-        None,
+        Some(&previous.scene),
         &current,
         GameplayAnimationPolicy::Full,
         start,
@@ -310,14 +310,15 @@ fn puzzle_solved_effect_waits_for_full_policy_box_move_animation() {
         state.advance_presentation_with_damage_at(start + Duration::from_millis(50));
     assert_eq!(
         first_animation_result.damage,
-        GameplayDamage::Cells(vec![cell(2, 1), cell(3, 1), cell(4, 1)])
+        GameplayDamage::Cells(vec![cell(1, 1), cell(2, 1), cell(3, 1), cell(4, 1)])
     );
+    assert!(state.has_pending_presentation());
 
     let solved_result =
         state.advance_presentation_with_damage_at(start + Duration::from_millis(100));
     assert_eq!(
         solved_result.damage,
-        GameplayDamage::Cells(vec![cell(3, 1), cell(4, 1)])
+        GameplayDamage::Cells(vec![cell(1, 1), cell(2, 1), cell(3, 1), cell(4, 1)])
     );
     assert!(!state.has_pending_presentation());
 }

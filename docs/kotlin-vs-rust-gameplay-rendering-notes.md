@@ -190,11 +190,12 @@ Important current behavior:
 - blink timing / draw behavior
 - blink dirty-cell reporting
 
-#### `sokobanitron-presentation/src/gameplay_animation/box_path.rs`
-- box-path animation state machine
-- policy-based box-path variant selection
-- full vs limited box-path behavior
-- box-path dirty-cell reporting based on the current visible path footprint
+#### `sokobanitron-presentation/src/gameplay_animation/box_move.rs`
+- box-move animation state machine
+- policy-based full vs limited box-move selection
+- full box-move flash + path cleanup behavior
+- limited box-move sampled path behavior
+- box-move dirty-cell reporting based on the current visible path footprint
 
 #### `sokobanitron-presentation/src/gameplay_animation/box_path_drawing.rs`
 - limited/full box-path drawing helpers
@@ -349,9 +350,9 @@ This is the Rust equivalent of the Kotlin animation runner, but with time-driven
 | Android bridge into native gameplay pipeline | `NativeBridge.kt`, `jni_bridge.rs`, `runtime.rs` |
 | Android dirty-region present path | `runtime.rs`, `native_window.rs` |
 | animation runner | `gameplay_animation/mod.rs` |
-| animation capability policy / policy-based animation selection | `gameplay_animation/mod.rs`, `box_path.rs`, `box_vanish.rs` |
+| animation capability policy / policy-based animation selection | `gameplay_animation/mod.rs`, `box_move.rs`, `box_vanish.rs` |
 | blink animation | `gameplay_animation/blink.rs` |
-| box path animation | `gameplay_animation/box_path.rs`, `gameplay_animation/box_path_drawing.rs` |
+| box move animation | `gameplay_animation/box_move.rs`, `gameplay_animation/box_path_drawing.rs` |
 | box vanish animation | `gameplay_animation/box_vanish.rs`, `gameplay_animation/box_vanish_drawing.rs` |
 | entity flash animation | `gameplay_animation/entity_flash.rs` |
 | current gameplay presentation snapshot / orchestration | `gameplay_presentation.rs` |
