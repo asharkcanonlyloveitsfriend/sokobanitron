@@ -5,7 +5,7 @@ use crate::snapshot::{
 };
 use crate::world::{EditableWorld, NonVoidBounds, Tile};
 use sokobanitron_core::optimizer::{ReverseOptimizationInput, optimize_reverse_solution_in_place};
-use sokobanitron_core::pathfinder::{Position, PullPathfinder};
+use sokobanitron_core::pathfinder::{PullPathfinder, WorldBounds, WorldGrid};
 use std::collections::{HashMap, VecDeque};
 
 struct PullMovePlan {
@@ -14,9 +14,7 @@ struct PullMovePlan {
 }
 
 struct PullPlanningContext {
-    grid: Vec<Vec<bool>>,
-    min_x: i32,
-    min_y: i32,
+    grid: WorldGrid,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -715,14 +713,6 @@ impl LevelEditor {
         false
     }
 
-    fn to_grid_position(world_x: i32, world_y: i32, min_x: i32, min_y: i32) -> Position {
-        Position::new((world_y - min_y) as usize, (world_x - min_x) as usize)
-    }
-
-    fn to_world_position(grid: Position, min_x: i32, min_y: i32) -> (i32, i32) {
-        (min_x + grid.col as i32, min_y + grid.row as i32)
-    }
-
     fn build_pull_planning_context(
         &self,
         from_x: i32,
@@ -730,39 +720,26 @@ impl LevelEditor {
         target: Option<(i32, i32)>,
     ) -> Option<PullPlanningContext> {
         let bounds = self.world.non_void_bounds()?;
-        let mut min_x = bounds.min_x.min(from_x);
-        let mut max_x = bounds.max_x.max(from_x);
-        let mut min_y = bounds.min_y.min(from_y);
-        let mut max_y = bounds.max_y.max(from_y);
+        let mut bounds = WorldBounds {
+            min_x: bounds.min_x,
+            max_x: bounds.max_x,
+            min_y: bounds.min_y,
+            max_y: bounds.max_y,
+        };
+        bounds.include((from_x, from_y));
         if let Some((to_x, to_y)) = target {
-            min_x = min_x.min(to_x);
-            max_x = max_x.max(to_x);
-            min_y = min_y.min(to_y);
-            max_y = max_y.max(to_y);
+            bounds.include((to_x, to_y));
         }
-        if let Some((px, py)) = self.world.player() {
-            min_x = min_x.min(px);
-            max_x = max_x.max(px);
-            min_y = min_y.min(py);
-            max_y = max_y.max(py);
+        if let Some(player) = self.world.player() {
+            bounds.include(player);
         }
 
-        let width = (max_x - min_x + 1) as usize;
-        let height = (max_y - min_y + 1) as usize;
-        let mut grid = vec![vec![false; width]; height];
-        for y in min_y..=max_y {
-            for x in min_x..=max_x {
-                let walkable = match self.world.tile(x, y) {
-                    Tile::Void => false,
-                    Tile::Floor | Tile::Goal => {
-                        !self.world.has_box(x, y) || (x, y) == (from_x, from_y)
-                    }
-                };
-                grid[(y - min_y) as usize][(x - min_x) as usize] = walkable;
-            }
-        }
+        let grid = WorldGrid::from_bounds(bounds, |(x, y)| match self.world.tile(x, y) {
+            Tile::Void => false,
+            Tile::Floor | Tile::Goal => !self.world.has_box(x, y) || (x, y) == (from_x, from_y),
+        });
 
-        Some(PullPlanningContext { grid, min_x, min_y })
+        Some(PullPlanningContext { grid })
     }
 
     fn enumerate_pull_move_plans(
@@ -773,28 +750,31 @@ impl LevelEditor {
         let Some(context) = self.build_pull_planning_context(from_x, from_y, None) else {
             return Vec::new();
         };
-        let PullPlanningContext { grid, min_x, min_y } = context;
-        let box_start = Self::to_grid_position(from_x, from_y, min_x, min_y);
+        let PullPlanningContext { grid } = context;
+        let world_origin = grid.origin();
+        let Some(box_start) = grid.to_grid_position((from_x, from_y)) else {
+            return Vec::new();
+        };
         let player_start = self
             .world
             .player()
-            .map(|(x, y)| Self::to_grid_position(x, y, min_x, min_y));
-        let mut pathfinder = PullPathfinder::new(grid, box_start, player_start);
+            .and_then(|position| grid.to_grid_position(position));
+        let mut pathfinder = PullPathfinder::new(grid.into_rows(), box_start, player_start);
 
         pathfinder
             .find_all_pull_paths()
             .into_iter()
-            .map(|(origin, result)| {
-                let destination = Self::to_world_position(origin, min_x, min_y);
+            .map(|(destination_grid, result)| {
+                let destination = world_origin.to_world_position(destination_grid);
                 let box_path = result
                     .box_path
                     .into_iter()
-                    .map(|pos| Self::to_world_position(pos, min_x, min_y))
+                    .map(|pos| world_origin.to_world_position(pos))
                     .collect::<Vec<_>>();
                 (
                     destination,
                     PullMovePlan {
-                        player_start: Self::to_world_position(result.player_start, min_x, min_y),
+                        player_start: world_origin.to_world_position(result.player_start),
                         box_path,
                     },
                 )
@@ -810,23 +790,24 @@ impl LevelEditor {
         to_y: i32,
     ) -> Option<PullMovePlan> {
         let context = self.build_pull_planning_context(from_x, from_y, Some((to_x, to_y)))?;
-        let PullPlanningContext { grid, min_x, min_y } = context;
-        let box_start = Self::to_grid_position(from_x, from_y, min_x, min_y);
-        let origin = Self::to_grid_position(to_x, to_y, min_x, min_y);
+        let PullPlanningContext { grid } = context;
+        let world_origin = grid.origin();
+        let box_start = grid.to_grid_position((from_x, from_y))?;
+        let origin = grid.to_grid_position((to_x, to_y))?;
         let player_start = self
             .world
             .player()
-            .map(|(x, y)| Self::to_grid_position(x, y, min_x, min_y));
+            .and_then(|position| grid.to_grid_position(position));
 
-        let mut pathfinder = PullPathfinder::new(grid, box_start, player_start);
+        let mut pathfinder = PullPathfinder::new(grid.into_rows(), box_start, player_start);
         let result = pathfinder.find_pull_path(origin)?;
         let box_path = result
             .box_path
             .into_iter()
-            .map(|pos| Self::to_world_position(pos, min_x, min_y))
+            .map(|pos| world_origin.to_world_position(pos))
             .collect::<Vec<_>>();
         Some(PullMovePlan {
-            player_start: Self::to_world_position(result.player_start, min_x, min_y),
+            player_start: world_origin.to_world_position(result.player_start),
             box_path,
         })
     }

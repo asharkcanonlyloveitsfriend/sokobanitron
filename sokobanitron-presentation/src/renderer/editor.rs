@@ -3,8 +3,7 @@ use crate::layout::{
     ScreenRect, editor_bottom_left_button_rect, editor_bottom_right_button_rect,
     overlay_secondary_action_button_rect, top_left_level_button_rect,
 };
-use crate::screen_requests::{EditorMenuScreenRequest, EditorScreenRequest};
-use sokobanitron_level_editor::PullHintStatus;
+use crate::screen_requests::{EditorHintState, EditorMenuScreenRequest, EditorScreenRequest};
 
 use super::chrome::{draw_overlay_primary_action_button, draw_top_menu_toggle};
 use super::pixel_ui::{PIXEL_FONT_HEIGHT, draw_centered_text_in_rect, measure_text_width};
@@ -89,8 +88,8 @@ impl Renderer {
         }
         for hint in &request.pull_destination_hints {
             let label = match hint.state {
-                PullHintStatus::Pending => "?".to_string(),
-                PullHintStatus::Ready(count) => count.min(99).to_string(),
+                EditorHintState::Pending => "?".to_string(),
+                EditorHintState::Ready(count) => count.min(99).to_string(),
             };
             draw_count_label(
                 frame,

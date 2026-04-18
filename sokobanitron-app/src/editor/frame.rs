@@ -8,10 +8,11 @@ use crate::app::state::AppState;
 use presentation::assets::UiIcon;
 use presentation::layout::ScreenRect;
 use presentation::screen_requests::{
-    EditorCountOverlay, EditorHintOverlay, EditorMenuScreenRequest, EditorScreenRequest,
+    EditorCountOverlay, EditorHintOverlay, EditorHintState, EditorMenuScreenRequest,
+    EditorScreenRequest,
 };
 use sokobanitron_gameplay::BoardCell;
-use sokobanitron_level_editor::{EditorMode, EditorSnapshot, LevelEditor};
+use sokobanitron_level_editor::{EditorMode, EditorSnapshot, LevelEditor, PullHintStatus};
 
 use super::view::{
     VisibleBoardWindow, build_visible_window, can_save_editor_puzzle, can_zoom_in, can_zoom_out,
@@ -118,7 +119,10 @@ fn build_hint_overlays(
                 w: cell_w,
                 h: cell_h,
             },
-            state: hint.state,
+            state: match hint.state {
+                PullHintStatus::Pending => EditorHintState::Pending,
+                PullHintStatus::Ready(count) => EditorHintState::Ready(count),
+            },
         });
     }
     overlays

@@ -1,7 +1,6 @@
 use crate::assets::UiIcon;
 use crate::layout::{BoardViewport, ScreenRect};
 use sokobanitron_gameplay::{BoardCell, BoardView};
-use sokobanitron_level_editor::PullHintStatus;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GameplayScreenMode {
@@ -105,5 +104,11 @@ pub struct EditorCountOverlay {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EditorHintOverlay {
     pub rect: ScreenRect,
-    pub state: PullHintStatus,
+    pub state: EditorHintState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorHintState {
+    Pending,
+    Ready(u32),
 }

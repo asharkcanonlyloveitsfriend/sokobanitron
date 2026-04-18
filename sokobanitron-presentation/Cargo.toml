@@ -11,4 +11,3 @@ font8x8 = "0.3"
 image = { version = "0.25", default-features = false, features = ["png"] }
 resvg = { version = "0.45", default-features = false }
 sokobanitron-gameplay = { path = "../sokobanitron-gameplay" }
-sokobanitron-level-editor = { path = "../sokobanitron-level-editor" }
