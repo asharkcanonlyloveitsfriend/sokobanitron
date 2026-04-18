@@ -27,7 +27,7 @@ impl App {
                 self.surface_height,
                 &result.damage,
             );
-            copy_gray_to_rgba(gray_frame, pixels.frame_mut());
+            copy_gray_to_sepia_rgba(gray_frame, pixels.frame_mut());
             pixels.render().expect("render");
             if result.has_pending_presentation {
                 self.request_window_redraw();
@@ -50,7 +50,7 @@ impl App {
                         self.surface_height,
                         &result.damage,
                     );
-                    copy_gray_to_rgba(gray_frame, pixels.frame_mut());
+                    copy_gray_to_sepia_rgba(gray_frame, pixels.frame_mut());
                     pixels.render().expect("render");
                     if result.has_pending_presentation {
                         self.request_window_redraw();
@@ -91,7 +91,7 @@ impl App {
                             theme.gray_2,
                         );
                     }
-                    copy_gray_to_rgba(gray_frame, pixels.frame_mut());
+                    copy_gray_to_sepia_rgba(gray_frame, pixels.frame_mut());
                     pixels.render().expect("render");
                 }
             }
@@ -119,7 +119,7 @@ impl App {
                         true,
                         self.renderer.theme(),
                     );
-                    copy_gray_to_rgba(gray_frame, pixels.frame_mut());
+                    copy_gray_to_sepia_rgba(gray_frame, pixels.frame_mut());
                     pixels.render().expect("render");
                 }
             }
@@ -145,7 +145,7 @@ impl App {
                         true,
                         self.renderer.theme(),
                     );
-                    copy_gray_to_rgba(gray_frame, pixels.frame_mut());
+                    copy_gray_to_sepia_rgba(gray_frame, pixels.frame_mut());
                     pixels.render().expect("render");
                 }
             }
@@ -159,7 +159,7 @@ impl App {
                         self.surface_height,
                         screen,
                     );
-                    copy_gray_to_rgba(gray_frame, pixels.frame_mut());
+                    copy_gray_to_sepia_rgba(gray_frame, pixels.frame_mut());
                     pixels.render().expect("render");
                 }
             }
@@ -173,7 +173,7 @@ impl App {
                         self.surface_height,
                         screen,
                     );
-                    copy_gray_to_rgba(gray_frame, pixels.frame_mut());
+                    copy_gray_to_sepia_rgba(gray_frame, pixels.frame_mut());
                     pixels.render().expect("render");
                 }
             }
@@ -182,13 +182,26 @@ impl App {
     }
 }
 
-fn copy_gray_to_rgba(gray: &[u8], rgba: &mut [u8]) {
+fn copy_gray_to_sepia_rgba(gray: &[u8], rgba: &mut [u8]) {
     for (src, dst) in gray.iter().zip(rgba.chunks_exact_mut(4)) {
-        dst[0] = *src;
-        dst[1] = *src;
-        dst[2] = *src;
+        let [red, green, blue] = sepia_from_gray(*src);
+        dst[0] = red;
+        dst[1] = green;
+        dst[2] = blue;
         dst[3] = 255;
     }
+}
+
+fn sepia_from_gray(gray: u8) -> [u8; 3] {
+    [
+        scale_sepia_channel(gray, 1220),
+        scale_sepia_channel(gray, 900),
+        scale_sepia_channel(gray, 680),
+    ]
+}
+
+fn scale_sepia_channel(gray: u8, scale_per_thousand: u16) -> u8 {
+    ((u32::from(gray) * u32::from(scale_per_thousand)) / 1000).min(255) as u8
 }
 
 impl FrameSink for App {
@@ -196,5 +209,27 @@ impl FrameSink for App {
 
     fn render_frame(&mut self, request: &FrameRequest) -> Result<(), Self::Error> {
         self.render_request(request)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{copy_gray_to_sepia_rgba, sepia_from_gray};
+
+    #[test]
+    fn sepia_conversion_tints_gray_values() {
+        assert_eq!(sepia_from_gray(0), [0, 0, 0]);
+        assert_eq!(sepia_from_gray(128), [156, 115, 87]);
+        assert_eq!(sepia_from_gray(255), [255, 229, 173]);
+    }
+
+    #[test]
+    fn copy_gray_to_sepia_rgba_writes_opaque_pixels() {
+        let gray = [0, 128, 255];
+        let mut rgba = [0; 12];
+
+        copy_gray_to_sepia_rgba(&gray, &mut rgba);
+
+        assert_eq!(rgba, [0, 0, 0, 255, 156, 115, 87, 255, 255, 229, 173, 255]);
     }
 }
