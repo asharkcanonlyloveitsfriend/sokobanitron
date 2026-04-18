@@ -38,7 +38,7 @@ Use this file to answer:
 5. animation over entities
 
 ### Animation model
-- one active animation at a time
+- one active animation at a time inside the runner
 - FIFO queue
 - fixed tick interval
 - draw-coupled state progression
@@ -61,9 +61,9 @@ Use this file to answer:
 1. gameplay/app logic produces outcome
 2. app presentation logic maps outcome to `GameplayPresentationCause`
 3. app presentation logic builds `GameplayPresentationUpdate` + `FrameRequest`
-4. `GameplayPresentationState::replace_update_with_damage(...)` stores latest scene, updates animation/effect state, and returns `GameplayDamage`
-5. client redraws either full gameplay or only damaged gameplay cells into its persistent frame
-6. later redraws call `GameplayPresentationState::advance_presentation_with_damage(...)`
+4. `GameplayPresentationState::replace_update_with_damage(...)` stores latest scene, updates animation/effect state, and returns `GameplayPresentationResult { damage, has_pending_presentation }`
+5. client draws the returned `GameplayPresentationResult { damage, has_pending_presentation }` into its persistent frame, either as full gameplay or only damaged gameplay cells
+6. later redraws call `GameplayPresentationState::advance_presentation_with_damage(...)` and use the returned `has_pending_presentation` signal to keep scheduling timed presentation work
 7. client presents full frame or a platform region derived from gameplay damage
 
 ### Current shared draw model
@@ -72,7 +72,7 @@ Use this file to answer:
 - shared gameplay presentation is **damage-aware**
 - damage is tracked as `GameplayDamage::{Full, Cells(Vec<BoardCell>)}`
 - shared renderer can redraw only damaged gameplay cells
-- one active animation at a time; queued solved/effect work waits behind active animation work
+- one active animation at a time inside the runner; queued solved/effect work keeps the overall presentation pending until that timed work is finished
 - animation advancement can contribute additional dirty cells beyond baseline scene diff
 
 ---
@@ -105,7 +105,7 @@ Use this file to answer:
 - persistent grayscale frame ownership
 - `FrameDamage` tracking
 - full-frame vs dirty-region present decisions
-- advancing active gameplay presentation separately from initial request application
+- advancing pending gameplay presentation separately from initial request application
 
 #### `sokobanitron-android-jni/src/native_window.rs`
 - Android native window present path
@@ -153,13 +153,21 @@ Use this file to answer:
 
 #### `sokobanitron-presentation/src/gameplay_presentation.rs`
 - current gameplay scene ownership
-- gameplay damage calculation
-- queued gameplay effects
-- gameplay visual effect state
-- shared gameplay animation runner integration
 - replace-update boundary
 - timed presentation advancement boundary
 - full draw and partial-damage draw entry points
+- redraw contract via `GameplayPresentationResult { damage, has_pending_presentation }`
+- shared gameplay animation runner integration
+
+#### `sokobanitron-presentation/src/gameplay_presentation/damage.rs`
+- gameplay damage calculation
+- damage merging / normalization helpers
+- gameplay-damage-to-screen-rect mapping
+
+#### `sokobanitron-presentation/src/gameplay_presentation/effects.rs`
+- queued solved-effect application
+- solved visual effect state
+- effect-triggered blink enqueueing
 
 Important current behavior:
 - stores the latest gameplay scene snapshot
@@ -174,7 +182,7 @@ Important current behavior:
 - gameplay animation trait
 - active/queued animation runner
 - fixed-tick timing policy
-- animation creation from presentation causes
+- ordered animation sequencing from presentation causes
 - animation capability policy via `GameplayAnimationPolicy::{Full, Limited}`
 
 #### `sokobanitron-presentation/src/gameplay_animation/blink.rs`
@@ -186,13 +194,21 @@ Important current behavior:
 - box-path animation state machine
 - policy-based box-path variant selection
 - full vs limited box-path behavior
-- box-path dirty-cell reporting
+- box-path dirty-cell reporting based on the current visible path footprint
+
+#### `sokobanitron-presentation/src/gameplay_animation/box_path_drawing.rs`
+- limited/full box-path drawing helpers
+- path rasterization helpers
 
 #### `sokobanitron-presentation/src/gameplay_animation/box_vanish.rs`
 - box-vanish animation state machine
 - policy-based vanish variant selection
-- vanish timing / draw behavior
+- vanish timing
 - vanish dirty-cell reporting
+
+#### `sokobanitron-presentation/src/gameplay_animation/box_vanish_drawing.rs`
+- limited vanish drawing helpers
+- rounded-rect / circle rasterization helpers
 
 #### `sokobanitron-presentation/src/gameplay_animation/entity_flash.rs`
 - entity flash animation state machine
@@ -223,14 +239,14 @@ Important current behavior:
 
 #### `desktop-client/src/display.rs`
 - desktop gameplay redraw path
-- advancing active gameplay presentation on desktop
+- advancing pending gameplay presentation on desktop
 - partial gameplay redraw into persistent grayscale buffer
 - grayscale-to-RGBA copy before window presentation
 
 #### `kindle-client/src/app_driver.rs`
 - Kindle gameplay presentation state ownership
 - Kindle animation policy selection (`GameplayAnimationPolicy::Limited`)
-- redraw scheduling for active gameplay presentation
+- redraw scheduling for pending gameplay presentation
 
 #### `kindle-client/src/display.rs`
 - Kindle gameplay damage to present-region mapping
@@ -292,7 +308,7 @@ Queued solved presentation can wait behind earlier animation work.
 
 ### Timing is centralized in the shared animation runner
 The shared runner owns:
-- one active animation
+- one active animation at a time
 - FIFO queue
 - fixed tick interval
 - progression based on current time
@@ -335,13 +351,14 @@ This is the Rust equivalent of the Kotlin animation runner, but with time-driven
 | animation runner | `gameplay_animation/mod.rs` |
 | animation capability policy / policy-based animation selection | `gameplay_animation/mod.rs`, `box_path.rs`, `box_vanish.rs` |
 | blink animation | `gameplay_animation/blink.rs` |
-| box path animation | `gameplay_animation/box_path.rs` |
-| box vanish animation | `gameplay_animation/box_vanish.rs` |
+| box path animation | `gameplay_animation/box_path.rs`, `gameplay_animation/box_path_drawing.rs` |
+| box vanish animation | `gameplay_animation/box_vanish.rs`, `gameplay_animation/box_vanish_drawing.rs` |
 | entity flash animation | `gameplay_animation/entity_flash.rs` |
-| current gameplay presentation snapshot / damage / queued effects | `gameplay_presentation.rs` |
-| solved visual effect sequencing / queued solved presentation | `gameplay_presentation.rs` |
+| current gameplay presentation snapshot / orchestration | `gameplay_presentation.rs` |
+| gameplay damage calculation / merging | `gameplay_presentation/damage.rs` |
+| solved visual effect sequencing / queued solved presentation | `gameplay_presentation/effects.rs` |
 | partial gameplay cell redraw | `gameplay_presentation.rs`, `renderer/gameplay.rs`, `renderer/tiles.rs` |
-| gameplay cell damage to screen/region mapping | `gameplay_presentation.rs`, `runtime.rs`, `kindle-client/src/display.rs` |
+| gameplay cell damage to screen/region mapping | `gameplay_presentation/damage.rs`, `runtime.rs`, `kindle-client/src/display.rs` |
 | entity sprite rect / solved visual details | `renderer/entities.rs` |
 | frame/build request after gameplay outcome | `app/presentation.rs`, `gameplay/frame.rs` |
 | shared app-side input/action/render seam | `app/driver.rs` |

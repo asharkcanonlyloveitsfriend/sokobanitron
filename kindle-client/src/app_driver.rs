@@ -97,7 +97,7 @@ impl KindleApp {
 
         let mut touch = platform::TouchReader::new()?;
         loop {
-            let timeout_ms = if self.gameplay_presentation.has_active_animation() {
+            let timeout_ms = if self.gameplay_presentation.has_pending_presentation() {
                 Some(50)
             } else {
                 self.preferences
@@ -110,7 +110,7 @@ impl KindleApp {
 
             match event {
                 platform::AppInputEvent::IdleTick => {
-                    if self.gameplay_presentation.has_active_animation() {
+                    if self.gameplay_presentation.has_pending_presentation() {
                         self.render_active_gameplay_presentation()?;
                     }
                 }
@@ -131,7 +131,7 @@ impl KindleApp {
     }
 
     fn render_active_gameplay_presentation(&mut self) -> Result<()> {
-        let damage = self
+        let result = self
             .gameplay_presentation
             .advance_presentation_with_damage();
         let scene = self.gameplay_presentation.current_scene().cloned();
@@ -142,7 +142,7 @@ impl KindleApp {
             gray,
             config::WIDTH as u32,
             config::HEIGHT as u32,
-            &damage,
+            &result.damage,
         );
         let Some(scene) = scene else {
             return Ok(());
@@ -150,7 +150,7 @@ impl KindleApp {
         crate::display::present_gameplay_damage(
             display,
             &scene,
-            &damage,
+            &result.damage,
             gray,
             PresentMode::FastPartial,
         )?;

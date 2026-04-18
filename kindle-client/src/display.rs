@@ -37,7 +37,7 @@ impl KindleApp {
                 present_mode,
             } => {
                 let effective_present_mode = kindle_gameplay_present_mode(update, *present_mode);
-                let damage = self
+                let result = self
                     .gameplay_presentation
                     .replace_update_with_damage(update.clone());
                 let (renderer, gray, display) =
@@ -47,12 +47,12 @@ impl KindleApp {
                     gray,
                     config::WIDTH as u32,
                     config::HEIGHT as u32,
-                    &damage,
+                    &result.damage,
                 );
                 present_gameplay_damage(
                     display,
                     &update.scene,
-                    &damage,
+                    &result.damage,
                     gray,
                     effective_present_mode,
                 )
@@ -335,7 +335,7 @@ mod tests {
             &app_state,
         ));
         assert_eq!(
-            presentation.replace_update_with_damage(initial),
+            presentation.replace_update_with_damage(initial).damage,
             GameplayDamage::Full
         );
 
@@ -391,18 +391,18 @@ mod tests {
             cell(5, 1),
             cell(6, 1),
         ];
-        let damage = presentation.replace_update_with_damage(move_update.clone());
-        assert_eq!(damage, GameplayDamage::Cells(expected_cells.clone()));
+        let result = presentation.replace_update_with_damage(move_update.clone());
+        assert_eq!(result.damage, GameplayDamage::Cells(expected_cells.clone()));
         assert_eq!(
-            kindle_gameplay_damage_submission(&move_update.scene, &damage),
+            kindle_gameplay_damage_submission(&move_update.scene, &result.damage),
             GameplayDamageSubmission::UnionRegion(
                 gameplay_damage_region(&move_update.scene, &expected_cells)
                     .expect("solved entity cells should map to a Kindle region"),
             )
         );
 
-        let solved_damage = presentation.replace_update_with_damage(solved_update.clone());
-        assert_eq!(solved_damage, GameplayDamage::Cells(Vec::new()));
-        assert!(presentation.has_active_animation());
+        let solved_result = presentation.replace_update_with_damage(solved_update.clone());
+        assert_eq!(solved_result.damage, GameplayDamage::Cells(Vec::new()));
+        assert!(presentation.has_pending_presentation());
     }
 }

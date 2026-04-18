@@ -60,9 +60,9 @@ object NativeBridge {
         return nativePresentFrame(handle)
     }
 
-    fun hasActiveGameplayAnimation(handle: Long): Boolean {
+    fun hasPendingGameplayPresentation(handle: Long): Boolean {
         check(ensureLoaded()) { "Native library '$LIB_NAME' is not loaded." }
-        return nativeHasActiveGameplayAnimation(handle)
+        return nativeHasPendingGameplayPresentation(handle)
     }
 
     private fun ensureLoaded(): Boolean {
@@ -112,5 +112,5 @@ object NativeBridge {
 
     private external fun nativePresentFrame(handle: Long): Boolean
 
-    private external fun nativeHasActiveGameplayAnimation(handle: Long): Boolean
+    private external fun nativeHasPendingGameplayPresentation(handle: Long): Boolean
 }

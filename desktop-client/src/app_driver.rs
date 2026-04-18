@@ -373,7 +373,7 @@ impl ApplicationHandler for App {
             }
             WindowEvent::RedrawRequested => {
                 if self.app_state.active_screen() == AppScreen::Gameplay
-                    && self.gameplay_presentation.has_active_animation()
+                    && self.gameplay_presentation.has_pending_presentation()
                 {
                     self.render_active_gameplay_presentation();
                 } else {

@@ -1,6 +1,8 @@
 mod blink;
 mod box_path;
+mod box_path_drawing;
 mod box_vanish;
+mod box_vanish_drawing;
 mod entity_flash;
 
 use self::blink::BlinkAnimation;
@@ -29,6 +31,11 @@ pub(crate) trait GameplayAnimation {
         false
     }
 
+    /// Returns the smallest correct dirty-cell set for the animation's current state.
+    ///
+    /// The runner is responsible only for unioning dirty cells across animation transitions
+    /// (previous step, current step, start, finish). Presentation state then merges that
+    /// animation damage with baseline scene damage and queued effect damage.
     fn dirty_cells(&self) -> Vec<BoardCell> {
         Vec::new()
     }
@@ -79,7 +86,8 @@ impl GameplayAnimationRunner {
         policy: GameplayAnimationPolicy,
         now: Instant,
     ) -> bool {
-        let animations = animations_for_update(previous_scene, update, policy);
+        // Build the semantic animation order first, then enqueue that sequence as-is.
+        let animations = ordered_animations_for_update(previous_scene, update, policy);
         let animation_enqueued = !animations.is_empty();
         for animation in animations {
             self.enqueue(animation, now);
@@ -129,6 +137,9 @@ impl GameplayAnimationRunner {
                     .active
                     .as_mut()
                     .expect("active animation checked above");
+                // The runner owns transition bookkeeping: union the dirty cells from the old and
+                // new animation states so individual animations only need to report their local
+                // current dirty footprint.
                 let previous_dirty = active.animation.dirty_cells();
                 active.animation.step();
                 active.next_step_at = active.animation.ticks_until_next_step().map(|ticks| {
@@ -197,6 +208,7 @@ impl GameplayAnimationRunner {
     pub(crate) fn current_dirty_cells(&self) -> Vec<BoardCell> {
         self.active
             .as_ref()
+            // Active animations report only their current local dirty footprint.
             .map(|active| normalize_cells(active.animation.dirty_cells()))
             .unwrap_or_default()
     }
@@ -237,40 +249,83 @@ impl GameplayAnimationRunner {
     }
 }
 
-fn animations_for_update(
+#[derive(Default)]
+struct OrderedAnimations {
+    animations: Vec<Box<dyn GameplayAnimation>>,
+}
+
+impl OrderedAnimations {
+    fn push_optional(&mut self, animation: Option<Box<dyn GameplayAnimation>>) {
+        if let Some(animation) = animation {
+            self.animations.push(animation);
+        }
+    }
+
+    fn push_blink(&mut self, player_position: Option<BoardCell>) {
+        if let Some(player_position) = player_position {
+            self.animations
+                .push(Box::new(BlinkAnimation::new(player_position)));
+        }
+    }
+
+    fn into_vec(self) -> Vec<Box<dyn GameplayAnimation>> {
+        self.animations
+    }
+}
+
+fn ordered_animations_for_update(
     previous_scene: Option<&GameplayScreenRequest>,
     update: &GameplayPresentationUpdate,
     policy: GameplayAnimationPolicy,
 ) -> Vec<Box<dyn GameplayAnimation>> {
-    let mut animations: Vec<Box<dyn GameplayAnimation>> = Vec::new();
-    if is_state_change_flash_cause(&update.cause)
-        && let Some(animation) = entity_flash_animation_for_policy(policy, previous_scene, update)
-    {
-        animations.push(animation);
-    }
+    let mut ordered = OrderedAnimations::default();
+    enqueue_state_change_flash(&mut ordered, previous_scene, update, policy);
+    enqueue_cause_animations(&mut ordered, update, policy);
+    ordered.into_vec()
+}
 
+fn enqueue_state_change_flash(
+    ordered: &mut OrderedAnimations,
+    previous_scene: Option<&GameplayScreenRequest>,
+    update: &GameplayPresentationUpdate,
+    policy: GameplayAnimationPolicy,
+) {
+    if is_state_change_flash_cause(&update.cause) {
+        ordered.push_optional(entity_flash_animation_for_policy(
+            policy,
+            previous_scene,
+            update,
+        ));
+    }
+}
+
+fn enqueue_cause_animations(
+    ordered: &mut OrderedAnimations,
+    update: &GameplayPresentationUpdate,
+    policy: GameplayAnimationPolicy,
+) {
     match &update.cause {
         GameplayPresentationCause::BoxMoved { path } => {
-            if let Some(animation) = box_path_animation_for_policy(policy, path.clone()) {
-                animations.push(animation);
-            }
+            ordered.push_optional(box_path_animation_for_policy(policy, path.clone()));
         }
         GameplayPresentationCause::BoxRemoved { to } => {
-            if let Some(animation) = box_vanish_animation_for_policy(policy, *to) {
-                animations.push(animation);
-            }
-            if let Some(player_position) = update.scene.board.player() {
-                animations.push(Box::new(BlinkAnimation::new(player_position)));
-            }
+            enqueue_box_removed_animations(ordered, update, policy, *to);
         }
         GameplayPresentationCause::BoxMoveRejected => {
-            if let Some(player_position) = update.scene.board.player() {
-                animations.push(Box::new(BlinkAnimation::new(player_position)));
-            }
+            ordered.push_blink(update.scene.board.player());
         }
         _ => {}
     }
-    animations
+}
+
+fn enqueue_box_removed_animations(
+    ordered: &mut OrderedAnimations,
+    update: &GameplayPresentationUpdate,
+    policy: GameplayAnimationPolicy,
+    position: BoardCell,
+) {
+    ordered.push_optional(box_vanish_animation_for_policy(policy, position));
+    ordered.push_blink(update.scene.board.player());
 }
 
 fn is_state_change_flash_cause(cause: &GameplayPresentationCause) -> bool {
@@ -493,6 +548,40 @@ mod tests {
         let _ = runner.advance_to_with_damage(now + Duration::from_millis(100));
         assert!(runner.has_active_animation());
         assert!(runner.hides_player());
+    }
+
+    #[test]
+    fn box_move_uses_entity_flash_before_box_path() {
+        let now = Instant::now();
+        let previous = update_with_state(
+            GameplayPresentationCause::CurrentState,
+            Some(BoardCell::new(1, 0)),
+            vec![false, false, true, false, false, false, false, false],
+        );
+        let update = update_with_state(
+            GameplayPresentationCause::BoxMoved {
+                path: vec![
+                    BoardCell::new(2, 0),
+                    BoardCell::new(3, 0),
+                    BoardCell::new(3, 1),
+                ],
+            },
+            Some(BoardCell::new(2, 0)),
+            vec![false, false, false, true, false, false, false, false],
+        );
+        let mut runner = GameplayAnimationRunner::default();
+
+        assert!(runner.enqueue_for_update(
+            Some(&previous.scene),
+            &update,
+            GameplayAnimationPolicy::Full,
+            now,
+        ));
+
+        assert_eq!(
+            runner.current_dirty_cells(),
+            vec![BoardCell::new(1, 0), BoardCell::new(2, 0)]
+        );
     }
 
     #[test]

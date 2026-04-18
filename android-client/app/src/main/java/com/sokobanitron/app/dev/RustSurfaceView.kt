@@ -142,7 +142,7 @@ class RustSurfaceView @JvmOverloads constructor(
 
         if (NativeBridge.presentFrame(handle)) {
             presentRetryPending = false
-            if (NativeBridge.hasActiveGameplayAnimation(handle) && holder.surface.isValid) {
+            if (NativeBridge.hasPendingGameplayPresentation(handle) && holder.surface.isValid) {
                 postOnAnimation { render() }
             }
             return

@@ -25,7 +25,7 @@ impl App {
 
     pub(crate) fn render_active_gameplay_presentation(&mut self) {
         if let Some(pixels) = &mut self.pixels {
-            let damage = self
+            let result = self
                 .gameplay_presentation
                 .advance_presentation_with_damage();
             let gray_frame = &mut self.gray_frame;
@@ -36,11 +36,11 @@ impl App {
                 gray_frame,
                 self.surface_width,
                 self.surface_height,
-                &damage,
+                &result.damage,
             );
             copy_gray_to_rgba(gray_frame, pixels.frame_mut());
             pixels.render().expect("render");
-            if self.gameplay_presentation.has_active_animation() {
+            if result.has_pending_presentation {
                 self.request_window_redraw();
             }
         }
@@ -50,7 +50,7 @@ impl App {
         match request {
             FrameRequest::Gameplay { update, .. } => {
                 if let Some(pixels) = &mut self.pixels {
-                    let damage = self
+                    let result = self
                         .gameplay_presentation
                         .replace_update_with_damage(update.clone());
                     let gray_frame = &mut self.gray_frame;
@@ -59,11 +59,11 @@ impl App {
                         gray_frame,
                         self.surface_width,
                         self.surface_height,
-                        &damage,
+                        &result.damage,
                     );
                     copy_gray_to_rgba(gray_frame, pixels.frame_mut());
                     pixels.render().expect("render");
-                    if self.gameplay_presentation.has_active_animation() {
+                    if result.has_pending_presentation {
                         self.request_window_redraw();
                     }
                 }

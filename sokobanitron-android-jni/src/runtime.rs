@@ -143,7 +143,7 @@ impl AndroidApp {
         };
         if matches!(self.pending_present_damage, FrameDamage::Noop)
             && self.app_state.is_gameplay_screen()
-            && self.gameplay_presentation.has_active_animation()
+            && self.gameplay_presentation.has_pending_presentation()
         {
             let damage = self.render_active_gameplay_presentation_into_frame();
             self.mark_frame_damage(damage);
@@ -167,8 +167,8 @@ impl AndroidApp {
         presented
     }
 
-    pub fn has_active_gameplay_animation(&self) -> bool {
-        self.app_state.is_gameplay_screen() && self.gameplay_presentation.has_active_animation()
+    pub fn has_pending_gameplay_presentation(&self) -> bool {
+        self.app_state.is_gameplay_screen() && self.gameplay_presentation.has_pending_presentation()
     }
 
     fn apply_app_input(&mut self, input: AppInput) -> Option<AppliedUpdate> {
@@ -282,7 +282,7 @@ impl AndroidApp {
 
     fn needs_present(&self) -> bool {
         !matches!(self.pending_present_damage, FrameDamage::Noop)
-            || self.has_active_gameplay_animation()
+            || self.has_pending_gameplay_presentation()
     }
 
     fn configure_native_window(&mut self) {
@@ -300,7 +300,7 @@ impl AndroidApp {
     fn render_request_into_frame(&mut self, request: &FrameRequest) -> FrameDamage {
         match request {
             FrameRequest::Gameplay { update, .. } => {
-                let damage = self
+                let result = self
                     .gameplay_presentation
                     .replace_update_with_damage(update.clone());
                 self.gameplay_presentation.draw_damage(
@@ -308,11 +308,11 @@ impl AndroidApp {
                     &mut self.gray_frame,
                     self.surface_width,
                     self.surface_height,
-                    &damage,
+                    &result.damage,
                 );
                 FrameDamage::from_gameplay_damage(
                     &update.scene,
-                    &damage,
+                    &result.damage,
                     self.surface_width,
                     self.surface_height,
                 )
@@ -423,7 +423,7 @@ impl AndroidApp {
         let Some(scene) = self.gameplay_presentation.current_scene().cloned() else {
             return FrameDamage::Noop;
         };
-        let damage = self
+        let result = self
             .gameplay_presentation
             .advance_presentation_with_damage();
         self.gameplay_presentation.draw_damage(
@@ -431,9 +431,14 @@ impl AndroidApp {
             &mut self.gray_frame,
             self.surface_width,
             self.surface_height,
-            &damage,
+            &result.damage,
         );
-        FrameDamage::from_gameplay_damage(&scene, &damage, self.surface_width, self.surface_height)
+        FrameDamage::from_gameplay_damage(
+            &scene,
+            &result.damage,
+            self.surface_width,
+            self.surface_height,
+        )
     }
 
     fn draw_full_request_into_frame(&mut self, request: &FrameRequest) {

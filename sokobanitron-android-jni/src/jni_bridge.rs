@@ -149,7 +149,7 @@ pub extern "system" fn Java_com_sokobanitron_app_dev_NativeBridge_nativePresentF
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_sokobanitron_app_dev_NativeBridge_nativeHasActiveGameplayAnimation(
+pub extern "system" fn Java_com_sokobanitron_app_dev_NativeBridge_nativeHasPendingGameplayPresentation(
     _env: JNIEnv,
     _bridge: JObject,
     handle: jlong,
@@ -157,6 +157,6 @@ pub extern "system" fn Java_com_sokobanitron_app_dev_NativeBridge_nativeHasActiv
     let Some(id) = handle_to_id(handle) else {
         return JNI_FALSE;
     };
-    let active = with_app_mut(id, false, |app| app.has_active_gameplay_animation());
+    let active = with_app_mut(id, false, |app| app.has_pending_gameplay_presentation());
     if active { JNI_TRUE } else { JNI_FALSE }
 }

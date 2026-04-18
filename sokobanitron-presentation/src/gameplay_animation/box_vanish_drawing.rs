@@ -1,0 +1,165 @@
+use crate::renderer::{Renderer, fill_rect};
+use crate::screen_requests::GameplayScreenRequest;
+use sokobanitron_gameplay::BoardCell;
+
+const LIMITED_BOX_VANISH_CORNER_RADIUS_DIVISOR: u32 = 5;
+const STANDARD_BOX_BODY_SIZE_NUMERATOR: u32 = 72;
+const STANDARD_BOX_BODY_SIZE_DENOMINATOR: u32 = 100;
+
+pub(super) fn draw_limited_vanishing_box_at(
+    renderer: &Renderer,
+    frame: &mut [u8],
+    frame_width: u32,
+    frame_height: u32,
+    scene: &GameplayScreenRequest,
+    position: BoardCell,
+    scale: f32,
+) {
+    if scale <= 0.0 {
+        return;
+    }
+    let Some((box_x, box_y, icon_size)) = renderer.box_sprite_rect_at(&scene.viewport, position)
+    else {
+        return;
+    };
+    let body_size = standard_box_body_size(icon_size);
+    let scaled_size = ((body_size as f32 * scale).round() as u32).max(1);
+    let offset = ((icon_size as f32 - scaled_size as f32) / 2.0).round() as i32;
+    draw_filled_rounded_rect(
+        frame,
+        frame_width,
+        frame_height,
+        box_x + offset,
+        box_y + offset,
+        scaled_size,
+        scaled_size,
+        renderer.theme.gray_11,
+    );
+}
+
+fn standard_box_body_size(icon_size: u32) -> u32 {
+    (icon_size * STANDARD_BOX_BODY_SIZE_NUMERATOR / STANDARD_BOX_BODY_SIZE_DENOMINATOR).max(1)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_filled_rounded_rect(
+    frame: &mut [u8],
+    frame_width: u32,
+    frame_height: u32,
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+    color: u8,
+) {
+    if w == 0 || h == 0 {
+        return;
+    }
+    let radius = (w.min(h) / LIMITED_BOX_VANISH_CORNER_RADIUS_DIVISOR)
+        .min(w / 2)
+        .min(h / 2);
+    if radius == 0 {
+        fill_rect(frame, frame_width, frame_height, x, y, w, h, color);
+        return;
+    }
+
+    fill_rect(
+        frame,
+        frame_width,
+        frame_height,
+        x + radius as i32,
+        y,
+        w.saturating_sub(radius.saturating_mul(2)),
+        h,
+        color,
+    );
+    fill_rect(
+        frame,
+        frame_width,
+        frame_height,
+        x,
+        y + radius as i32,
+        w,
+        h.saturating_sub(radius.saturating_mul(2)),
+        color,
+    );
+
+    let radius = radius as f32;
+    draw_filled_circle(
+        frame,
+        frame_width,
+        frame_height,
+        x as f32 + radius,
+        y as f32 + radius,
+        radius,
+        color,
+    );
+    draw_filled_circle(
+        frame,
+        frame_width,
+        frame_height,
+        x as f32 + w as f32 - radius,
+        y as f32 + radius,
+        radius,
+        color,
+    );
+    draw_filled_circle(
+        frame,
+        frame_width,
+        frame_height,
+        x as f32 + radius,
+        y as f32 + h as f32 - radius,
+        radius,
+        color,
+    );
+    draw_filled_circle(
+        frame,
+        frame_width,
+        frame_height,
+        x as f32 + w as f32 - radius,
+        y as f32 + h as f32 - radius,
+        radius,
+        color,
+    );
+}
+
+fn draw_filled_circle(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    cx: f32,
+    cy: f32,
+    radius: f32,
+    color: u8,
+) {
+    let min_x = (cx - radius).floor().max(0.0) as u32;
+    let max_x = (cx + radius).ceil().min(width.saturating_sub(1) as f32) as u32;
+    let min_y = (cy - radius).floor().max(0.0) as u32;
+    let max_y = (cy + radius).ceil().min(height.saturating_sub(1) as f32) as u32;
+    if min_x > max_x || min_y > max_y {
+        return;
+    }
+    let radius_sq = radius * radius;
+    for y in min_y..=max_y {
+        for x in min_x..=max_x {
+            let px = x as f32 + 0.5;
+            let py = y as f32 + 0.5;
+            let dist_sq = (px - cx) * (px - cx) + (py - cy) * (py - cy);
+            if dist_sq <= radius_sq {
+                let idx = (y * width + x) as usize;
+                frame[idx] = color;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::standard_box_body_size;
+
+    #[test]
+    fn limited_box_vanish_starts_from_standard_box_body_size() {
+        assert_eq!(standard_box_body_size(100), 72);
+        assert_eq!(standard_box_body_size(72), 51);
+    }
+}
