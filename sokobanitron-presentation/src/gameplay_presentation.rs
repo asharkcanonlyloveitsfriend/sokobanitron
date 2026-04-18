@@ -121,6 +121,7 @@ impl GameplayPresentationState {
                 self.visual_effect = GameplayVisualEffect::default();
             }
         }
+        damage = merge_damage(damage, restart_damage(&update));
         self.current_scene = Some(update.scene.clone());
         if suspend_presentation_effects {
             return damage;
@@ -514,6 +515,13 @@ fn gameplay_board_state_changed(
     previous.board != current.board
 }
 
+fn restart_damage(update: &GameplayPresentationUpdate) -> Vec<BoardCell> {
+    if !matches!(update.cause, GameplayPresentationCause::Restarted) {
+        return Vec::new();
+    }
+    normalize_cells(update.scene.board.player().into_iter().collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{GameplayDamage, GameplayPresentationState};
@@ -832,6 +840,38 @@ mod tests {
             GameplayDamage::Cells(vec![cell(2, 1), cell(3, 1), cell(4, 1)])
         );
         assert!(!state.has_active_animation());
+    }
+
+    #[test]
+    fn restart_after_clean_solve_dirties_unchanged_player_cell() {
+        let solved = update_from_board(
+            floor_board(5, 3, vec![cell(2, 1)], Some(cell(0, 1)), None, true),
+            GameplayPresentationCause::PuzzleSolved { clean: true },
+        );
+        let restarted = update_from_board(
+            floor_board(5, 3, vec![cell(1, 1)], Some(cell(0, 1)), None, false),
+            GameplayPresentationCause::Restarted,
+        );
+        let start = Instant::now();
+        let mut state = GameplayPresentationState::new();
+        let initial = update_from_board(
+            floor_board(5, 3, vec![cell(1, 1)], Some(cell(0, 1)), None, false),
+            GameplayPresentationCause::CurrentState,
+        );
+
+        state.replace_update_at(initial, start);
+        let damage = state.replace_update_at(solved, start);
+        assert_eq!(
+            damage,
+            GameplayDamage::Cells(vec![cell(0, 1), cell(1, 1), cell(2, 1)])
+        );
+
+        let damage = state.replace_update_at(restarted.clone(), start);
+        assert_eq!(
+            damage,
+            GameplayDamage::Cells(vec![cell(0, 1), cell(1, 1), cell(2, 1)])
+        );
+        assert_eq!(restarted.scene.board.player(), Some(cell(0, 1)));
     }
 
     #[test]
