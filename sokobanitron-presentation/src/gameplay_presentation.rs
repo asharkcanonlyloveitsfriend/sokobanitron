@@ -140,7 +140,7 @@ impl GameplayPresentationState {
                 self.visual_effect = GameplayVisualEffect::default();
             }
         }
-        damage = merge_damage(damage, restart_damage(&update));
+        damage = merge_damage(damage, restart_damage(previous_scene_ref, &update));
         self.current_scene = Some(update.scene.clone());
         if suspend_presentation_effects {
             return self.presentation_result(damage);

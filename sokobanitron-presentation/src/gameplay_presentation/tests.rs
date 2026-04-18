@@ -324,19 +324,40 @@ fn puzzle_solved_effect_waits_for_full_policy_box_move_animation() {
 }
 
 #[test]
-fn restart_after_clean_solve_dirties_unchanged_player_cell() {
+fn restart_after_solve_dirties_all_entity_cells() {
     let solved = update_from_board(
-        floor_board(5, 3, vec![cell(2, 1)], Some(cell(0, 1)), None, true),
+        floor_board(
+            5,
+            3,
+            vec![cell(1, 1), cell(2, 1)],
+            Some(cell(0, 1)),
+            None,
+            true,
+        ),
         GameplayPresentationCause::PuzzleSolved { clean: true },
     );
     let restarted = update_from_board(
-        floor_board(5, 3, vec![cell(1, 1)], Some(cell(0, 1)), None, false),
+        floor_board(
+            5,
+            3,
+            vec![cell(1, 1), cell(2, 1)],
+            Some(cell(0, 1)),
+            None,
+            false,
+        ),
         GameplayPresentationCause::Restarted,
     );
     let start = Instant::now();
     let mut state = GameplayPresentationState::new();
     let initial = update_from_board(
-        floor_board(5, 3, vec![cell(1, 1)], Some(cell(0, 1)), None, false),
+        floor_board(
+            5,
+            3,
+            vec![cell(1, 1), cell(2, 1)],
+            Some(cell(0, 1)),
+            None,
+            false,
+        ),
         GameplayPresentationCause::CurrentState,
     );
 
@@ -353,6 +374,32 @@ fn restart_after_clean_solve_dirties_unchanged_player_cell() {
         GameplayDamage::Cells(vec![cell(0, 1), cell(1, 1), cell(2, 1)])
     );
     assert_eq!(restarted.scene.board.player(), Some(cell(0, 1)));
+}
+
+#[test]
+fn restart_before_solve_uses_normal_board_damage_only() {
+    let started = update_from_board(
+        floor_board(
+            5,
+            3,
+            vec![cell(1, 1), cell(2, 1)],
+            Some(cell(0, 1)),
+            None,
+            false,
+        ),
+        GameplayPresentationCause::CurrentState,
+    );
+    let restarted = GameplayPresentationUpdate {
+        cause: GameplayPresentationCause::Restarted,
+        ..started.clone()
+    };
+    let start = Instant::now();
+    let mut state = GameplayPresentationState::new();
+
+    state.replace_update_at(started, start);
+    let result = state.replace_update_at(restarted, start);
+
+    assert_eq!(result.damage, GameplayDamage::Cells(Vec::new()));
 }
 
 #[test]

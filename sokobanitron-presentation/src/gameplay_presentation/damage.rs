@@ -80,17 +80,36 @@ pub(super) fn gameplay_board_state_changed(
     previous.board != current.board
 }
 
-pub(super) fn restart_damage(update: &GameplayPresentationUpdate) -> Vec<BoardCell> {
+pub(super) fn restart_damage(
+    previous: Option<&GameplayScreenRequest>,
+    update: &GameplayPresentationUpdate,
+) -> Vec<BoardCell> {
     if !matches!(update.cause, GameplayPresentationCause::Restarted) {
         return Vec::new();
     }
-    normalize_cells(update.scene.board.player().into_iter().collect())
+    let Some(previous) = previous.filter(|scene| scene.board.is_solved()) else {
+        return Vec::new();
+    };
+    let mut dirty = Vec::new();
+    add_entity_cells(&mut dirty, previous);
+    add_entity_cells(&mut dirty, &update.scene);
+    normalize_cells(dirty)
 }
 
 pub(super) fn add_optional_cell(cells: &mut Vec<BoardCell>, cell: Option<BoardCell>) {
     if let Some(cell) = cell {
         cells.push(cell);
     }
+}
+
+fn add_entity_cells(cells: &mut Vec<BoardCell>, scene: &GameplayScreenRequest) {
+    add_optional_cell(cells, scene.board.player());
+    cells.extend(
+        scene
+            .board
+            .cells()
+            .filter(|&cell| scene.board.has_box(cell)),
+    );
 }
 
 pub(super) fn normalize_cells(mut cells: Vec<BoardCell>) -> Vec<BoardCell> {
