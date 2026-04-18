@@ -105,14 +105,14 @@ pub fn build_level_set_select_frame_request(
     }
 }
 
-pub fn build_current_gameplay_frame_request(
+pub fn build_current_gameplay_board_frame_request(
     controller: &GameplayController,
     app_state: &AppState,
 ) -> FrameRequest {
     build_gameplay_frame_request(controller, app_state, PresentMode::Full)
 }
 
-pub fn build_current_frame_request(
+pub fn build_current_gameplay_screen_frame_request(
     controller: &GameplayController,
     app_state: &AppState,
 ) -> FrameRequest {
@@ -128,7 +128,7 @@ pub fn build_current_frame_request(
             },
         }
     } else {
-        build_current_gameplay_frame_request(controller, app_state)
+        build_current_gameplay_board_frame_request(controller, app_state)
     }
 }
 
@@ -160,7 +160,7 @@ fn build_gameplay_presentation_update(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_current_frame_request, build_level_select_frame_request};
+    use super::{build_current_gameplay_screen_frame_request, build_level_select_frame_request};
     use crate::app::presentation::{FrameRequest, PresentMode};
     use crate::app::state::{AppOverlay, AppState};
     use presentation::screen_requests::{
@@ -174,26 +174,26 @@ mod tests {
     }
 
     #[test]
-    fn current_frame_request_returns_level_select_when_open() {
+    fn current_gameplay_screen_frame_request_returns_level_select_when_open() {
         let controller = controller();
         let mut app_state = AppState::default();
         app_state.ui.overlay = Some(AppOverlay::LevelSelect { page_start: 12 });
 
         assert_eq!(
-            build_current_frame_request(&controller, &app_state),
+            build_current_gameplay_screen_frame_request(&controller, &app_state),
             build_level_select_frame_request(12, controller.resume_level(), PresentMode::Full,),
         );
     }
 
     #[test]
-    fn current_frame_request_uses_resume_level_for_level_select_indicator() {
+    fn current_gameplay_screen_frame_request_uses_resume_level_for_level_select_indicator() {
         let level = "    ###   \n $$     #@\n $ #...   \n   #######".to_string();
         let controller = GameplayController::new_at_level(vec![level.clone(), level], 0, Some(1));
         let mut app_state = AppState::default();
         app_state.ui.overlay = Some(AppOverlay::LevelSelect { page_start: 0 });
 
         let FrameRequest::LevelSelect { screen, .. } =
-            build_current_frame_request(&controller, &app_state)
+            build_current_gameplay_screen_frame_request(&controller, &app_state)
         else {
             panic!("expected level select request");
         };
@@ -202,13 +202,13 @@ mod tests {
     }
 
     #[test]
-    fn current_frame_request_returns_gameplay_menu_when_open() {
+    fn current_gameplay_screen_frame_request_returns_gameplay_menu_when_open() {
         let controller = controller();
         let mut app_state = AppState::default();
         app_state.ui.overlay = Some(AppOverlay::GameplayMenu);
 
         assert_eq!(
-            build_current_frame_request(&controller, &app_state),
+            build_current_gameplay_screen_frame_request(&controller, &app_state),
             FrameRequest::GameplayMenu {
                 screen: GameplayMenuScreenRequest {
                     primary_action_icon: None,
@@ -219,7 +219,7 @@ mod tests {
     }
 
     #[test]
-    fn current_frame_request_returns_gameplay_when_no_overlay() {
+    fn current_gameplay_screen_frame_request_returns_gameplay_when_no_overlay() {
         let controller = controller();
         let app_state = AppState::default();
 
@@ -230,7 +230,7 @@ mod tests {
                     cause,
                 },
             present_mode,
-        } = build_current_frame_request(&controller, &app_state)
+        } = build_current_gameplay_screen_frame_request(&controller, &app_state)
         else {
             panic!("expected gameplay request");
         };

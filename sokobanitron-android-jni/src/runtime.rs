@@ -9,18 +9,12 @@ use presentation::{
 };
 use sokobanitron_app::{
     app::{
-        AppDriverContext, AppInput, AppInteractionMode, AppRuntimeMut, AppScreen, AppState,
-        AppliedUpdate, FrameRequest, FrameSink, apply_editor_ui_action,
-        apply_input_and_render_in_context,
+        AppDriverContext, AppPointerInput, AppRuntimeMut, AppState, EditorAppRuntimeMut,
+        FrameRequest, FrameSink, build_current_app_screen_frame_request,
+        handle_pointer_input_and_render_in_context,
     },
-    editor::{
-        build_current_editor_frame_request, editor_touch, reset_editor_interaction_state,
-        resize_editor_surface, set_editor_double_tap_window, set_editor_touch_slop,
-    },
-    gameplay::{
-        build_current_frame_request, interpret_gameplay_pointer_event, resize_gameplay_surface,
-        set_gameplay_level_sets, set_gameplay_touch_slop,
-    },
+    editor::{resize_editor_surface, set_editor_double_tap_window, set_editor_touch_slop},
+    gameplay::{resize_gameplay_surface, set_gameplay_level_sets, set_gameplay_touch_slop},
     level_bootstrap::load_initial_levels_for_app,
     persistence::LevelPersistence,
     shared::PointerPhase,
@@ -82,7 +76,8 @@ impl AndroidApp {
             Some(initial_levels.active_level_set_index),
         );
         let editor = LevelEditor::new();
-        let current_request = build_android_frame_request(&controller, &app_state, &editor);
+        let current_request =
+            build_current_app_screen_frame_request(&controller, &app_state, &editor);
 
         let mut app = Self {
             renderer: Renderer::with_overrides(android_renderer_overrides()),
@@ -118,11 +113,10 @@ impl AndroidApp {
     }
 
     pub fn handle_pointer_event(&mut self, id: u64, phase: PointerPhase, x: f64, y: f64) -> bool {
-        match self.app_state.interaction_mode() {
-            AppInteractionMode::Gameplay => self.on_gameplay_pointer_event(id, phase, x, y),
-            AppInteractionMode::Editor => self.on_editor_touch(id, phase, x, y),
-            AppInteractionMode::Overlay(_) => self.on_overlay_pointer_event(id, phase, x, y),
-        }
+        let _ = handle_pointer_input_and_render_in_context(
+            self,
+            AppPointerInput::Pointer { id, phase, x, y },
+        );
         self.needs_present()
     }
 
@@ -171,92 +165,8 @@ impl AndroidApp {
         self.app_state.is_gameplay_screen() && self.gameplay_presentation.has_pending_presentation()
     }
 
-    fn apply_app_input(&mut self, input: AppInput) -> Option<AppliedUpdate> {
-        apply_input_and_render_in_context(self, input).ok()
-    }
-
-    fn enter_editor_mode(&mut self) {
-        let _ = self.apply_app_input(AppInput::EnterEditorMode);
-        reset_editor_interaction_state(&mut self.app_state);
-    }
-
-    fn handle_gameplay_input(&mut self, input: AppInput) {
-        match input {
-            AppInput::NoOp => {}
-            AppInput::EnterEditorMode => {
-                self.enter_editor_mode();
-                self.render_current();
-            }
-            AppInput::BoardTap(_) => {
-                let _ = self.apply_app_input(input);
-            }
-            _ => {
-                let Some(applied) = self.apply_app_input(input) else {
-                    return;
-                };
-                if !applied.rendered_frame {
-                    self.render_active_gameplay_screen();
-                }
-            }
-        }
-    }
-
-    fn on_gameplay_pointer_event(&mut self, id: u64, phase: PointerPhase, x: f64, y: f64) {
-        let input = interpret_gameplay_pointer_event(
-            &mut self.app_state,
-            &self.controller,
-            id,
-            phase,
-            x,
-            y,
-        );
-        self.handle_gameplay_input(input);
-    }
-
-    fn on_editor_touch(&mut self, id: u64, phase: PointerPhase, x: f64, y: f64) {
-        let before_request = self.build_current_request();
-        let action = editor_touch(&mut self.app_state, &mut self.editor, id, phase, x, y);
-        let runtime = AppRuntimeMut {
-            controller: &mut self.controller,
-            app_state: &mut self.app_state,
-            level_persistence: &mut self.level_persistence,
-            preview_boards: &mut self.preview_boards,
-        };
-        apply_editor_ui_action(action, runtime.with_editor(&mut self.editor));
-        let after_request = self.build_current_request();
-        if after_request != before_request {
-            self.render_changed_request(after_request);
-        }
-    }
-
-    fn on_overlay_pointer_event(&mut self, id: u64, phase: PointerPhase, x: f64, y: f64) {
-        let AppInteractionMode::Overlay(overlay) = self.app_state.interaction_mode() else {
-            return;
-        };
-        match overlay.owning_screen() {
-            AppScreen::Gameplay => self.on_gameplay_pointer_event(id, phase, x, y),
-            AppScreen::Editor => self.on_editor_touch(id, phase, x, y),
-        }
-    }
-
-    fn render_current(&mut self) {
-        let request = self.build_current_request();
-        self.render_changed_request(request);
-    }
-
     fn build_current_request(&self) -> FrameRequest {
-        build_android_frame_request(&self.controller, &self.app_state, &self.editor)
-    }
-
-    fn render_active_gameplay_screen(&mut self) {
-        let request = build_current_frame_request(&self.controller, &self.app_state);
-        self.render_changed_request(request);
-    }
-
-    fn render_changed_request(&mut self, request: FrameRequest) {
-        if self.current_request != request {
-            self.render_presentation_request(request);
-        }
+        build_current_app_screen_frame_request(&self.controller, &self.app_state, &self.editor)
     }
 
     fn render_full_current_request(&mut self) {
@@ -539,28 +449,26 @@ impl AppDriverContext for AndroidApp {
             preview_boards: &mut self.preview_boards,
         }
     }
+
+    fn editor_runtime_mut(&mut self) -> Option<EditorAppRuntimeMut<'_>> {
+        Some(
+            AppRuntimeMut {
+                controller: &mut self.controller,
+                app_state: &mut self.app_state,
+                level_persistence: &mut self.level_persistence,
+                preview_boards: &mut self.preview_boards,
+            }
+            .with_editor(&mut self.editor),
+        )
+    }
 }
 
 impl FrameSink for AndroidApp {
     type Error = ();
 
     fn render_frame(&mut self, request: &FrameRequest) -> Result<(), Self::Error> {
-        if !self.app_state.is_gameplay_screen() {
-            return Ok(());
-        }
         self.render_presentation_request(request.clone());
         Ok(())
-    }
-}
-
-fn build_android_frame_request(
-    controller: &GameplayController,
-    app_state: &AppState,
-    editor: &LevelEditor,
-) -> FrameRequest {
-    match app_state.active_screen() {
-        AppScreen::Gameplay => build_current_frame_request(controller, app_state),
-        AppScreen::Editor => build_current_editor_frame_request(app_state, editor),
     }
 }
 

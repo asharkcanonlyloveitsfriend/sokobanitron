@@ -4,7 +4,7 @@ mod view;
 
 pub(crate) use frame::build_gameplay_frame_request_with_cause;
 pub use frame::{
-    build_current_frame_request, build_current_gameplay_frame_request,
+    build_current_gameplay_board_frame_request, build_current_gameplay_screen_frame_request,
     build_gameplay_frame_request, build_sleep_gameplay_frame_request,
 };
 pub use input::{interpret_gameplay_pointer_event, interpret_gameplay_pointer_tap};

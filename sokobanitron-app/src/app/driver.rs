@@ -5,13 +5,20 @@ use super::persistence::{
     sync_level_set_catalog_for_app,
 };
 use super::presentation::PresentationPlan;
-use super::presentation::{FrameSink, render_presentation_plan};
+use super::presentation::{FrameRequest, FrameSink, render_presentation_plan};
 use super::reducer::PersistenceUpdate;
 use super::reducer::apply_action;
-use super::state::AppState;
-use crate::editor::{EditorUiAction, reset_editor_interaction_state};
-use crate::gameplay::build_current_gameplay_frame_request;
+use super::state::{AppInteractionMode, AppScreen, AppState};
+use crate::editor::{
+    EditorUiAction, build_current_editor_frame_request, editor_cursor_moved, editor_mouse_pressed,
+    editor_mouse_released, editor_touch, reset_editor_interaction_state,
+};
+use crate::gameplay::{
+    build_current_gameplay_board_frame_request, build_current_gameplay_screen_frame_request,
+    interpret_gameplay_pointer_event, interpret_gameplay_pointer_tap,
+};
 use crate::persistence::LevelPersistence;
+use crate::shared::PointerPhase;
 use sokobanitron_gameplay::{BoardView, GameplayController, GameplayControllerChanges};
 use sokobanitron_level_editor::LevelEditor;
 
@@ -29,9 +36,32 @@ pub trait AppDriverContext {
 
     fn app_runtime_mut(&mut self) -> AppRuntimeMut<'_>;
 
+    fn editor_runtime_mut(&mut self) -> Option<EditorAppRuntimeMut<'_>> {
+        None
+    }
+
     fn warn(&mut self, message: &str) {
         eprintln!("warning: {message}");
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum AppPointerInput {
+    CursorMoved {
+        x: f64,
+        y: f64,
+    },
+    MousePressed {
+        x: f64,
+        y: f64,
+    },
+    MouseReleased,
+    Pointer {
+        id: u64,
+        phase: PointerPhase,
+        x: f64,
+        y: f64,
+    },
 }
 
 pub struct AppRuntimeMut<'a> {
@@ -70,6 +100,17 @@ pub fn apply_action_in_context<C: AppDriverContext>(
     })
 }
 
+pub fn build_current_app_screen_frame_request(
+    controller: &GameplayController,
+    app_state: &AppState,
+    editor: &LevelEditor,
+) -> FrameRequest {
+    match app_state.active_screen() {
+        AppScreen::Gameplay => build_current_gameplay_screen_frame_request(controller, app_state),
+        AppScreen::Editor => build_current_editor_frame_request(app_state, editor),
+    }
+}
+
 pub fn apply_action_and_render_in_context<C>(
     context: &mut C,
     action: AppAction,
@@ -77,6 +118,7 @@ pub fn apply_action_and_render_in_context<C>(
 where
     C: AppDriverContext + FrameSink<Error = <C as AppDriverContext>::Error>,
 {
+    let before_request = build_current_context_screen_frame_request(context);
     let mut applied = apply_action_in_context(context, action)?;
 
     let runtime_effects = {
@@ -107,10 +149,12 @@ where
         // before we build this fallback gameplay frame.
         let request = {
             let runtime = context.app_runtime_mut();
-            build_current_gameplay_frame_request(runtime.controller, runtime.app_state)
+            build_current_gameplay_board_frame_request(runtime.controller, runtime.app_state)
         };
         context.render_frame(&request)?;
         applied.rendered_frame = true;
+    } else {
+        applied.rendered_frame = render_current_screen_frame_if_changed(context, before_request)?;
     }
     Ok(applied)
 }
@@ -151,19 +195,202 @@ where
     apply_action_and_render_in_context(context, action)
 }
 
+pub fn handle_pointer_input_and_render_in_context<C>(
+    context: &mut C,
+    input: AppPointerInput,
+) -> Result<(), <C as AppDriverContext>::Error>
+where
+    C: AppDriverContext + FrameSink<Error = <C as AppDriverContext>::Error>,
+{
+    match input {
+        AppPointerInput::CursorMoved { x, y } => {
+            if matches!(
+                current_interaction_mode(context),
+                AppInteractionMode::Editor
+            ) {
+                mutate_editor_and_render_in_context(context, |app_state, editor| {
+                    editor_cursor_moved(app_state, editor, x, y);
+                    None
+                })?;
+            }
+        }
+        AppPointerInput::MousePressed { x, y } => match current_interaction_mode(context) {
+            AppInteractionMode::Gameplay => {
+                handle_gameplay_mouse_pressed_in_context(context, x, y)?;
+            }
+            AppInteractionMode::Editor => {
+                mutate_editor_and_render_in_context(context, |app_state, editor| {
+                    editor_mouse_pressed(app_state, editor, x, y)
+                })?;
+            }
+            AppInteractionMode::Overlay(overlay) => match overlay.owning_screen() {
+                AppScreen::Gameplay => {
+                    handle_gameplay_mouse_pressed_in_context(context, x, y)?;
+                }
+                AppScreen::Editor => {
+                    mutate_editor_and_render_in_context(context, |app_state, editor| {
+                        editor_mouse_pressed(app_state, editor, x, y)
+                    })?;
+                }
+            },
+        },
+        AppPointerInput::MouseReleased => {
+            if matches!(active_screen(context), AppScreen::Editor) {
+                let before_request = build_current_context_screen_frame_request(context);
+                {
+                    let runtime = context.app_runtime_mut();
+                    editor_mouse_released(runtime.app_state);
+                }
+                let _ = render_current_screen_frame_if_changed(context, before_request)?;
+            }
+        }
+        AppPointerInput::Pointer { id, phase, x, y } => match current_interaction_mode(context) {
+            AppInteractionMode::Gameplay => {
+                handle_gameplay_pointer_event_in_context(context, id, phase, x, y)?;
+            }
+            AppInteractionMode::Editor => {
+                mutate_editor_and_render_in_context(context, |app_state, editor| {
+                    editor_touch(app_state, editor, id, phase, x, y)
+                })?;
+            }
+            AppInteractionMode::Overlay(overlay) => match overlay.owning_screen() {
+                AppScreen::Gameplay => {
+                    handle_gameplay_pointer_event_in_context(context, id, phase, x, y)?;
+                }
+                AppScreen::Editor => {
+                    mutate_editor_and_render_in_context(context, |app_state, editor| {
+                        editor_touch(app_state, editor, id, phase, x, y)
+                    })?;
+                }
+            },
+        },
+    }
+    Ok(())
+}
+
+fn current_interaction_mode<C: AppDriverContext>(context: &mut C) -> AppInteractionMode {
+    let runtime = context.app_runtime_mut();
+    runtime.app_state.interaction_mode()
+}
+
+fn active_screen<C: AppDriverContext>(context: &mut C) -> AppScreen {
+    let runtime = context.app_runtime_mut();
+    runtime.app_state.active_screen()
+}
+
+fn build_current_context_screen_frame_request<C: AppDriverContext>(
+    context: &mut C,
+) -> Option<FrameRequest> {
+    match active_screen(context) {
+        AppScreen::Gameplay => {
+            let runtime = context.app_runtime_mut();
+            Some(build_current_gameplay_screen_frame_request(
+                runtime.controller,
+                runtime.app_state,
+            ))
+        }
+        AppScreen::Editor => {
+            let runtime = context.editor_runtime_mut()?;
+            Some(build_current_editor_frame_request(
+                runtime.app.app_state,
+                runtime.editor,
+            ))
+        }
+    }
+}
+
+fn render_current_screen_frame_if_changed<C>(
+    context: &mut C,
+    before_request: Option<FrameRequest>,
+) -> Result<bool, <C as AppDriverContext>::Error>
+where
+    C: AppDriverContext + FrameSink<Error = <C as AppDriverContext>::Error>,
+{
+    let after_request = build_current_context_screen_frame_request(context);
+    if after_request == before_request {
+        return Ok(false);
+    }
+    let Some(request) = after_request.as_ref() else {
+        return Ok(false);
+    };
+    context.render_frame(request)?;
+    Ok(true)
+}
+
+fn mutate_editor_and_render_in_context<C, F>(
+    context: &mut C,
+    mutate: F,
+) -> Result<(), <C as AppDriverContext>::Error>
+where
+    C: AppDriverContext + FrameSink<Error = <C as AppDriverContext>::Error>,
+    F: FnOnce(&mut AppState, &mut LevelEditor) -> Option<EditorUiAction>,
+{
+    let before_request = build_current_context_screen_frame_request(context);
+    let action = {
+        let Some(runtime) = context.editor_runtime_mut() else {
+            return Ok(());
+        };
+        mutate(runtime.app.app_state, runtime.editor)
+    };
+    if let Some(runtime) = context.editor_runtime_mut() {
+        apply_editor_ui_action(action, runtime);
+    }
+    let _ = render_current_screen_frame_if_changed(context, before_request)?;
+    Ok(())
+}
+
+fn handle_gameplay_mouse_pressed_in_context<C>(
+    context: &mut C,
+    x: f64,
+    y: f64,
+) -> Result<(), <C as AppDriverContext>::Error>
+where
+    C: AppDriverContext + FrameSink<Error = <C as AppDriverContext>::Error>,
+{
+    let input = {
+        let runtime = context.app_runtime_mut();
+        interpret_gameplay_pointer_tap(runtime.app_state, runtime.controller, x, y)
+    };
+    let _ = apply_input_and_render_in_context(context, input)?;
+    Ok(())
+}
+
+fn handle_gameplay_pointer_event_in_context<C>(
+    context: &mut C,
+    id: u64,
+    phase: PointerPhase,
+    x: f64,
+    y: f64,
+) -> Result<(), <C as AppDriverContext>::Error>
+where
+    C: AppDriverContext + FrameSink<Error = <C as AppDriverContext>::Error>,
+{
+    let input = {
+        let runtime = context.app_runtime_mut();
+        interpret_gameplay_pointer_event(runtime.app_state, runtime.controller, id, phase, x, y)
+    };
+    let _ = apply_input_and_render_in_context(context, input)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        AppDriverContext, AppRuntimeMut, apply_action_and_render_in_context,
+        AppDriverContext, AppPointerInput, AppRuntimeMut, apply_action_and_render_in_context,
         apply_action_in_context, apply_editor_ui_action, apply_input_and_render_in_context,
+        handle_pointer_input_and_render_in_context,
     };
     use crate::app::action::AppAction;
     use crate::app::input::AppInput;
     use crate::app::presentation::FrameRequest;
-    use crate::app::state::AppState;
-    use crate::editor::{EditorUiAction, editor_mouse_pressed};
+    use crate::app::state::{AppInteractionMode, AppOverlay, AppScreen, AppState};
+    use crate::editor::{EditorUiAction, build_current_editor_frame_request, editor_mouse_pressed};
     use crate::level_bootstrap::{build_preview_boards, load_initial_levels_for_app};
     use crate::persistence::LevelPersistence;
+    use crate::shared::PointerPhase;
+    use presentation::layout::{
+        overlay_primary_action_button_rect, overlay_secondary_action_button_rect,
+    };
     use sokobanitron_gameplay::{BoardCell, GameplayController};
     use sokobanitron_level_editor::{
         DrawTool, EditorCommand, EditorMode, ExportPuzzleError, LevelEditor,
@@ -356,6 +583,18 @@ mod tests {
                 preview_boards: &mut self.preview_boards,
             }
         }
+
+        fn editor_runtime_mut(&mut self) -> Option<super::EditorAppRuntimeMut<'_>> {
+            Some(
+                super::AppRuntimeMut {
+                    controller: &mut self.controller,
+                    app_state: &mut self.app_state,
+                    level_persistence: &mut self.level_persistence,
+                    preview_boards: &mut self.preview_boards,
+                }
+                .with_editor(&mut self.editor),
+            )
+        }
     }
 
     impl crate::app::presentation::FrameSink for TestContext {
@@ -427,7 +666,7 @@ mod tests {
     }
 
     #[test]
-    fn enter_editor_mode_does_not_render_from_shared_driver() {
+    fn enter_editor_mode_renders_from_shared_driver() {
         let mut context = TestContext::new();
 
         let applied =
@@ -435,8 +674,41 @@ mod tests {
 
         assert!(context.app_state.is_editor_screen());
         assert!(applied.presentation_plan.is_none());
-        assert!(!applied.rendered_frame);
-        assert!(context.rendered_frames.is_empty());
+        assert!(applied.rendered_frame);
+        assert_eq!(context.rendered_frames.len(), 1);
+        let FrameRequest::Editor { .. } = &context.rendered_frames[0] else {
+            panic!("expected editor frame");
+        };
+    }
+
+    #[test]
+    fn open_level_select_renders_current_overlay_frame_from_shared_driver() {
+        let mut context = TestContext::new();
+
+        let applied =
+            apply_input_and_render_in_context(&mut context, AppInput::OpenLevelSelect).unwrap();
+
+        assert!(applied.presentation_plan.is_none());
+        assert!(applied.rendered_frame);
+        assert_eq!(context.rendered_frames.len(), 1);
+        let FrameRequest::LevelSelect { .. } = &context.rendered_frames[0] else {
+            panic!("expected level select frame");
+        };
+    }
+
+    #[test]
+    fn open_gameplay_overlay_renders_from_shared_driver() {
+        let mut context = TestContext::new();
+
+        let applied =
+            apply_input_and_render_in_context(&mut context, AppInput::OverlayOpen).unwrap();
+
+        assert!(applied.presentation_plan.is_none());
+        assert!(applied.rendered_frame);
+        assert_eq!(context.rendered_frames.len(), 1);
+        let FrameRequest::GameplayMenu { .. } = &context.rendered_frames[0] else {
+            panic!("expected gameplay menu frame");
+        };
     }
 
     #[test]
@@ -557,6 +829,115 @@ mod tests {
         assert_eq!(context.app_state.gameplay.level_sets.len(), 0);
     }
 
+    #[test]
+    fn mouse_press_routes_editor_overlay_primary_action_through_shared_handler() {
+        let mut context = TestContext::new();
+        context.app_state.ui.screen = AppScreen::Editor;
+        context.app_state.ui.overlay = Some(AppOverlay::EditorMenu);
+        assert_eq!(
+            context.app_state.interaction_mode(),
+            AppInteractionMode::Overlay(AppOverlay::EditorMenu)
+        );
+        let rect = overlay_primary_action_button_rect(
+            context.app_state.editor.viewport.surface_width,
+            context.app_state.editor.viewport.surface_height,
+        );
+
+        handle_pointer_input_and_render_in_context(
+            &mut context,
+            AppPointerInput::MousePressed {
+                x: rect_center_x(rect),
+                y: rect_center_y(rect),
+            },
+        )
+        .unwrap();
+
+        assert!(context.app_state.is_gameplay_screen());
+        assert_eq!(context.app_state.ui.overlay, None);
+        assert_eq!(context.rendered_frames.len(), 1);
+        let FrameRequest::Gameplay { .. } = &context.rendered_frames[0] else {
+            panic!("expected gameplay frame");
+        };
+    }
+
+    #[test]
+    fn pointer_routes_editor_overlay_secondary_action_through_shared_handler() {
+        let mut context = TestContext::with_empty_persistent_store();
+        context.app_state.ui.screen = AppScreen::Editor;
+        context.app_state.ui.overlay = Some(AppOverlay::EditorMenu);
+        assert_eq!(
+            context.app_state.interaction_mode(),
+            AppInteractionMode::Overlay(AppOverlay::EditorMenu)
+        );
+        let rect = overlay_secondary_action_button_rect(
+            context.app_state.editor.viewport.surface_width,
+            context.app_state.editor.viewport.surface_height,
+        );
+
+        handle_pointer_input_and_render_in_context(
+            &mut context,
+            AppPointerInput::Pointer {
+                id: 7,
+                phase: PointerPhase::Started,
+                x: rect_center_x(rect),
+                y: rect_center_y(rect),
+            },
+        )
+        .unwrap();
+
+        assert!(context.app_state.is_editor_screen());
+        assert_eq!(context.app_state.ui.overlay, None);
+        assert_eq!(context.app_state.gameplay.level_sets.len(), 1);
+        assert_eq!(
+            context.editor.export_puzzle(),
+            Err(ExportPuzzleError::MissingPlayer)
+        );
+        assert_eq!(context.rendered_frames.len(), 1);
+        let FrameRequest::Editor { .. } = &context.rendered_frames[0] else {
+            panic!("expected editor frame");
+        };
+    }
+
+    #[test]
+    fn editor_mouse_released_through_shared_handler_clears_interaction_without_render() {
+        let mut context = TestContext::new();
+        context.app_state.ui.screen = AppScreen::Editor;
+        let (press_x, press_y) = editor_board_cell_center(&context);
+
+        let _ = editor_mouse_pressed(
+            &mut context.app_state,
+            &mut context.editor,
+            press_x,
+            press_y,
+        );
+
+        assert!(
+            context
+                .app_state
+                .editor
+                .interaction
+                .pointer
+                .active_position()
+                .is_some()
+        );
+        assert!(context.app_state.editor.interaction.active_stroke.is_some());
+
+        handle_pointer_input_and_render_in_context(&mut context, AppPointerInput::MouseReleased)
+            .unwrap();
+
+        assert!(
+            context
+                .app_state
+                .editor
+                .interaction
+                .pointer
+                .active_position()
+                .is_none()
+        );
+        assert!(context.app_state.editor.interaction.active_stroke.is_none());
+        assert!(context.rendered_frames.is_empty());
+    }
+
     fn saveable_editor() -> LevelEditor {
         let mut editor = LevelEditor::new();
         editor.apply_command(EditorCommand::PaintCell {
@@ -579,6 +960,25 @@ mod tests {
             cell_y: 0,
         });
         editor
+    }
+
+    fn editor_board_cell_center(context: &TestContext) -> (f64, f64) {
+        let FrameRequest::Editor { screen } =
+            build_current_editor_frame_request(&context.app_state, &context.editor)
+        else {
+            panic!("expected editor frame");
+        };
+        let cell = BoardCell::new(screen.board.width() / 2, screen.board.height() / 2);
+        let (x, y, w, h) = screen.viewport.cell_to_screen_rect(cell);
+        (x as f64 + (w as f64 / 2.0), y as f64 + (h as f64 / 2.0))
+    }
+
+    fn rect_center_x(rect: presentation::layout::ScreenRect) -> f64 {
+        rect.x as f64 + (rect.w as f64 / 2.0)
+    }
+
+    fn rect_center_y(rect: presentation::layout::ScreenRect) -> f64 {
+        rect.y as f64 + (rect.h as f64 / 2.0)
     }
 
     fn temp_dir(name: &str) -> PathBuf {

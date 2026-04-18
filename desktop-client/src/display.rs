@@ -3,23 +3,12 @@ use presentation::renderer::{
     draw_controls_ui, draw_gameplay_menu_level_set_button, draw_overlay_primary_action_button,
     draw_top_menu_toggle,
 };
-use sokobanitron_app::{
-    app::{AppScreen, FrameRequest, FrameSink},
-    editor::build_current_editor_frame_request,
-    gameplay::build_current_frame_request,
-};
+use sokobanitron_app::app::{FrameRequest, FrameSink, build_current_app_screen_frame_request};
 
 impl App {
     pub(crate) fn render_current(&mut self) {
-        let request = match self.app_state.active_screen() {
-            AppScreen::Gameplay => build_current_frame_request(&self.controller, &self.app_state),
-            AppScreen::Editor => build_current_editor_frame_request(&self.app_state, &self.editor),
-        };
-        let _ = self.render_request(&request);
-    }
-
-    pub(crate) fn render_active_gameplay_screen(&mut self) {
-        let request = build_current_frame_request(&self.controller, &self.app_state);
+        let request =
+            build_current_app_screen_frame_request(&self.controller, &self.app_state, &self.editor);
         let _ = self.render_request(&request);
     }
 
@@ -206,9 +195,6 @@ impl FrameSink for App {
     type Error = ();
 
     fn render_frame(&mut self, request: &FrameRequest) -> Result<(), Self::Error> {
-        if !self.app_state.is_gameplay_screen() {
-            return Ok(());
-        }
         self.render_request(request)
     }
 }

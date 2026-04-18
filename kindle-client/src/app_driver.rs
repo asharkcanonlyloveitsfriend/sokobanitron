@@ -3,12 +3,12 @@ use presentation::{GameplayAnimationPolicy, GameplayPresentationState, Renderer}
 use sokobanitron_app::{
     AppPreferences,
     app::{
-        AppDriverContext, AppInput, AppInteractionMode, AppRuntimeMut, AppState, AppliedUpdate,
-        PresentMode, apply_input_and_render_in_context,
+        AppDriverContext, AppPointerInput, AppRuntimeMut, AppState, PresentMode,
+        handle_pointer_input_and_render_in_context,
     },
     gameplay::{
-        interpret_gameplay_pointer_event, resize_gameplay_surface, set_gameplay_level_sets,
-        set_gameplay_max_cell_size, set_gameplay_touch_slop,
+        resize_gameplay_surface, set_gameplay_level_sets, set_gameplay_max_cell_size,
+        set_gameplay_touch_slop,
     },
     level_bootstrap::load_initial_levels_for_app,
     persistence::LevelPersistence,
@@ -242,60 +242,17 @@ impl KindleApp {
         }
     }
 
-    fn apply_app_input(&mut self, input: AppInput) -> Result<AppliedUpdate> {
-        apply_input_and_render_in_context(self, input)
-    }
-
-    fn handle_gameplay_input(&mut self, input: AppInput) -> Result<()> {
-        match input {
-            AppInput::NoOp => Ok(()),
-            AppInput::BoardTap(_) => {
-                let _ = self.apply_app_input(input)?;
-                Ok(())
-            }
-            _ => {
-                let applied = self.apply_app_input(input)?;
-                if !applied.rendered_frame {
-                    self.render()?;
-                }
-                Ok(())
-            }
-        }
-    }
-
-    fn on_gameplay_pointer_event(
-        &mut self,
-        phase: PointerPhase,
-        screen_x: f64,
-        screen_y: f64,
-    ) -> Result<()> {
-        let input = interpret_gameplay_pointer_event(
-            &mut self.app_state,
-            &self.controller,
-            TOUCH_POINTER_ID,
-            phase,
-            screen_x,
-            screen_y,
-        );
-        self.handle_gameplay_input(input)
-    }
-
     fn on_pointer(&mut self, phase: PointerPhase, raw_x: i32, raw_y: i32) -> Result<()> {
         let (screen_x, screen_y) = platform::map_touch_to_screen(raw_x, raw_y)?;
-        match self.app_state.interaction_mode() {
-            AppInteractionMode::Gameplay => {
-                self.on_gameplay_pointer_event(phase, screen_x as f64, screen_y as f64)
-            }
-            AppInteractionMode::Overlay(overlay)
-                if matches!(
-                    overlay.owning_screen(),
-                    sokobanitron_app::app::AppScreen::Gameplay
-                ) =>
-            {
-                self.on_gameplay_pointer_event(phase, screen_x as f64, screen_y as f64)
-            }
-            AppInteractionMode::Overlay(_) | AppInteractionMode::Editor => Ok(()),
-        }
+        handle_pointer_input_and_render_in_context(
+            self,
+            AppPointerInput::Pointer {
+                id: TOUCH_POINTER_ID,
+                phase,
+                x: screen_x as f64,
+                y: screen_y as f64,
+            },
+        )
     }
 }
 

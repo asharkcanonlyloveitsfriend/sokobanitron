@@ -15,7 +15,7 @@ use presentation::{
 };
 use sokobanitron_app::{
     app::{FrameRequest, FrameSink, PresentMode},
-    gameplay::{build_current_frame_request, build_sleep_gameplay_frame_request},
+    gameplay::{build_current_gameplay_screen_frame_request, build_sleep_gameplay_frame_request},
 };
 use sokobanitron_gameplay::BoardCell;
 use std::io::Result;
@@ -26,7 +26,8 @@ impl KindleApp {
     }
 
     pub(crate) fn render(&mut self) -> Result<()> {
-        let request = build_current_frame_request(&self.controller, &self.app_state);
+        let request =
+            build_current_gameplay_screen_frame_request(&self.controller, &self.app_state);
         self.render_request(&request)
     }
 
@@ -258,9 +259,6 @@ impl FrameSink for KindleApp {
     type Error = std::io::Error;
 
     fn render_frame(&mut self, request: &FrameRequest) -> std::result::Result<(), Self::Error> {
-        if !self.app_state.is_gameplay_screen() {
-            return Ok(());
-        }
         self.render_request(request)
     }
 }
@@ -275,7 +273,7 @@ mod tests {
     use presentation::{GameplayAnimationPolicy, GameplayDamage, GameplayPresentationState};
     use sokobanitron_app::app::presentation::PresentationStep;
     use sokobanitron_app::app::{AppAction, AppState, FrameRequest, PresentMode, apply_action};
-    use sokobanitron_app::gameplay::build_current_gameplay_frame_request;
+    use sokobanitron_app::gameplay::build_current_gameplay_board_frame_request;
     use sokobanitron_gameplay::{BoardCell, GameplayController};
 
     fn cell(x: u32, y: u32) -> BoardCell {
@@ -293,7 +291,7 @@ mod tests {
     fn animation_start_gameplay_requests_upgrade_to_fast_partial() {
         let update = gameplay_update(FrameRequest::Gameplay {
             update: GameplayPresentationUpdate {
-                scene: gameplay_update(build_current_gameplay_frame_request(
+                scene: gameplay_update(build_current_gameplay_board_frame_request(
                     &GameplayController::new(vec!["###\n#@#\n###".to_string()], None),
                     &AppState::default(),
                 ))
@@ -311,7 +309,7 @@ mod tests {
 
     #[test]
     fn non_animated_gameplay_requests_keep_requested_present_mode() {
-        let update = gameplay_update(build_current_gameplay_frame_request(
+        let update = gameplay_update(build_current_gameplay_board_frame_request(
             &GameplayController::new(vec!["###\n#@#\n###".to_string()], None),
             &AppState::default(),
         ));
@@ -330,7 +328,7 @@ mod tests {
         let mut presentation =
             GameplayPresentationState::with_animation_policy(GameplayAnimationPolicy::Limited);
 
-        let initial = gameplay_update(build_current_gameplay_frame_request(
+        let initial = gameplay_update(build_current_gameplay_board_frame_request(
             &controller,
             &app_state,
         ));
