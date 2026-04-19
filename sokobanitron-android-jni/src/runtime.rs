@@ -12,7 +12,7 @@ use sokobanitron_app::{
         AppDriverContext, AppPointerInput, AppRuntimeMut, AppState, EditorAppRuntimeMut,
         FrameRequest, FrameSink, build_current_app_screen_frame_request,
         continue_pending_render_work_and_render_in_context,
-        handle_pointer_input_and_render_in_context,
+        handle_pointer_input_and_render_in_context, has_pending_render_work_in_context,
     },
     editor::{resize_editor_surface, set_editor_double_tap_window, set_editor_touch_slop},
     gameplay::{resize_gameplay_surface, set_gameplay_level_sets, set_gameplay_touch_slop},
@@ -118,7 +118,7 @@ impl AndroidApp {
             self,
             AppPointerInput::Pointer { id, phase, x, y },
         );
-        self.needs_present()
+        self.has_pending_render_work()
     }
 
     pub fn set_native_window(&mut self, native_window: Option<NativeWindow>) {
@@ -130,19 +130,18 @@ impl AndroidApp {
     }
 
     pub fn present_frame(&mut self) -> bool {
-        if !self.needs_present() {
+        if matches!(self.pending_present_damage, FrameDamage::Noop)
+            && has_pending_render_work_in_context(self)
+        {
+            let _ = continue_pending_render_work_and_render_in_context(self);
+        }
+
+        if !self.has_pending_render_work() {
             return true;
         }
         let Some(mut window) = self.native_window.take() else {
             return false;
         };
-        if matches!(self.pending_present_damage, FrameDamage::Noop)
-            && self.app_state.is_gameplay_screen()
-            && self.gameplay_presentation.has_pending_presentation()
-        {
-            let damage = self.render_active_gameplay_presentation_into_frame();
-            self.mark_frame_damage(damage);
-        }
         let surface_width = self.surface_width;
         let surface_height = self.surface_height;
         let damage = self.pending_present_damage;
@@ -158,21 +157,13 @@ impl AndroidApp {
         self.native_window = Some(window);
         if presented {
             self.pending_present_damage = FrameDamage::Noop;
-            let _ = continue_pending_render_work_and_render_in_context(self);
         }
         presented
     }
 
-    pub fn has_pending_gameplay_presentation(&self) -> bool {
-        self.app_state.is_gameplay_screen() && self.gameplay_presentation.has_pending_presentation()
-    }
-
-    pub fn has_pending_render_work(&self) -> bool {
-        self.needs_present()
-    }
-
-    fn has_pending_editor_hint_job(&self) -> bool {
-        self.app_state.is_editor_screen() && self.editor.has_active_pull_hint_job()
+    pub fn has_pending_render_work(&mut self) -> bool {
+        !matches!(self.pending_present_damage, FrameDamage::Noop)
+            || has_pending_render_work_in_context(self)
     }
 
     fn build_current_request(&self) -> FrameRequest {
@@ -198,12 +189,6 @@ impl AndroidApp {
 
     fn mark_frame_damage(&mut self, damage: FrameDamage) {
         self.pending_present_damage = self.pending_present_damage.merge(damage);
-    }
-
-    fn needs_present(&self) -> bool {
-        !matches!(self.pending_present_damage, FrameDamage::Noop)
-            || self.has_pending_gameplay_presentation()
-            || self.has_pending_editor_hint_job()
     }
 
     fn configure_native_window(&mut self) {
@@ -471,6 +456,22 @@ impl AppDriverContext for AndroidApp {
             }
             .with_editor(&mut self.editor),
         )
+    }
+
+    fn has_pending_gameplay_presentation(&mut self) -> bool {
+        self.app_state.is_gameplay_screen() && self.gameplay_presentation.has_pending_presentation()
+    }
+
+    fn continue_gameplay_presentation_and_render(&mut self) -> Result<bool, Self::Error> {
+        if !self.app_state.is_gameplay_screen()
+            || !self.gameplay_presentation.has_pending_presentation()
+        {
+            return Ok(false);
+        }
+        let damage = self.render_active_gameplay_presentation_into_frame();
+        let frame_changed = !matches!(damage, FrameDamage::Noop);
+        self.mark_frame_damage(damage);
+        Ok(frame_changed)
     }
 }
 

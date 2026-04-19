@@ -29,9 +29,6 @@ impl App {
             );
             copy_gray_to_sepia_rgba(gray_frame, pixels.frame_mut());
             pixels.render().expect("render");
-            if result.has_pending_presentation {
-                self.request_window_redraw();
-            }
         }
     }
 
@@ -52,9 +49,6 @@ impl App {
                     );
                     copy_gray_to_sepia_rgba(gray_frame, pixels.frame_mut());
                     pixels.render().expect("render");
-                    if result.has_pending_presentation {
-                        self.request_window_redraw();
-                    }
                 }
             }
             FrameRequest::GameplayMenu { screen } => {

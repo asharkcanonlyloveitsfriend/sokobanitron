@@ -2,8 +2,8 @@ use pixels::{Pixels, SurfaceTexture};
 use presentation::{GameplayPresentationState, Renderer};
 use sokobanitron_app::{
     app::{
-        AppDriverContext, AppInput, AppPointerInput, AppRuntimeMut, AppScreen, AppState,
-        AppliedUpdate, EditorAppRuntimeMut, apply_input_and_render_in_context,
+        AppDriverContext, AppInput, AppPointerInput, AppRuntimeMut, AppState, AppliedUpdate,
+        EditorAppRuntimeMut, apply_input_and_render_in_context,
         continue_pending_render_work_and_render_in_context,
         handle_pointer_input_and_render_in_context,
     },
@@ -132,6 +132,19 @@ impl AppDriverContext for App {
             }
             .with_editor(&mut self.editor),
         )
+    }
+
+    fn has_pending_gameplay_presentation(&mut self) -> bool {
+        self.app_state.is_gameplay_screen() && self.gameplay_presentation.has_pending_presentation()
+    }
+
+    fn continue_gameplay_presentation_and_render(&mut self) -> Result<bool, Self::Error> {
+        let had_pending = self.app_state.is_gameplay_screen()
+            && self.gameplay_presentation.has_pending_presentation();
+        if had_pending {
+            self.render_active_gameplay_presentation();
+        }
+        Ok(had_pending)
     }
 }
 
@@ -276,20 +289,14 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
-                if self.app_state.active_screen() == AppScreen::Gameplay
-                    && self.gameplay_presentation.has_pending_presentation()
-                {
-                    self.render_active_gameplay_presentation();
-                } else {
-                    let work = continue_pending_render_work_and_render_in_context(self)
-                        .ok()
-                        .unwrap_or_default();
-                    if !work.frame_changed {
-                        self.render_current();
-                    }
-                    if work.needs_followup_wake {
-                        self.request_window_redraw();
-                    }
+                let work = continue_pending_render_work_and_render_in_context(self)
+                    .ok()
+                    .unwrap_or_default();
+                if !work.frame_changed && !work.needs_followup_wake {
+                    self.render_current();
+                }
+                if work.needs_followup_wake {
+                    self.request_window_redraw();
                 }
             }
             _ => {}

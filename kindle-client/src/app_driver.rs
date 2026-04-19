@@ -4,7 +4,8 @@ use sokobanitron_app::{
     AppPreferences,
     app::{
         AppDriverContext, AppPointerInput, AppRuntimeMut, AppState, PresentMode,
-        handle_pointer_input_and_render_in_context,
+        continue_pending_render_work_and_render_in_context,
+        handle_pointer_input_and_render_in_context, has_pending_render_work_in_context,
     },
     gameplay::{
         resize_gameplay_surface, set_gameplay_level_sets, set_gameplay_max_cell_size,
@@ -97,7 +98,7 @@ impl KindleApp {
 
         let mut touch = platform::TouchReader::new()?;
         loop {
-            let timeout_ms = if self.gameplay_presentation.has_pending_presentation() {
+            let timeout_ms = if has_pending_render_work_in_context(self) {
                 Some(50)
             } else {
                 self.preferences
@@ -110,8 +111,8 @@ impl KindleApp {
 
             match event {
                 platform::AppInputEvent::IdleTick => {
-                    if self.gameplay_presentation.has_pending_presentation() {
-                        self.render_active_gameplay_presentation()?;
+                    if has_pending_render_work_in_context(self) {
+                        let _ = continue_pending_render_work_and_render_in_context(self)?;
                     }
                 }
                 platform::AppInputEvent::Pointer {
@@ -267,5 +268,18 @@ impl AppDriverContext for KindleApp {
             level_persistence: &mut self.level_persistence,
             preview_boards: &mut self.preview_boards,
         }
+    }
+
+    fn has_pending_gameplay_presentation(&mut self) -> bool {
+        self.app_state.is_gameplay_screen() && self.gameplay_presentation.has_pending_presentation()
+    }
+
+    fn continue_gameplay_presentation_and_render(&mut self) -> Result<bool> {
+        let had_pending = self.app_state.is_gameplay_screen()
+            && self.gameplay_presentation.has_pending_presentation();
+        if had_pending {
+            self.render_active_gameplay_presentation()?;
+        }
+        Ok(had_pending)
     }
 }
