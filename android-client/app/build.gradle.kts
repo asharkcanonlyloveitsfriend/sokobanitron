@@ -3,6 +3,13 @@ plugins {
     alias(libs.plugins.kotlin.android)
 }
 
+val syncBundledLevelSets by tasks.registering(Sync::class) {
+    from(layout.projectDirectory.dir("../../tmp/level_sets/to_import")) {
+        include("*.slc")
+    }
+    into(layout.buildDirectory.dir("generated/assets/bundledLevelSets/level_sets"))
+}
+
 android {
     namespace = "com.sokobanitron.app.dev"
     compileSdk {
@@ -35,6 +42,14 @@ android {
     kotlinOptions {
         jvmTarget = "11"
     }
+
+    sourceSets.named("main") {
+        assets.srcDir(layout.buildDirectory.dir("generated/assets/bundledLevelSets"))
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(syncBundledLevelSets)
 }
 
 dependencies {

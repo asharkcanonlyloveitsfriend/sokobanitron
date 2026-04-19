@@ -10,7 +10,6 @@ object SeedLevelSets {
         val root = File(context.filesDir, "level_sets")
         val toImport = File(root, "to_import")
         val imported = File(root, "imported")
-        val database = File(root, "sokobanitron.db")
 
         require(root.exists() || root.mkdirs()) { "Failed to create ${root.absolutePath}" }
         require(toImport.exists() || toImport.mkdirs()) {
@@ -20,17 +19,20 @@ object SeedLevelSets {
             "Failed to create ${imported.absolutePath}"
         }
 
-        if (database.exists() || toImport.listSlcFiles().isNotEmpty() || imported.listSlcFiles().isNotEmpty()) {
-            return root
-        }
-
         val assetNames = context.assets.list(ASSET_DIR).orEmpty().filter { name ->
             name.endsWith(".slc", ignoreCase = true)
         }.sorted()
-        check(assetNames.isNotEmpty()) { "No bundled level sets found in assets/$ASSET_DIR." }
+        val hasExistingLevelSets =
+            toImport.listSlcFiles().isNotEmpty() || imported.listSlcFiles().isNotEmpty()
+        check(assetNames.isNotEmpty() || hasExistingLevelSets) {
+            "No bundled level sets found in assets/$ASSET_DIR."
+        }
 
         for (assetName in assetNames) {
             val destination = File(toImport, assetName)
+            if (destination.exists() || File(imported, assetName).exists()) {
+                continue
+            }
             context.assets.open("$ASSET_DIR/$assetName").use { input ->
                 destination.outputStream().use { output ->
                     input.copyTo(output)
