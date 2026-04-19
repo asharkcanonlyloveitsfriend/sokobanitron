@@ -1,11 +1,12 @@
 use crate::command::{DrawTool, EditorCommand, EditorEffects, EditorMode};
 use crate::snapshot::{
     BoxMoveCountSnapshot, EditorBoardSnapshot, EditorCellSnapshot, EditorSnapshot,
-    PullHintSnapshot, PullHintStatus,
+    PullHintSnapshot, PullHintStatus, PullHintTotalMoveChange,
 };
 use crate::world::{EditableWorld, NonVoidBounds, Tile};
 use sokobanitron_core::optimizer::{ReverseOptimizationInput, optimize_reverse_solution_in_place};
 use sokobanitron_core::pathfinder::{PullPathfinder, WorldBounds, WorldGrid};
+use std::cmp::Ordering;
 use std::collections::{HashMap, VecDeque};
 
 struct PullMovePlan {
@@ -20,7 +21,7 @@ struct PullPlanningContext {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PullHintState {
     Pending,
-    Ready(u32),
+    Ready(PullHintTotalMoveChange),
 }
 
 struct PullHintCandidate {
@@ -30,7 +31,6 @@ struct PullHintCandidate {
 
 #[derive(Clone, Copy)]
 struct TrackedBox {
-    start_index: usize,
     position: (i32, i32),
     count: u32,
 }
@@ -38,8 +38,7 @@ struct TrackedBox {
 struct ActivePullHintJob {
     generation: u64,
     selected: (i32, i32),
-    selected_start_index: usize,
-    optimization_input: ReverseOptimizationInput,
+    optimization_input: Option<ReverseOptimizationInput>,
     pending_candidates: VecDeque<PullHintCandidate>,
 }
 
@@ -135,6 +134,10 @@ impl LevelEditor {
         self.selected_box
     }
 
+    pub fn has_active_pull_hint_job(&self) -> bool {
+        self.active_pull_hint_job.is_some()
+    }
+
     pub fn snapshot(&self) -> EditorSnapshot {
         let bounds = self.world.non_void_bounds();
         let mut cells = Vec::new();
@@ -177,7 +180,7 @@ impl LevelEditor {
                 world_y,
                 state: match state {
                     PullHintState::Pending => PullHintStatus::Pending,
-                    PullHintState::Ready(count) => PullHintStatus::Ready(*count),
+                    PullHintState::Ready(change) => PullHintStatus::Ready(*change),
                 },
             })
             .collect::<Vec<_>>();
@@ -281,6 +284,7 @@ impl LevelEditor {
             }
         }
 
+        self.refresh_pull_destination_hints_if_needed();
         effects
     }
 
@@ -457,12 +461,7 @@ impl LevelEditor {
             .solution_start_boxes
             .iter()
             .copied()
-            .enumerate()
-            .map(|(start_index, position)| TrackedBox {
-                start_index,
-                position,
-                count: 0,
-            })
+            .map(|position| TrackedBox { position, count: 0 })
             .collect::<Vec<_>>();
 
         for movement in history {
@@ -494,26 +493,6 @@ impl LevelEditor {
 
     fn box_move_counts_by_position(&self) -> HashMap<(i32, i32), u32> {
         self.box_move_counts_by_position_for_history(&self.solution_history)
-    }
-
-    fn box_start_index_for_position_in_history(
-        &self,
-        history: &[Vec<(i32, i32)>],
-        target: (i32, i32),
-    ) -> Option<usize> {
-        self.tracked_boxes_for_history(history)
-            .into_iter()
-            .find_map(|entry| (entry.position == target).then_some(entry.start_index))
-    }
-
-    fn box_move_count_for_start_index_in_history(
-        &self,
-        history: &[Vec<(i32, i32)>],
-        start_index: usize,
-    ) -> Option<u32> {
-        self.tracked_boxes_for_history(history)
-            .into_iter()
-            .find_map(|entry| (entry.start_index == start_index).then_some(entry.count))
     }
 
     fn clear_pull_destination_hints(&mut self) {
@@ -580,23 +559,6 @@ impl LevelEditor {
             return;
         }
 
-        let selected_start_index = self
-            .box_start_index_for_position_in_history(&self.solution_history, selected)
-            .expect("selected box must map to a tracked start position");
-        let base_selected_count = self
-            .box_move_count_for_start_index_in_history(&self.solution_history, selected_start_index)
-            .unwrap_or(0)
-            .saturating_add(1);
-        if !self.quick_rewrite_feasibility_check(selected) {
-            for candidate in legal_pull_destinations {
-                self.pull_destination_hints.insert(
-                    candidate.destination,
-                    PullHintState::Ready(base_selected_count),
-                );
-            }
-            return;
-        }
-
         let mut candidates = legal_pull_destinations;
         candidates.sort_unstable_by_key(|candidate| {
             (
@@ -605,6 +567,23 @@ impl LevelEditor {
                 candidate.destination.0,
             )
         });
+        let optimization_input =
+            self.quick_rewrite_feasibility_check(selected)
+                .then(|| ReverseOptimizationInput {
+                    walkable_cells: self.walkable_cells_for_optimizer(),
+                    box_positions: self.solution_start_boxes.clone(),
+                    player: self.solution_start_player,
+                });
+
+        if optimization_input.is_none() {
+            for candidate in candidates {
+                let change = self.evaluate_pull_hint_candidate(&candidate, None);
+                self.pull_destination_hints
+                    .insert(candidate.destination, PullHintState::Ready(change));
+            }
+            return;
+        }
+
         let mut pending_candidates = VecDeque::new();
         for candidate in candidates {
             self.pull_destination_hints
@@ -612,18 +591,12 @@ impl LevelEditor {
             pending_candidates.push_back(candidate);
         }
 
-        let optimization_input = ReverseOptimizationInput {
-            walkable_cells: self.walkable_cells_for_optimizer(),
-            box_positions: self.solution_start_boxes.clone(),
-            player: self.solution_start_player,
-        };
         if pending_candidates.is_empty() {
             return;
         }
         self.active_pull_hint_job = Some(ActivePullHintJob {
             generation: self.pull_hint_generation,
             selected,
-            selected_start_index,
             optimization_input,
             pending_candidates,
         });
@@ -632,22 +605,19 @@ impl LevelEditor {
     fn evaluate_pull_hint_candidate(
         &self,
         candidate: &PullHintCandidate,
-        optimization_input: &ReverseOptimizationInput,
-        selected_start_index: usize,
-    ) -> u32 {
+        optimization_input: Option<&ReverseOptimizationInput>,
+    ) -> PullHintTotalMoveChange {
         let mut candidate_history = self.solution_history.clone();
         candidate_history.push(candidate.box_path.clone());
-        optimize_reverse_solution_in_place(optimization_input, &mut candidate_history);
+        if let Some(optimization_input) = optimization_input {
+            optimize_reverse_solution_in_place(optimization_input, &mut candidate_history);
+        }
 
-        let Some(count) = self
-            .box_move_count_for_start_index_in_history(&candidate_history, selected_start_index)
-        else {
-            panic!(
-                "hint count missing for selected_start_index={} destination=({}, {})",
-                selected_start_index, candidate.destination.0, candidate.destination.1,
-            );
-        };
-        count
+        match candidate_history.len().cmp(&self.solution_history.len()) {
+            Ordering::Less => PullHintTotalMoveChange::Decrease,
+            Ordering::Equal => PullHintTotalMoveChange::Equal,
+            Ordering::Greater => PullHintTotalMoveChange::Increase,
+        }
     }
 
     fn advance_pull_destination_hints_job(&mut self, steps: usize) {
@@ -655,7 +625,7 @@ impl LevelEditor {
             return;
         }
         for _ in 0..steps {
-            let (generation, selected, selected_start_index, optimization_input, candidate) = {
+            let (generation, selected, optimization_input, candidate) = {
                 let Some(job) = self.active_pull_hint_job.as_mut() else {
                     return;
                 };
@@ -666,17 +636,12 @@ impl LevelEditor {
                 (
                     job.generation,
                     job.selected,
-                    job.selected_start_index,
                     job.optimization_input.clone(),
                     candidate,
                 )
             };
 
-            let count = self.evaluate_pull_hint_candidate(
-                &candidate,
-                &optimization_input,
-                selected_start_index,
-            );
+            let change = self.evaluate_pull_hint_candidate(&candidate, optimization_input.as_ref());
 
             if generation != self.pull_hint_generation || self.selected_box != Some(selected) {
                 return;
@@ -689,7 +654,7 @@ impl LevelEditor {
                 return;
             }
             self.pull_destination_hints
-                .insert(candidate.destination, PullHintState::Ready(count));
+                .insert(candidate.destination, PullHintState::Ready(change));
 
             if job.pending_candidates.is_empty() {
                 self.active_pull_hint_job = None;
@@ -882,7 +847,7 @@ impl Default for LevelEditor {
 mod tests {
     use super::{ExportPuzzleError, LevelEditor, PullHintState};
     use crate::command::{DrawTool, EditorCommand, EditorMode};
-    use crate::snapshot::PullHintStatus;
+    use crate::snapshot::{PullHintStatus, PullHintTotalMoveChange};
     use crate::world::Tile;
 
     fn clear_world(editor: &mut LevelEditor) {
@@ -1066,35 +1031,7 @@ mod tests {
     }
 
     #[test]
-    fn tracked_box_identity_preserves_selected_box_count() {
-        let mut editor = LevelEditor::new();
-        editor.solution_start_boxes = vec![(0, 0), (2, 0)];
-        let history = vec![
-            vec![(0, 0), (1, 0)],
-            vec![(2, 0), (0, 0)],
-            vec![(1, 0), (2, 0)],
-        ];
-
-        assert_eq!(
-            editor.box_start_index_for_position_in_history(&history, (2, 0)),
-            Some(0)
-        );
-        assert_eq!(
-            editor.box_start_index_for_position_in_history(&history, (0, 0)),
-            Some(1)
-        );
-        assert_eq!(
-            editor.box_move_count_for_start_index_in_history(&history, 0),
-            Some(2)
-        );
-        assert_eq!(
-            editor.box_move_count_for_start_index_in_history(&history, 1),
-            Some(1)
-        );
-    }
-
-    #[test]
-    fn trivial_hint_path_marks_all_destinations_ready_without_job() {
+    fn trivial_hint_path_resolves_immediately_without_pending_job() {
         let mut editor = LevelEditor::new();
         clear_world(&mut editor);
         for x in 0..=4 {
@@ -1115,7 +1052,44 @@ mod tests {
         assert!(!editor.pull_destination_hints.is_empty());
         assert!(editor.active_pull_hint_job.is_none());
         for hint in editor.pull_destination_hints.values() {
-            assert_eq!(*hint, PullHintState::Ready(1));
+            assert_eq!(
+                *hint,
+                PullHintState::Ready(PullHintTotalMoveChange::Increase)
+            );
+        }
+    }
+
+    #[test]
+    fn destination_hints_cover_only_legal_destinations() {
+        let mut editor = LevelEditor::new();
+        clear_world(&mut editor);
+        for x in 0..=4 {
+            for y in 0..=2 {
+                editor.world.set_tile(x, y, Tile::Floor);
+            }
+        }
+        editor.world.set_box(2, 1, true);
+        editor.world.set_box(0, 0, true);
+        editor.world.set_player(None);
+        editor.solution_start_boxes = vec![(0, 0), (2, 1)];
+        editor.solution_start_player = None;
+        editor.solution_history.clear();
+        editor.selected_box = Some((2, 1));
+        editor.mode = EditorMode::Move;
+
+        editor.start_pull_destination_hints_job((2, 1));
+
+        assert!(!editor.pull_destination_hints.contains_key(&(2, 1)));
+        assert!(!editor.pull_destination_hints.contains_key(&(0, 0)));
+        for destination in editor.pull_destination_hints.keys().copied() {
+            assert!(
+                editor
+                    .find_pull_move_plan(2, 1, destination.0, destination.1)
+                    .is_some(),
+                "hint at ({}, {}) must be a legal selected-box destination",
+                destination.0,
+                destination.1
+            );
         }
     }
 

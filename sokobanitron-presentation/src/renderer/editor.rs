@@ -3,7 +3,9 @@ use crate::layout::{
     ScreenRect, editor_bottom_left_button_rect, editor_bottom_right_button_rect,
     overlay_secondary_action_button_rect, top_left_level_button_rect,
 };
-use crate::screen_requests::{EditorHintState, EditorMenuScreenRequest, EditorScreenRequest};
+use crate::screen_requests::{
+    EditorHintChange, EditorHintState, EditorMenuScreenRequest, EditorScreenRequest,
+};
 
 use super::chrome::{draw_overlay_primary_action_button, draw_top_menu_toggle};
 use super::pixel_ui::{PIXEL_FONT_HEIGHT, draw_centered_text_in_rect, measure_text_width};
@@ -87,16 +89,13 @@ impl Renderer {
             );
         }
         for hint in &request.pull_destination_hints {
-            let label = match hint.state {
-                EditorHintState::Pending => "?".to_string(),
-                EditorHintState::Ready(count) => count.min(99).to_string(),
-            };
+            let label = hint_label(hint.state);
             draw_count_label(
                 frame,
                 width,
                 height,
                 hint.rect,
-                &label,
+                label,
                 hint_text_color(self.theme),
             );
         }
@@ -208,8 +207,17 @@ fn draw_count_label(
     let scale_x = (rect.w as usize / max_text_width).max(1);
     let scale_y = (rect.h as usize / PIXEL_FONT_HEIGHT).max(1);
     let max_fit_scale = scale_x.min(scale_y).max(1);
-    let scale = ((max_fit_scale * 5) / 25).max(1);
+    let scale = ((max_fit_scale * 3) / 5).max(1);
     draw_centered_text_in_rect(frame, width, height, rect, text, scale, 0, color);
+}
+
+fn hint_label(state: EditorHintState) -> &'static str {
+    match state {
+        EditorHintState::Pending => "?",
+        EditorHintState::Ready(EditorHintChange::Decrease) => "-",
+        EditorHintState::Ready(EditorHintChange::Equal) => "=",
+        EditorHintState::Ready(EditorHintChange::Increase) => "+",
+    }
 }
 
 fn button_text_color(theme: RendererTheme) -> u8 {
@@ -222,9 +230,9 @@ fn hint_text_color(theme: RendererTheme) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use super::Renderer;
+    use super::{Renderer, hint_label};
     use crate::layout::fit_board_viewport_for_controls;
-    use crate::screen_requests::EditorScreenRequest;
+    use crate::screen_requests::{EditorHintChange, EditorHintState, EditorScreenRequest};
     use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
 
     fn solved_board() -> BoardView {
@@ -270,5 +278,22 @@ mod tests {
 
         assert!(renderer.solved_box_bitmap_cache.is_empty());
         assert!(renderer.squint_player_bitmap_cache.is_empty());
+    }
+
+    #[test]
+    fn editor_hint_states_map_to_symbols() {
+        assert_eq!(hint_label(EditorHintState::Pending), "?");
+        assert_eq!(
+            hint_label(EditorHintState::Ready(EditorHintChange::Decrease)),
+            "-"
+        );
+        assert_eq!(
+            hint_label(EditorHintState::Ready(EditorHintChange::Equal)),
+            "="
+        );
+        assert_eq!(
+            hint_label(EditorHintState::Ready(EditorHintChange::Increase)),
+            "+"
+        );
     }
 }

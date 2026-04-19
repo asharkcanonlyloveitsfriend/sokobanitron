@@ -244,7 +244,7 @@ impl KindleApp {
 
     fn on_pointer(&mut self, phase: PointerPhase, raw_x: i32, raw_y: i32) -> Result<()> {
         let (screen_x, screen_y) = platform::map_touch_to_screen(raw_x, raw_y)?;
-        handle_pointer_input_and_render_in_context(
+        let _ = handle_pointer_input_and_render_in_context(
             self,
             AppPointerInput::Pointer {
                 id: TOUCH_POINTER_ID,
@@ -252,7 +252,8 @@ impl KindleApp {
                 x: screen_x as f64,
                 y: screen_y as f64,
             },
-        )
+        )?;
+        Ok(())
     }
 }
 

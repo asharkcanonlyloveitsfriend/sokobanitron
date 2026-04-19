@@ -65,6 +65,11 @@ object NativeBridge {
         return nativeHasPendingGameplayPresentation(handle)
     }
 
+    fun hasPendingRenderWork(handle: Long): Boolean {
+        check(ensureLoaded()) { "Native library '$LIB_NAME' is not loaded." }
+        return nativeHasPendingRenderWork(handle)
+    }
+
     private fun ensureLoaded(): Boolean {
         if (loadAttempted) return loaded
         synchronized(this) {
@@ -113,4 +118,6 @@ object NativeBridge {
     private external fun nativePresentFrame(handle: Long): Boolean
 
     private external fun nativeHasPendingGameplayPresentation(handle: Long): Boolean
+
+    private external fun nativeHasPendingRenderWork(handle: Long): Boolean
 }

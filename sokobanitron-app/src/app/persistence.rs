@@ -237,6 +237,7 @@ mod tests {
             level_set_selected: Some(1),
             presentation_plan: None,
             rendered_frame: false,
+            render_work: Default::default(),
         };
 
         let effects = apply_runtime_effects(

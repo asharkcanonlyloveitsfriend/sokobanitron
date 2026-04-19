@@ -11,6 +11,7 @@ use sokobanitron_app::{
     app::{
         AppDriverContext, AppPointerInput, AppRuntimeMut, AppState, EditorAppRuntimeMut,
         FrameRequest, FrameSink, build_current_app_screen_frame_request,
+        continue_pending_render_work_and_render_in_context,
         handle_pointer_input_and_render_in_context,
     },
     editor::{resize_editor_surface, set_editor_double_tap_window, set_editor_touch_slop},
@@ -157,12 +158,21 @@ impl AndroidApp {
         self.native_window = Some(window);
         if presented {
             self.pending_present_damage = FrameDamage::Noop;
+            let _ = continue_pending_render_work_and_render_in_context(self);
         }
         presented
     }
 
     pub fn has_pending_gameplay_presentation(&self) -> bool {
         self.app_state.is_gameplay_screen() && self.gameplay_presentation.has_pending_presentation()
+    }
+
+    pub fn has_pending_render_work(&self) -> bool {
+        self.needs_present()
+    }
+
+    fn has_pending_editor_hint_job(&self) -> bool {
+        self.app_state.is_editor_screen() && self.editor.has_active_pull_hint_job()
     }
 
     fn build_current_request(&self) -> FrameRequest {
@@ -193,6 +203,7 @@ impl AndroidApp {
     fn needs_present(&self) -> bool {
         !matches!(self.pending_present_damage, FrameDamage::Noop)
             || self.has_pending_gameplay_presentation()
+            || self.has_pending_editor_hint_job()
     }
 
     fn configure_native_window(&mut self) {

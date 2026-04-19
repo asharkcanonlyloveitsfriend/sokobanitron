@@ -37,7 +37,14 @@ pub struct PullHintSnapshot {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PullHintStatus {
     Pending,
-    Ready(u32),
+    Ready(PullHintTotalMoveChange),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PullHintTotalMoveChange {
+    Decrease,
+    Equal,
+    Increase,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

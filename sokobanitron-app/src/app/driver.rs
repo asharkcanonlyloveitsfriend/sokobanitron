@@ -20,7 +20,15 @@ use crate::gameplay::{
 use crate::persistence::LevelPersistence;
 use crate::shared::PointerPhase;
 use sokobanitron_gameplay::{BoardView, GameplayController, GameplayControllerChanges};
-use sokobanitron_level_editor::LevelEditor;
+use sokobanitron_level_editor::{EditorCommand, LevelEditor};
+
+const EDITOR_HINT_ADVANCE_STEPS: usize = 8;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RenderWorkResult {
+    pub frame_changed: bool,
+    pub needs_followup_wake: bool,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppliedUpdate {
@@ -29,6 +37,7 @@ pub struct AppliedUpdate {
     pub level_set_selected: Option<usize>,
     pub presentation_plan: Option<PresentationPlan>,
     pub rendered_frame: bool,
+    pub render_work: RenderWorkResult,
 }
 
 pub trait AppDriverContext {
@@ -97,6 +106,7 @@ pub fn apply_action_in_context<C: AppDriverContext>(
         level_set_selected: update.level_set_selected,
         presentation_plan: update.presentation_plan,
         rendered_frame: false,
+        render_work: RenderWorkResult::default(),
     })
 }
 
@@ -156,6 +166,7 @@ where
     } else {
         applied.rendered_frame = render_current_screen_frame_if_changed(context, before_request)?;
     }
+    applied.render_work = current_render_work_result(context, applied.rendered_frame);
     Ok(applied)
 }
 
@@ -195,10 +206,37 @@ where
     apply_action_and_render_in_context(context, action)
 }
 
+pub fn continue_pending_render_work_and_render_in_context<C>(
+    context: &mut C,
+) -> Result<RenderWorkResult, <C as AppDriverContext>::Error>
+where
+    C: AppDriverContext + FrameSink<Error = <C as AppDriverContext>::Error>,
+{
+    let before_request = build_current_context_screen_frame_request(context);
+    let advanced = {
+        let Some(runtime) = context.editor_runtime_mut() else {
+            return Ok(RenderWorkResult::default());
+        };
+        if !runtime.app.app_state.is_editor_screen() || !runtime.editor.has_active_pull_hint_job() {
+            false
+        } else {
+            runtime.editor.apply_command(EditorCommand::AdvanceHintJob {
+                steps: EDITOR_HINT_ADVANCE_STEPS,
+            });
+            true
+        }
+    };
+    if !advanced {
+        return Ok(RenderWorkResult::default());
+    }
+    let frame_changed = render_current_screen_frame_if_changed(context, before_request)?;
+    Ok(current_render_work_result(context, frame_changed))
+}
+
 pub fn handle_pointer_input_and_render_in_context<C>(
     context: &mut C,
     input: AppPointerInput,
-) -> Result<(), <C as AppDriverContext>::Error>
+) -> Result<RenderWorkResult, <C as AppDriverContext>::Error>
 where
     C: AppDriverContext + FrameSink<Error = <C as AppDriverContext>::Error>,
 {
@@ -208,29 +246,29 @@ where
                 current_interaction_mode(context),
                 AppInteractionMode::Editor
             ) {
-                mutate_editor_and_render_in_context(context, |app_state, editor| {
+                return mutate_editor_and_render_in_context(context, |app_state, editor| {
                     editor_cursor_moved(app_state, editor, x, y);
                     None
-                })?;
+                });
             }
         }
         AppPointerInput::MousePressed { x, y } => match current_interaction_mode(context) {
             AppInteractionMode::Gameplay => {
-                handle_gameplay_mouse_pressed_in_context(context, x, y)?;
+                return handle_gameplay_mouse_pressed_in_context(context, x, y);
             }
             AppInteractionMode::Editor => {
-                mutate_editor_and_render_in_context(context, |app_state, editor| {
+                return mutate_editor_and_render_in_context(context, |app_state, editor| {
                     editor_mouse_pressed(app_state, editor, x, y)
-                })?;
+                });
             }
             AppInteractionMode::Overlay(overlay) => match overlay.owning_screen() {
                 AppScreen::Gameplay => {
-                    handle_gameplay_mouse_pressed_in_context(context, x, y)?;
+                    return handle_gameplay_mouse_pressed_in_context(context, x, y);
                 }
                 AppScreen::Editor => {
-                    mutate_editor_and_render_in_context(context, |app_state, editor| {
+                    return mutate_editor_and_render_in_context(context, |app_state, editor| {
                         editor_mouse_pressed(app_state, editor, x, y)
-                    })?;
+                    });
                 }
             },
         },
@@ -241,31 +279,57 @@ where
                     let runtime = context.app_runtime_mut();
                     editor_mouse_released(runtime.app_state);
                 }
-                let _ = render_current_screen_frame_if_changed(context, before_request)?;
+                let frame_changed =
+                    render_current_screen_frame_if_changed(context, before_request)?;
+                return Ok(current_render_work_result(context, frame_changed));
             }
         }
         AppPointerInput::Pointer { id, phase, x, y } => match current_interaction_mode(context) {
             AppInteractionMode::Gameplay => {
-                handle_gameplay_pointer_event_in_context(context, id, phase, x, y)?;
+                return handle_gameplay_pointer_event_in_context(context, id, phase, x, y);
             }
             AppInteractionMode::Editor => {
-                mutate_editor_and_render_in_context(context, |app_state, editor| {
+                return mutate_editor_and_render_in_context(context, |app_state, editor| {
                     editor_touch(app_state, editor, id, phase, x, y)
-                })?;
+                });
             }
             AppInteractionMode::Overlay(overlay) => match overlay.owning_screen() {
                 AppScreen::Gameplay => {
-                    handle_gameplay_pointer_event_in_context(context, id, phase, x, y)?;
+                    return handle_gameplay_pointer_event_in_context(context, id, phase, x, y);
                 }
                 AppScreen::Editor => {
-                    mutate_editor_and_render_in_context(context, |app_state, editor| {
+                    return mutate_editor_and_render_in_context(context, |app_state, editor| {
                         editor_touch(app_state, editor, id, phase, x, y)
-                    })?;
+                    });
                 }
             },
         },
     }
-    Ok(())
+    Ok(current_render_work_result(context, false))
+}
+
+fn current_render_work_result<C: AppDriverContext>(
+    context: &mut C,
+    frame_changed: bool,
+) -> RenderWorkResult {
+    RenderWorkResult {
+        frame_changed,
+        needs_followup_wake: has_pending_app_render_work(context),
+    }
+}
+
+fn has_pending_app_render_work<C: AppDriverContext>(context: &mut C) -> bool {
+    let screen = {
+        let runtime = context.app_runtime_mut();
+        runtime.app_state.active_screen()
+    };
+    if !matches!(screen, AppScreen::Editor) {
+        return false;
+    }
+    let Some(runtime) = context.editor_runtime_mut() else {
+        return false;
+    };
+    runtime.editor.has_active_pull_hint_job()
 }
 
 fn current_interaction_mode<C: AppDriverContext>(context: &mut C) -> AppInteractionMode {
@@ -320,7 +384,7 @@ where
 fn mutate_editor_and_render_in_context<C, F>(
     context: &mut C,
     mutate: F,
-) -> Result<(), <C as AppDriverContext>::Error>
+) -> Result<RenderWorkResult, <C as AppDriverContext>::Error>
 where
     C: AppDriverContext + FrameSink<Error = <C as AppDriverContext>::Error>,
     F: FnOnce(&mut AppState, &mut LevelEditor) -> Option<EditorUiAction>,
@@ -328,22 +392,22 @@ where
     let before_request = build_current_context_screen_frame_request(context);
     let action = {
         let Some(runtime) = context.editor_runtime_mut() else {
-            return Ok(());
+            return Ok(RenderWorkResult::default());
         };
         mutate(runtime.app.app_state, runtime.editor)
     };
     if let Some(runtime) = context.editor_runtime_mut() {
         apply_editor_ui_action(action, runtime);
     }
-    let _ = render_current_screen_frame_if_changed(context, before_request)?;
-    Ok(())
+    let frame_changed = render_current_screen_frame_if_changed(context, before_request)?;
+    Ok(current_render_work_result(context, frame_changed))
 }
 
 fn handle_gameplay_mouse_pressed_in_context<C>(
     context: &mut C,
     x: f64,
     y: f64,
-) -> Result<(), <C as AppDriverContext>::Error>
+) -> Result<RenderWorkResult, <C as AppDriverContext>::Error>
 where
     C: AppDriverContext + FrameSink<Error = <C as AppDriverContext>::Error>,
 {
@@ -351,8 +415,8 @@ where
         let runtime = context.app_runtime_mut();
         interpret_gameplay_pointer_tap(runtime.app_state, runtime.controller, x, y)
     };
-    let _ = apply_input_and_render_in_context(context, input)?;
-    Ok(())
+    let applied = apply_input_and_render_in_context(context, input)?;
+    Ok(applied.render_work)
 }
 
 fn handle_gameplay_pointer_event_in_context<C>(
@@ -361,7 +425,7 @@ fn handle_gameplay_pointer_event_in_context<C>(
     phase: PointerPhase,
     x: f64,
     y: f64,
-) -> Result<(), <C as AppDriverContext>::Error>
+) -> Result<RenderWorkResult, <C as AppDriverContext>::Error>
 where
     C: AppDriverContext + FrameSink<Error = <C as AppDriverContext>::Error>,
 {
@@ -369,8 +433,8 @@ where
         let runtime = context.app_runtime_mut();
         interpret_gameplay_pointer_event(runtime.app_state, runtime.controller, id, phase, x, y)
     };
-    let _ = apply_input_and_render_in_context(context, input)?;
-    Ok(())
+    let applied = apply_input_and_render_in_context(context, input)?;
+    Ok(applied.render_work)
 }
 
 #[cfg(test)]

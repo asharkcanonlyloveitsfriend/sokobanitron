@@ -160,3 +160,16 @@ pub extern "system" fn Java_com_sokobanitron_app_dev_NativeBridge_nativeHasPendi
     let active = with_app_mut(id, false, |app| app.has_pending_gameplay_presentation());
     if active { JNI_TRUE } else { JNI_FALSE }
 }
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_sokobanitron_app_dev_NativeBridge_nativeHasPendingRenderWork(
+    _env: JNIEnv,
+    _bridge: JObject,
+    handle: jlong,
+) -> jboolean {
+    let Some(id) = handle_to_id(handle) else {
+        return JNI_FALSE;
+    };
+    let active = with_app_mut(id, false, |app| app.has_pending_render_work());
+    if active { JNI_TRUE } else { JNI_FALSE }
+}

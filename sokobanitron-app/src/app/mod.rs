@@ -18,8 +18,9 @@ pub mod state;
 pub use action::AppAction;
 pub use driver::{
     AppDriverContext, AppPointerInput, AppRuntimeMut, AppliedUpdate, EditorAppRuntimeMut,
-    apply_action_and_render_in_context, apply_action_in_context, apply_editor_ui_action,
-    apply_input_and_render_in_context, build_current_app_screen_frame_request,
+    RenderWorkResult, apply_action_and_render_in_context, apply_action_in_context,
+    apply_editor_ui_action, apply_input_and_render_in_context,
+    build_current_app_screen_frame_request, continue_pending_render_work_and_render_in_context,
     handle_pointer_input_and_render_in_context,
 };
 pub use input::{AppInput, interpret_input};

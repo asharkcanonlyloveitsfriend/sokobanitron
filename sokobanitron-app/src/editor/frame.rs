@@ -8,11 +8,13 @@ use crate::app::state::AppState;
 use presentation::assets::UiIcon;
 use presentation::layout::ScreenRect;
 use presentation::screen_requests::{
-    EditorCountOverlay, EditorHintOverlay, EditorHintState, EditorMenuScreenRequest,
-    EditorScreenRequest,
+    EditorCountOverlay, EditorHintChange, EditorHintOverlay, EditorHintState,
+    EditorMenuScreenRequest, EditorScreenRequest,
 };
 use sokobanitron_gameplay::BoardCell;
-use sokobanitron_level_editor::{EditorMode, EditorSnapshot, LevelEditor, PullHintStatus};
+use sokobanitron_level_editor::{
+    EditorMode, EditorSnapshot, LevelEditor, PullHintStatus, PullHintTotalMoveChange,
+};
 
 use super::view::{
     VisibleBoardWindow, build_visible_window, can_save_editor_puzzle, can_zoom_in, can_zoom_out,
@@ -121,7 +123,11 @@ fn build_hint_overlays(
             },
             state: match hint.state {
                 PullHintStatus::Pending => EditorHintState::Pending,
-                PullHintStatus::Ready(count) => EditorHintState::Ready(count),
+                PullHintStatus::Ready(change) => EditorHintState::Ready(match change {
+                    PullHintTotalMoveChange::Decrease => EditorHintChange::Decrease,
+                    PullHintTotalMoveChange::Equal => EditorHintChange::Equal,
+                    PullHintTotalMoveChange::Increase => EditorHintChange::Increase,
+                }),
             },
         });
     }
@@ -133,6 +139,7 @@ mod tests {
     use super::build_current_editor_frame_request;
     use crate::app::presentation::FrameRequest;
     use crate::app::state::{AppOverlay, AppScreen, AppState};
+    use presentation::screen_requests::{EditorHintChange, EditorHintState};
     use sokobanitron_level_editor::{DrawTool, EditorCommand, EditorMode, LevelEditor};
 
     #[test]
@@ -184,5 +191,48 @@ mod tests {
         };
 
         assert!(screen.show_save_button);
+    }
+
+    #[test]
+    fn selected_box_frame_includes_immediate_destination_hint_symbols() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        let mut editor = LevelEditor::new();
+        for x in 0..=4 {
+            editor.apply_command(EditorCommand::PaintCell {
+                cell_x: x,
+                cell_y: 0,
+                tool: DrawTool::Floor,
+            });
+            editor.apply_command(EditorCommand::PaintCell {
+                cell_x: x,
+                cell_y: 1,
+                tool: DrawTool::Floor,
+            });
+        }
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 2,
+            cell_y: 0,
+            tool: DrawTool::GoalWithBox,
+        });
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Move));
+        editor.apply_command(EditorCommand::SelectBox {
+            cell_x: 2,
+            cell_y: 0,
+        });
+
+        let FrameRequest::Editor { screen } =
+            build_current_editor_frame_request(&app_state, &editor)
+        else {
+            panic!("expected editor frame");
+        };
+
+        assert!(!screen.pull_destination_hints.is_empty());
+        assert!(
+            screen
+                .pull_destination_hints
+                .iter()
+                .all(|hint| hint.state == EditorHintState::Ready(EditorHintChange::Increase))
+        );
     }
 }

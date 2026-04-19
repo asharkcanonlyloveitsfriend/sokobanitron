@@ -4,6 +4,7 @@ use sokobanitron_app::{
     app::{
         AppDriverContext, AppInput, AppPointerInput, AppRuntimeMut, AppScreen, AppState,
         AppliedUpdate, EditorAppRuntimeMut, apply_input_and_render_in_context,
+        continue_pending_render_work_and_render_in_context,
         handle_pointer_input_and_render_in_context,
     },
     editor::resize_editor_surface,
@@ -83,7 +84,23 @@ impl App {
     }
 
     fn apply_app_input(&mut self, input: AppInput) -> Option<AppliedUpdate> {
-        apply_input_and_render_in_context(self, input).ok()
+        let applied = apply_input_and_render_in_context(self, input).ok();
+        if applied
+            .as_ref()
+            .is_some_and(|update| update.render_work.needs_followup_wake)
+        {
+            self.request_window_redraw();
+        }
+        applied
+    }
+
+    fn handle_pointer_input(&mut self, input: AppPointerInput) {
+        let followup = handle_pointer_input_and_render_in_context(self, input)
+            .map(|work| work.needs_followup_wake)
+            .unwrap_or(false);
+        if followup {
+            self.request_window_redraw();
+        }
     }
 
     pub(crate) fn request_window_redraw(&self) {
@@ -206,13 +223,10 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor_position = Some((position.x, position.y));
-                let _ = handle_pointer_input_and_render_in_context(
-                    self,
-                    AppPointerInput::CursorMoved {
-                        x: position.x,
-                        y: position.y,
-                    },
-                );
+                self.handle_pointer_input(AppPointerInput::CursorMoved {
+                    x: position.x,
+                    y: position.y,
+                });
             }
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
@@ -220,13 +234,10 @@ impl ApplicationHandler for App {
                 ..
             } => {
                 if let Some((cursor_x, cursor_y)) = self.cursor_position {
-                    let _ = handle_pointer_input_and_render_in_context(
-                        self,
-                        AppPointerInput::MousePressed {
-                            x: cursor_x,
-                            y: cursor_y,
-                        },
-                    );
+                    self.handle_pointer_input(AppPointerInput::MousePressed {
+                        x: cursor_x,
+                        y: cursor_y,
+                    });
                 }
             }
             WindowEvent::MouseInput {
@@ -234,10 +245,7 @@ impl ApplicationHandler for App {
                 button: MouseButton::Left,
                 ..
             } => {
-                let _ = handle_pointer_input_and_render_in_context(
-                    self,
-                    AppPointerInput::MouseReleased,
-                );
+                self.handle_pointer_input(AppPointerInput::MouseReleased);
             }
             WindowEvent::Touch(touch) => {
                 let phase = match touch.phase {
@@ -246,15 +254,12 @@ impl ApplicationHandler for App {
                     TouchPhase::Ended => PointerPhase::Ended,
                     TouchPhase::Cancelled => PointerPhase::Cancelled,
                 };
-                let _ = handle_pointer_input_and_render_in_context(
-                    self,
-                    AppPointerInput::Pointer {
-                        id: touch.id,
-                        phase,
-                        x: touch.location.x,
-                        y: touch.location.y,
-                    },
-                );
+                self.handle_pointer_input(AppPointerInput::Pointer {
+                    id: touch.id,
+                    phase,
+                    x: touch.location.x,
+                    y: touch.location.y,
+                });
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state != ElementState::Pressed || event.repeat {
@@ -276,7 +281,15 @@ impl ApplicationHandler for App {
                 {
                     self.render_active_gameplay_presentation();
                 } else {
-                    self.render_current();
+                    let work = continue_pending_render_work_and_render_in_context(self)
+                        .ok()
+                        .unwrap_or_default();
+                    if !work.frame_changed {
+                        self.render_current();
+                    }
+                    if work.needs_followup_wake {
+                        self.request_window_redraw();
+                    }
                 }
             }
             _ => {}

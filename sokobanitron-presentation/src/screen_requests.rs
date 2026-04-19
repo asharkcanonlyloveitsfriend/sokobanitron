@@ -110,5 +110,12 @@ pub struct EditorHintOverlay {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorHintState {
     Pending,
-    Ready(u32),
+    Ready(EditorHintChange),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorHintChange {
+    Decrease,
+    Equal,
+    Increase,
 }

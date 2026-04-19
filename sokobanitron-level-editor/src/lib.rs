@@ -7,6 +7,6 @@ pub use command::{DrawTool, EditorCommand, EditorEffects, EditorMode};
 pub use editor::{ExportPuzzleError, ExportedPuzzle, LevelEditor};
 pub use snapshot::{
     BoxMoveCountSnapshot, EditorBoardSnapshot, EditorCellSnapshot, EditorSnapshot,
-    PullHintSnapshot, PullHintStatus,
+    PullHintSnapshot, PullHintStatus, PullHintTotalMoveChange,
 };
 pub use world::{EditableWorld, NonVoidBounds, Tile};
