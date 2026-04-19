@@ -146,6 +146,11 @@ impl LevelEditor {
         self.active_pull_hint_job.is_some()
     }
 
+    pub fn box_has_pull_move(&self, world_x: i32, world_y: i32) -> bool {
+        self.world.has_box(world_x, world_y)
+            && !self.enumerate_pull_move_plans(world_x, world_y).is_empty()
+    }
+
     pub fn snapshot(&self) -> EditorSnapshot {
         let bounds = self.world.non_void_bounds();
         let mut cells = Vec::new();
@@ -1215,5 +1220,16 @@ mod tests {
                 .iter()
                 .all(|hint| matches!(hint.state, PullHintStatus::Ready(_)))
         );
+    }
+
+    #[test]
+    fn box_has_pull_move_is_false_for_blocked_box() {
+        let mut editor = LevelEditor::new();
+        clear_world(&mut editor);
+        editor.world.set_tile(1, 1, Tile::Floor);
+        editor.world.set_box(1, 1, true);
+        editor.world.set_player(None);
+
+        assert!(!editor.box_has_pull_move(1, 1));
     }
 }

@@ -15,6 +15,7 @@ use std::time::Instant;
 use super::hit_test::{
     EditorControlSlot, EditorSurfaceTarget, build_editor_surface_model, editor_surface_target_at,
 };
+use super::is_selectable_move_mode_box;
 use super::paint_mode::PaintMode;
 use super::view::{
     ActiveEditorStroke, EditorDoubleTapTarget, EditorUiState, reset_editor_interaction_state,
@@ -373,6 +374,9 @@ fn begin_editor_board_interaction(
                 return;
             }
             if editor.world().has_box(world_x, world_y) {
+                if !is_selectable_move_mode_box(editor, world_x, world_y) {
+                    return;
+                }
                 editor.apply_command(EditorCommand::SelectBox {
                     cell_x: world_x,
                     cell_y: world_y,

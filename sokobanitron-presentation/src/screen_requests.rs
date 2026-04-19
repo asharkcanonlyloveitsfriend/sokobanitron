@@ -80,6 +80,7 @@ pub struct LevelSetListEntry {
 pub struct EditorScreenRequest {
     pub board: BoardView,
     pub viewport: BoardViewport,
+    pub disabled_boxes: Vec<BoardCell>,
     pub move_counts: Vec<EditorCountOverlay>,
     pub pull_destination_hints: Vec<EditorHintOverlay>,
     pub draw_mode_active: bool,

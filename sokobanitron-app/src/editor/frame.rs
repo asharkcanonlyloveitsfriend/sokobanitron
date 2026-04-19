@@ -16,6 +16,7 @@ use sokobanitron_level_editor::{
     EditorMode, EditorSnapshot, LevelEditor, PullHintStatus, PullHintTotalMoveChange,
 };
 
+use super::is_selectable_move_mode_box;
 use super::view::{
     VisibleBoardWindow, build_visible_window, can_save_editor_puzzle, can_zoom_in, can_zoom_out,
 };
@@ -36,6 +37,7 @@ pub fn build_current_editor_frame_request(
         let visible = build_visible_window(&app_state.editor, editor);
         FrameRequest::Editor {
             screen: EditorScreenRequest {
+                disabled_boxes: build_disabled_box_cells(&visible, editor),
                 move_counts: build_count_overlays(&visible, &snapshot),
                 pull_destination_hints: build_hint_overlays(&visible, &snapshot),
                 board: visible.board,
@@ -50,6 +52,29 @@ pub fn build_current_editor_frame_request(
             },
         }
     }
+}
+
+fn build_disabled_box_cells(visible: &VisibleBoardWindow, editor: &LevelEditor) -> Vec<BoardCell> {
+    if !matches!(editor.mode(), EditorMode::Move) {
+        return Vec::new();
+    }
+
+    let width = visible.board.width() as i32;
+    let height = visible.board.height() as i32;
+    let mut disabled_boxes = Vec::new();
+    for local_y in 0..height {
+        for local_x in 0..width {
+            let world_x = visible.world_origin_x + local_x;
+            let world_y = visible.world_origin_y + local_y;
+            if !editor.world().has_box(world_x, world_y)
+                || is_selectable_move_mode_box(editor, world_x, world_y)
+            {
+                continue;
+            }
+            disabled_boxes.push(BoardCell::new(local_x as u32, local_y as u32));
+        }
+    }
+    disabled_boxes
 }
 
 fn build_count_overlays(

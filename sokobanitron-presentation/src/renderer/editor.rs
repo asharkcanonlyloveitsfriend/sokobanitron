@@ -35,6 +35,16 @@ impl Renderer {
             &request.viewport,
             BoardSceneComposition::static_scene(),
         );
+        for &cell in &request.disabled_boxes {
+            self.draw_disabled_box_at(
+                frame,
+                width,
+                height,
+                &request.board,
+                &request.viewport,
+                cell,
+            );
+        }
         self.draw_editor_overlays_on_frame(frame, width, height, request);
         self.draw_editor_chrome_on_frame(frame, width, height, request);
     }
@@ -238,6 +248,7 @@ mod tests {
         let request = EditorScreenRequest {
             viewport: fit_board_viewport_for_controls(64, 64, &board),
             board,
+            disabled_boxes: Vec::new(),
             move_counts: Vec::new(),
             pull_destination_hints: Vec::new(),
             draw_mode_active: false,
