@@ -1,5 +1,5 @@
 use crate::board_cell::BoardCell;
-use crate::engine::GameEngine;
+use crate::engine::{GameEngine, StepOutcome};
 use crate::level::parse_level_ascii;
 use crate::presenter::{BoardView, GameBoardPresenter, TileKind};
 use std::collections::HashSet;
@@ -9,6 +9,14 @@ pub enum GameplayKey {
     Escape,
     Backspace,
     Other,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GameplayMoveDirection {
+    Up,
+    Down,
+    Left,
+    Right,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -147,6 +155,36 @@ impl GameplaySession {
             });
         }
         GameplaySessionTapOutcome::default()
+    }
+
+    pub fn move_direction(
+        &mut self,
+        direction: GameplayMoveDirection,
+    ) -> GameplaySessionTapOutcome {
+        if self.board.is_solved() {
+            return GameplaySessionTapOutcome::default();
+        }
+
+        let was_solved = self.board.is_solved();
+        self.selected_box = None;
+        let outcome = self.engine.step_direction(direction);
+        self.sync_board();
+
+        match outcome {
+            StepOutcome::None => GameplaySessionTapOutcome::default(),
+            StepOutcome::PlayerMoved { to } => GameplaySessionTapOutcome {
+                effect: GameplayTapEffect::PlayerMoved { to },
+                event: GameplayTapEvent::None,
+            },
+            StepOutcome::BoxMoved { path } => GameplaySessionTapOutcome {
+                effect: GameplayTapEffect::BoxMoved { path },
+                event: self.solved_event_if_needed(was_solved),
+            },
+            StepOutcome::BoxRemoved { to } => GameplaySessionTapOutcome {
+                effect: GameplayTapEffect::BoxRemoved { to },
+                event: self.solved_event_if_needed(was_solved),
+            },
+        }
     }
 
     pub fn on_key(&mut self, key: GameplayKey) {

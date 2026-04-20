@@ -1,7 +1,10 @@
-use super::view::{GameplayUiState, build_gameplay_viewport};
+use super::view::{GameplayUiState, build_gameplay_visible_window, gameplay_zoom_origin_for_focus};
 use crate::app::input::AppInput;
 use crate::app::state::{AppOverlay, AppState};
-use crate::shared::{MOUSE_POINTER_ID, PointerEvent, PointerGesture, PointerPhase, ScreenPoint};
+use crate::shared::{
+    MOUSE_POINTER_ID, PinchDirection, PinchGesture, PointerEvent, PointerGesture, PointerPhase,
+    ScreenPoint,
+};
 use presentation::hit_test::{
     GameplaySurfaceLayer, GameplaySurfaceModel, GameplaySurfaceTarget, LevelSelectSurfaceTarget,
     LevelSetSelectSurfaceTarget, gameplay_surface_target_at,
@@ -11,17 +14,20 @@ use presentation::hit_test::{
 use sokobanitron_gameplay::GameplayController;
 use std::time::Instant;
 
+const SWIPE_MOVE_THRESHOLD_PX: i32 = 56;
+
 #[derive(Debug, Clone, Copy)]
 pub struct GameplayPolicyContext {
     pub allow_enter_editor: bool,
     pub is_gameplay_screen: bool,
 }
 
-pub fn build_gameplay_surface_model<'a>(
+pub fn build_gameplay_surface_model(
     app_state: &AppState,
-    controller: &'a GameplayController,
-) -> GameplaySurfaceModel<'a> {
+    controller: &GameplayController,
+) -> GameplaySurfaceModel {
     let board = controller.board();
+    let visible_window = build_gameplay_visible_window(&app_state.gameplay, board);
     GameplaySurfaceModel {
         layer: gameplay_surface_layer_from_app_state(app_state),
         surface_width: app_state.gameplay.surface_width,
@@ -31,8 +37,10 @@ pub fn build_gameplay_surface_model<'a>(
         level_set_count: app_state.gameplay.level_sets.len(),
         active_level_set: app_state.gameplay.active_level_set,
         can_change_level_set: app_state.gameplay.level_sets.len() > 1,
-        board_viewport: build_gameplay_viewport(&app_state.gameplay, board),
-        board,
+        board_origin_x: visible_window.board_origin_x,
+        board_origin_y: visible_window.board_origin_y,
+        board_viewport: visible_window.viewport,
+        board: visible_window.board,
     }
 }
 
@@ -82,7 +90,7 @@ pub fn interpret_gameplay_pointer_event(
 
 pub(crate) fn gameplay_pointer_tap(
     gameplay: &mut GameplayUiState,
-    surface: &GameplaySurfaceModel<'_>,
+    surface: &GameplaySurfaceModel,
     policy: GameplayPolicyContext,
     x: f64,
     y: f64,
@@ -96,26 +104,35 @@ pub(crate) fn gameplay_pointer_tap(
 
 pub(crate) fn gameplay_pointer_event(
     gameplay: &mut GameplayUiState,
-    surface: &GameplaySurfaceModel<'_>,
+    surface: &GameplaySurfaceModel,
     policy: GameplayPolicyContext,
     id: u64,
     phase: PointerPhase,
     x: f64,
     y: f64,
 ) -> AppInput {
+    let event = PointerEvent::new(id, phase, x, y, Instant::now());
+    let pinch_update = gameplay.interaction.pinch.handle_event(event);
+    if pinch_update.reset_single_pointer {
+        gameplay.interaction.pointer.reset();
+        gameplay.interaction.double_tap.clear();
+    }
+    if let Some(pinch) = pinch_update.gesture {
+        gameplay.interaction.double_tap.clear();
+        return interpret_gameplay_pinch(gameplay, surface, pinch);
+    }
+    if pinch_update.suppress_single_pointer {
+        gameplay.interaction.double_tap.clear();
+        return AppInput::NoOp;
+    }
+
     let drag_start = match phase {
         PointerPhase::Ended | PointerPhase::Cancelled => {
             gameplay.interaction.pointer.active_start_position()
         }
         PointerPhase::Started | PointerPhase::Moved => None,
     };
-    let Some(gesture) = gameplay.interaction.pointer.handle_event(PointerEvent::new(
-        id,
-        phase,
-        x,
-        y,
-        Instant::now(),
-    )) else {
+    let Some(gesture) = gameplay.interaction.pointer.handle_event(event) else {
         return AppInput::NoOp;
     };
     interpret_gameplay_gesture(gameplay, surface, policy, gesture, drag_start)
@@ -123,7 +140,7 @@ pub(crate) fn gameplay_pointer_event(
 
 fn interpret_gameplay_gesture(
     gameplay: &mut GameplayUiState,
-    surface: &GameplaySurfaceModel<'_>,
+    surface: &GameplaySurfaceModel,
     policy: GameplayPolicyContext,
     gesture: PointerGesture,
     drag_start: Option<ScreenPoint>,
@@ -136,7 +153,12 @@ fn interpret_gameplay_gesture(
         }
         PointerGesture::Ended(contact) => {
             gameplay.interaction.double_tap.clear();
-            interpret_overlay_swipe(surface, contact.position, drag_start)
+            interpret_swipe(
+                surface,
+                gameplay.viewport.zoomed_in,
+                contact.position,
+                drag_start,
+            )
         }
         PointerGesture::Started(_) => AppInput::NoOp,
         PointerGesture::DragStarted(_)
@@ -150,7 +172,7 @@ fn interpret_gameplay_gesture(
 
 fn interpret_gameplay_tap(
     gameplay: &mut GameplayUiState,
-    surface: &GameplaySurfaceModel<'_>,
+    surface: &GameplaySurfaceModel,
     policy: GameplayPolicyContext,
     target: Option<GameplaySurfaceTarget>,
     at: Instant,
@@ -173,19 +195,22 @@ fn interpret_gameplay_tap(
     input
 }
 
-fn interpret_overlay_swipe(
-    surface: &GameplaySurfaceModel<'_>,
+fn interpret_swipe(
+    surface: &GameplaySurfaceModel,
+    zoomed_in: bool,
     end: ScreenPoint,
     drag_start: Option<ScreenPoint>,
 ) -> AppInput {
     let Some(start) = drag_start else {
         return AppInput::NoOp;
     };
-    let Some(nav) = level_select_menu_nav_action_for_swipe(end.x - start.x, end.y - start.y) else {
-        return AppInput::NoOp;
-    };
+    let delta_x = end.x - start.x;
+    let delta_y = end.y - start.y;
 
     if let Some(page_start) = surface.layer.level_select_page_start() {
+        let Some(nav) = level_select_menu_nav_action_for_swipe(delta_x, delta_y) else {
+            return AppInput::NoOp;
+        };
         let page_start = level_select_menu_start_for_nav(
             surface.level_count,
             surface.resume_level,
@@ -196,6 +221,9 @@ fn interpret_overlay_swipe(
     }
 
     if let Some(page_start) = surface.layer.level_set_select_page_start() {
+        let Some(nav) = level_select_menu_nav_action_for_swipe(delta_x, delta_y) else {
+            return AppInput::NoOp;
+        };
         let page_start = level_set_select_start_for_nav(
             surface.level_set_count,
             surface.active_level_set,
@@ -205,11 +233,18 @@ fn interpret_overlay_swipe(
         return AppInput::LevelSetSelectNavigate { page_start };
     }
 
+    if matches!(surface.layer, GameplaySurfaceLayer::Board)
+        && zoomed_in
+        && (delta_x.abs() >= SWIPE_MOVE_THRESHOLD_PX || delta_y.abs() >= SWIPE_MOVE_THRESHOLD_PX)
+    {
+        return AppInput::GameplaySwipePan { delta_x, delta_y };
+    }
+
     AppInput::NoOp
 }
 
 fn interpret_gameplay_surface_target(
-    surface: &GameplaySurfaceModel<'_>,
+    surface: &GameplaySurfaceModel,
     policy: GameplayPolicyContext,
     target: Option<GameplaySurfaceTarget>,
 ) -> AppInput {
@@ -289,6 +324,34 @@ fn interpret_gameplay_surface_target(
     }
 }
 
+fn interpret_gameplay_pinch(
+    gameplay: &GameplayUiState,
+    surface: &GameplaySurfaceModel,
+    pinch: PinchGesture,
+) -> AppInput {
+    if !matches!(surface.layer, GameplaySurfaceLayer::Board) {
+        return AppInput::NoOp;
+    }
+
+    match pinch.direction {
+        PinchDirection::Out if !gameplay.viewport.zoomed_in => {
+            let Some(GameplaySurfaceTarget::BoardCell(cell)) =
+                gameplay_surface_target_at(surface, pinch.center.x as f64, pinch.center.y as f64)
+            else {
+                return AppInput::NoOp;
+            };
+            let (zoom_origin_x, zoom_origin_y) =
+                gameplay_zoom_origin_for_focus(gameplay, &surface.board, cell);
+            AppInput::ZoomGameplayIn {
+                zoom_origin_x,
+                zoom_origin_y,
+            }
+        }
+        PinchDirection::In if gameplay.viewport.zoomed_in => AppInput::ZoomGameplayOut,
+        PinchDirection::In | PinchDirection::Out => AppInput::NoOp,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -297,7 +360,10 @@ mod tests {
     };
     use crate::app::input::AppInput;
     use crate::app::state::{AppOverlay, AppState};
-    use crate::gameplay::{set_gameplay_double_tap_window, set_gameplay_touch_slop};
+    use crate::gameplay::{
+        gameplay_zoom_origin_for_focus, set_gameplay_double_tap_window, set_gameplay_touch_slop,
+        set_gameplay_zoomed_in,
+    };
     use crate::shared::PointerPhase;
     use presentation::hit_test::{
         GameplaySurfaceLayer, GameplaySurfaceModel, gameplay_surface_target_at,
@@ -315,6 +381,23 @@ mod tests {
         GameplayController::new(vec![level; count], Some(0))
     }
 
+    fn large_test_controller() -> GameplayController {
+        let level = [
+            "############",
+            "#@         #",
+            "#          #",
+            "#    $     #",
+            "#          #",
+            "#          #",
+            "#       .  #",
+            "#          #",
+            "#          #",
+            "############",
+        ]
+        .join("\n");
+        GameplayController::new(vec![level], Some(0))
+    }
+
     fn test_app_state() -> AppState {
         AppState {
             editor_available: true,
@@ -322,15 +405,17 @@ mod tests {
         }
     }
 
-    fn test_surface<'a>(
-        controller: &'a GameplayController,
-        app_state: &AppState,
-    ) -> GameplaySurfaceModel<'a> {
+    fn test_surface(controller: &GameplayController, app_state: &AppState) -> GameplaySurfaceModel {
         build_gameplay_surface_model(app_state, controller)
     }
 
     fn test_policy(app_state: &AppState) -> GameplayPolicyContext {
         build_gameplay_policy_context(app_state)
+    }
+
+    fn cell_center(surface: &GameplaySurfaceModel, cell: BoardCell) -> (f64, f64) {
+        let (x, y, w, h) = surface.board_viewport.cell_to_screen_rect(cell);
+        ((x + (w / 2) as i32) as f64, (y + (h / 2) as i32) as f64)
     }
 
     #[test]
@@ -412,6 +497,217 @@ mod tests {
                 392.0,
             ),
             AppInput::LevelSelectNavigate { page_start: 8 }
+        );
+    }
+
+    #[test]
+    fn downward_swipe_on_board_is_noop_when_not_zoomed() {
+        let controller = test_controller();
+        let app_state = test_app_state();
+        let mut gameplay = app_state.gameplay.clone();
+        let surface = test_surface(&controller, &app_state);
+        let policy = test_policy(&app_state);
+
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Started,
+                140.0,
+                160.0,
+            ),
+            AppInput::NoOp
+        );
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Moved,
+                144.0,
+                248.0,
+            ),
+            AppInput::NoOp
+        );
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Ended,
+                144.0,
+                248.0,
+            ),
+            AppInput::NoOp
+        );
+    }
+
+    #[test]
+    fn zoomed_rightward_swipe_pans_view_left() {
+        let controller = large_test_controller();
+        let mut app_state = test_app_state();
+        app_state.gameplay.surface_width = 320;
+        app_state.gameplay.surface_height = 480;
+        let board = controller.board();
+        let origin =
+            gameplay_zoom_origin_for_focus(&app_state.gameplay, board, BoardCell::new(7, 6));
+        set_gameplay_zoomed_in(&mut app_state.gameplay, board, origin.0, origin.1);
+        let mut gameplay = app_state.gameplay.clone();
+        let surface = test_surface(&controller, &app_state);
+        let policy = test_policy(&app_state);
+
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Started,
+                120.0,
+                220.0,
+            ),
+            AppInput::NoOp
+        );
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Moved,
+                220.0,
+                224.0,
+            ),
+            AppInput::NoOp
+        );
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Ended,
+                220.0,
+                224.0,
+            ),
+            AppInput::GameplaySwipePan {
+                delta_x: 100,
+                delta_y: 4,
+            }
+        );
+    }
+
+    #[test]
+    fn zoomed_leftward_swipe_pans_view_right() {
+        let controller = large_test_controller();
+        let mut app_state = test_app_state();
+        app_state.gameplay.surface_width = 320;
+        app_state.gameplay.surface_height = 480;
+        let board = controller.board();
+        let origin =
+            gameplay_zoom_origin_for_focus(&app_state.gameplay, board, BoardCell::new(7, 6));
+        set_gameplay_zoomed_in(&mut app_state.gameplay, board, origin.0, origin.1);
+        let mut gameplay = app_state.gameplay.clone();
+        let surface = test_surface(&controller, &app_state);
+        let policy = test_policy(&app_state);
+
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Started,
+                220.0,
+                220.0,
+            ),
+            AppInput::NoOp
+        );
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Moved,
+                120.0,
+                224.0,
+            ),
+            AppInput::NoOp
+        );
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Ended,
+                120.0,
+                224.0,
+            ),
+            AppInput::GameplaySwipePan {
+                delta_x: -100,
+                delta_y: 4,
+            }
+        );
+    }
+
+    #[test]
+    fn zoomed_diagonal_swipe_pans_view_diagonally() {
+        let controller = large_test_controller();
+        let mut app_state = test_app_state();
+        app_state.gameplay.surface_width = 320;
+        app_state.gameplay.surface_height = 480;
+        let board = controller.board();
+        let origin =
+            gameplay_zoom_origin_for_focus(&app_state.gameplay, board, BoardCell::new(7, 6));
+        set_gameplay_zoomed_in(&mut app_state.gameplay, board, origin.0, origin.1);
+        let mut gameplay = app_state.gameplay.clone();
+        let surface = test_surface(&controller, &app_state);
+        let policy = test_policy(&app_state);
+
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Started,
+                120.0,
+                160.0,
+            ),
+            AppInput::NoOp
+        );
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Moved,
+                220.0,
+                260.0,
+            ),
+            AppInput::NoOp
+        );
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Ended,
+                220.0,
+                260.0,
+            ),
+            AppInput::GameplaySwipePan {
+                delta_x: 100,
+                delta_y: 100,
+            }
         );
     }
 
@@ -620,6 +916,161 @@ mod tests {
         assert_eq!(
             gameplay_pointer_tap(&mut gameplay, &surface, policy, tap_x, tap_y),
             AppInput::BoardTap(BoardCell::new(1, 1))
+        );
+    }
+
+    #[test]
+    fn pinch_out_on_board_emits_zoom_in_action() {
+        let controller = large_test_controller();
+        let mut app_state = test_app_state();
+        app_state.gameplay.surface_width = 320;
+        app_state.gameplay.surface_height = 480;
+        let mut gameplay = app_state.gameplay.clone();
+        let surface = test_surface(&controller, &app_state);
+        let policy = test_policy(&app_state);
+        let focus = BoardCell::new(7, 6);
+        let (center_x, center_y) = cell_center(&surface, focus);
+        let expected_origin = gameplay_zoom_origin_for_focus(&gameplay, &surface.board, focus);
+
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Started,
+                center_x - 24.0,
+                center_y,
+            ),
+            AppInput::NoOp
+        );
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                2,
+                PointerPhase::Started,
+                center_x + 24.0,
+                center_y,
+            ),
+            AppInput::NoOp
+        );
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Moved,
+                center_x - 72.0,
+                center_y,
+            ),
+            AppInput::NoOp
+        );
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                2,
+                PointerPhase::Moved,
+                center_x + 72.0,
+                center_y,
+            ),
+            AppInput::NoOp
+        );
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Ended,
+                center_x - 72.0,
+                center_y,
+            ),
+            AppInput::ZoomGameplayIn {
+                zoom_origin_x: expected_origin.0,
+                zoom_origin_y: expected_origin.1,
+            }
+        );
+    }
+
+    #[test]
+    fn pinch_in_when_zoomed_emits_zoom_out_action() {
+        let controller = large_test_controller();
+        let mut app_state = test_app_state();
+        app_state.gameplay.surface_width = 320;
+        app_state.gameplay.surface_height = 480;
+        let board = controller.board();
+        let origin =
+            gameplay_zoom_origin_for_focus(&app_state.gameplay, board, BoardCell::new(7, 6));
+        set_gameplay_zoomed_in(&mut app_state.gameplay, board, origin.0, origin.1);
+        let mut gameplay = app_state.gameplay.clone();
+        let surface = test_surface(&controller, &app_state);
+        let policy = test_policy(&app_state);
+        let (center_x, center_y) = cell_center(&surface, BoardCell::new(3, 3));
+
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Started,
+                center_x - 72.0,
+                center_y,
+            ),
+            AppInput::NoOp
+        );
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                2,
+                PointerPhase::Started,
+                center_x + 72.0,
+                center_y,
+            ),
+            AppInput::NoOp
+        );
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Moved,
+                center_x - 24.0,
+                center_y,
+            ),
+            AppInput::NoOp
+        );
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                2,
+                PointerPhase::Moved,
+                center_x + 24.0,
+                center_y,
+            ),
+            AppInput::NoOp
+        );
+        assert_eq!(
+            gameplay_pointer_event(
+                &mut gameplay,
+                &surface,
+                policy,
+                1,
+                PointerPhase::Ended,
+                center_x - 24.0,
+                center_y,
+            ),
+            AppInput::ZoomGameplayOut
         );
     }
 }

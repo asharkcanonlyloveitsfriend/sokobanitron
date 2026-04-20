@@ -6,6 +6,11 @@ use sokobanitron_gameplay::BoardCell;
 pub enum AppInput {
     Restart,
     Undo,
+    ZoomGameplayIn {
+        zoom_origin_x: u32,
+        zoom_origin_y: u32,
+    },
+    ZoomGameplayOut,
     // Semantic navigation inputs.
     OverlayToggle,
     OpenLevelSelect,
@@ -14,12 +19,20 @@ pub enum AppInput {
     OverlayClose,
     EnterEditorMode,
     EnterGameplayMode,
-    LevelSelectNavigate { page_start: usize },
+    LevelSelectNavigate {
+        page_start: usize,
+    },
     LevelSelectSelect(usize),
-    LevelSetSelectNavigate { page_start: usize },
+    LevelSetSelectNavigate {
+        page_start: usize,
+    },
     LevelSetSelectSelect(usize),
     BoardTap(BoardCell),
     BoardDoubleTap(BoardCell),
+    GameplaySwipePan {
+        delta_x: i32,
+        delta_y: i32,
+    },
     NoOp,
 }
 
@@ -27,6 +40,14 @@ pub fn interpret_input(_app_state: &AppState, input: AppInput) -> AppAction {
     match input {
         AppInput::Restart => AppAction::Restart,
         AppInput::Undo => AppAction::Undo,
+        AppInput::ZoomGameplayIn {
+            zoom_origin_x,
+            zoom_origin_y,
+        } => AppAction::ZoomGameplayIn {
+            zoom_origin_x,
+            zoom_origin_y,
+        },
+        AppInput::ZoomGameplayOut => AppAction::ZoomGameplayOut,
         AppInput::OverlayToggle => AppAction::ToggleOverlay,
         AppInput::OpenLevelSelect => AppAction::OpenLevelSelect,
         AppInput::OpenLevelSetSelect => AppAction::OpenLevelSetSelect,
@@ -44,6 +65,9 @@ pub fn interpret_input(_app_state: &AppState, input: AppInput) -> AppAction {
         AppInput::LevelSetSelectSelect(level_set) => AppAction::SelectLevelSet(level_set),
         AppInput::BoardTap(cell) => AppAction::TapBoardCell(cell),
         AppInput::BoardDoubleTap(cell) => AppAction::DoubleTapBoardCell(cell),
+        AppInput::GameplaySwipePan { delta_x, delta_y } => {
+            AppAction::PanZoomedGameplay { delta_x, delta_y }
+        }
         AppInput::NoOp => AppAction::NoOp,
     }
 }
@@ -70,6 +94,28 @@ mod tests {
         assert_eq!(
             interpret_input(&app_state, AppInput::LevelSelectNavigate { page_start: 12 }),
             AppAction::SetLevelSelectPageStart(12)
+        );
+    }
+
+    #[test]
+    fn interpret_gameplay_zoom_inputs_map_to_zoom_actions() {
+        let app_state = AppState::default();
+        assert_eq!(
+            interpret_input(
+                &app_state,
+                AppInput::ZoomGameplayIn {
+                    zoom_origin_x: 3,
+                    zoom_origin_y: 5,
+                }
+            ),
+            AppAction::ZoomGameplayIn {
+                zoom_origin_x: 3,
+                zoom_origin_y: 5,
+            }
+        );
+        assert_eq!(
+            interpret_input(&app_state, AppInput::ZoomGameplayOut),
+            AppAction::ZoomGameplayOut
         );
     }
 
@@ -107,6 +153,24 @@ mod tests {
         assert_eq!(
             interpret_input(&app_state, AppInput::BoardDoubleTap(cell)),
             AppAction::DoubleTapBoardCell(cell)
+        );
+    }
+
+    #[test]
+    fn interpret_gameplay_swipe_pan_maps_to_action() {
+        let app_state = AppState::default();
+        assert_eq!(
+            interpret_input(
+                &app_state,
+                AppInput::GameplaySwipePan {
+                    delta_x: 64,
+                    delta_y: -48,
+                }
+            ),
+            AppAction::PanZoomedGameplay {
+                delta_x: 64,
+                delta_y: -48,
+            }
         );
     }
 

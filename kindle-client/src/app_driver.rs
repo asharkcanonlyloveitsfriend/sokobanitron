@@ -18,7 +18,6 @@ use sokobanitron_app::{
 use sokobanitron_gameplay::{BoardView, GameplayController};
 use std::io::Result;
 
-const TOUCH_POINTER_ID: u64 = 1;
 const KINDLE_GAMEPLAY_TAP_SLOP_PX: i32 = 24;
 const KINDLE_GAMEPLAY_MAX_CELL_SIZE: u32 = 178;
 
@@ -116,10 +115,11 @@ impl KindleApp {
                     }
                 }
                 platform::AppInputEvent::Pointer {
+                    id,
                     phase,
-                    raw_x,
-                    raw_y,
-                } => self.on_pointer(phase, raw_x, raw_y)?,
+                    screen_x,
+                    screen_y,
+                } => self.on_pointer(id, phase, screen_x, screen_y)?,
                 platform::AppInputEvent::PowerShortPress => self.handle_power_short_press(sync)?,
                 platform::AppInputEvent::PowerLongPress => {
                     if let Err(err) = platform::start_lab126_gui() {
@@ -243,12 +243,17 @@ impl KindleApp {
         }
     }
 
-    fn on_pointer(&mut self, phase: PointerPhase, raw_x: i32, raw_y: i32) -> Result<()> {
-        let (screen_x, screen_y) = platform::map_touch_to_screen(raw_x, raw_y)?;
+    fn on_pointer(
+        &mut self,
+        id: u64,
+        phase: PointerPhase,
+        screen_x: usize,
+        screen_y: usize,
+    ) -> Result<()> {
         let _ = handle_pointer_input_and_render_in_context(
             self,
             AppPointerInput::Pointer {
-                id: TOUCH_POINTER_ID,
+                id,
                 phase,
                 x: screen_x as f64,
                 y: screen_y as f64,

@@ -36,8 +36,8 @@ impl GameplaySurfaceLayer {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct GameplaySurfaceModel<'a> {
+#[derive(Debug, Clone)]
+pub struct GameplaySurfaceModel {
     pub layer: GameplaySurfaceLayer,
     pub surface_width: u32,
     pub surface_height: u32,
@@ -46,8 +46,10 @@ pub struct GameplaySurfaceModel<'a> {
     pub level_set_count: usize,
     pub active_level_set: Option<usize>,
     pub can_change_level_set: bool,
+    pub board_origin_x: u32,
+    pub board_origin_y: u32,
     pub board_viewport: BoardViewport,
-    pub board: &'a BoardView,
+    pub board: BoardView,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,7 +76,7 @@ pub enum GameplaySurfaceTarget {
 }
 
 pub fn gameplay_surface_target_at(
-    surface: &GameplaySurfaceModel<'_>,
+    surface: &GameplaySurfaceModel,
     tap_x: f64,
     tap_y: f64,
 ) -> Option<GameplaySurfaceTarget> {
@@ -155,9 +157,12 @@ pub fn gameplay_surface_target_at(
     }
     if let Some(cell) = surface
         .board_viewport
-        .screen_to_cell(tap_x, tap_y, surface.board)
+        .screen_to_cell(tap_x, tap_y, &surface.board)
     {
-        return Some(GameplaySurfaceTarget::BoardCell(cell));
+        return Some(GameplaySurfaceTarget::BoardCell(BoardCell::new(
+            surface.board_origin_x + cell.x,
+            surface.board_origin_y + cell.y,
+        )));
     }
     None
 }
@@ -168,18 +173,35 @@ mod tests {
         GameplaySurfaceLayer, GameplaySurfaceModel, GameplaySurfaceTarget,
         LevelSelectSurfaceTarget, gameplay_surface_target_at,
     };
-    use crate::layout::fit_board_viewport_for_controls;
-    use sokobanitron_gameplay::GameplayController;
+    use crate::layout::{BOARD_VERTICAL_MARGIN, BoardViewport, fit_board_viewport_for_controls};
+    use sokobanitron_gameplay::{BoardCell, BoardView, GameplayController};
 
     fn test_controller() -> GameplayController {
         let level = "#######\n#@ $. #\n#######".to_string();
         GameplayController::new(vec![level], Some(0))
     }
 
-    fn test_surface_model<'a>(
-        controller: &'a GameplayController,
+    fn large_test_controller() -> GameplayController {
+        let level = [
+            "############",
+            "#@         #",
+            "#          #",
+            "#    $     #",
+            "#          #",
+            "#          #",
+            "#       .  #",
+            "#          #",
+            "#          #",
+            "############",
+        ]
+        .join("\n");
+        GameplayController::new(vec![level], Some(0))
+    }
+
+    fn test_surface_model(
+        controller: &GameplayController,
         layer: GameplaySurfaceLayer,
-    ) -> GameplaySurfaceModel<'a> {
+    ) -> GameplaySurfaceModel {
         let board = controller.board();
         GameplaySurfaceModel {
             layer,
@@ -190,9 +212,49 @@ mod tests {
             level_set_count: 0,
             active_level_set: None,
             can_change_level_set: false,
+            board_origin_x: 0,
+            board_origin_y: 0,
             board_viewport: fit_board_viewport_for_controls(670, 891, board),
-            board,
+            board: board.clone(),
         }
+    }
+
+    fn crop_board(
+        board: &BoardView,
+        origin_x: u32,
+        origin_y: u32,
+        width: u32,
+        height: u32,
+    ) -> BoardView {
+        let mut tiles = Vec::with_capacity((width * height) as usize);
+        let mut boxes = Vec::with_capacity((width * height) as usize);
+        let mut player = None;
+        let mut selected_box = None;
+
+        for local_y in 0..height {
+            for local_x in 0..width {
+                let world = BoardCell::new(origin_x + local_x, origin_y + local_y);
+                let local = BoardCell::new(local_x, local_y);
+                tiles.push(board.tile(world));
+                boxes.push(board.has_box(world));
+                if board.player() == Some(world) {
+                    player = Some(local);
+                }
+                if board.selected_box() == Some(world) {
+                    selected_box = Some(local);
+                }
+            }
+        }
+
+        BoardView::new(
+            width,
+            height,
+            tiles,
+            boxes,
+            player,
+            selected_box,
+            board.is_solved(),
+        )
     }
 
     #[test]
@@ -234,5 +296,64 @@ mod tests {
         let surface = test_surface_model(&controller, GameplaySurfaceLayer::Board);
 
         assert_eq!(gameplay_surface_target_at(&surface, -1.0, -1.0), None);
+    }
+
+    #[test]
+    fn board_cell_target_maps_back_through_zoomed_window_origin() {
+        let controller = large_test_controller();
+        let mut surface = test_surface_model(&controller, GameplaySurfaceLayer::Board);
+        surface.board_origin_x = 4;
+        surface.board_origin_y = 3;
+        surface.board = crop_board(
+            controller.board(),
+            surface.board_origin_x,
+            surface.board_origin_y,
+            6,
+            6,
+        );
+        surface.board_viewport = fit_board_viewport_for_controls(670, 891, &surface.board);
+        let local_cell = BoardCell::new(2, 1);
+        let (x, y, w, h) = surface.board_viewport.cell_to_screen_rect(local_cell);
+
+        let target = gameplay_surface_target_at(
+            &surface,
+            (x + (w / 2) as i32) as f64,
+            (y + (h / 2) as i32) as f64,
+        );
+
+        assert_eq!(
+            target,
+            Some(GameplaySurfaceTarget::BoardCell(BoardCell::new(6, 4)))
+        );
+    }
+
+    #[test]
+    fn partially_visible_continuation_cell_is_hittable() {
+        let controller = large_test_controller();
+        let mut surface = test_surface_model(&controller, GameplaySurfaceLayer::Board);
+        surface.board_origin_x = 4;
+        surface.board_origin_y = 3;
+        surface.board = crop_board(
+            controller.board(),
+            surface.board_origin_x,
+            surface.board_origin_y,
+            8,
+            6,
+        );
+        surface.board_viewport = BoardViewport {
+            origin_x: -20,
+            origin_y: BOARD_VERTICAL_MARGIN as i32,
+            cell_size: 40,
+            board_pixel_width: 8 * 40,
+            board_pixel_height: 6 * 40,
+            outer_margin_tiles: 0,
+        };
+
+        let target = gameplay_surface_target_at(&surface, 5.0, (BOARD_VERTICAL_MARGIN + 60) as f64);
+
+        assert_eq!(
+            target,
+            Some(GameplaySurfaceTarget::BoardCell(BoardCell::new(4, 4)))
+        );
     }
 }

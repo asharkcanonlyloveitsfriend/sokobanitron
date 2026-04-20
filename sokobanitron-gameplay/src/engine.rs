@@ -1,4 +1,5 @@
 use crate::board_cell::BoardCell;
+use crate::session::GameplayMoveDirection;
 use sokobanitron_core::pathfinder::{BoxPathfinder, PlayerPathfinder, Position as GridPosition};
 use std::collections::HashSet;
 
@@ -13,6 +14,14 @@ pub(crate) struct GameEngine {
     player: GridPosition,
     boxes: HashSet<GridPosition>,
     box_move_history: Vec<Vec<GridPosition>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum StepOutcome {
+    None,
+    PlayerMoved { to: BoardCell },
+    BoxMoved { path: Vec<BoardCell> },
+    BoxRemoved { to: BoardCell },
 }
 
 impl GameEngine {
@@ -137,6 +146,45 @@ impl GameEngine {
     pub(crate) fn undo(&mut self) -> Option<Vec<BoardCell>> {
         self.undo_position()
             .map(|path| path.into_iter().map(board_cell).collect())
+    }
+
+    pub(crate) fn step_direction(&mut self, direction: GameplayMoveDirection) -> StepOutcome {
+        let Some(next) = offset_position(self.player, direction) else {
+            return StepOutcome::None;
+        };
+        if !self.is_inside(next.row, next.col) {
+            return StepOutcome::None;
+        }
+
+        if self.boxes.contains(&next) {
+            let Some(push_to) = offset_position(next, direction) else {
+                return StepOutcome::None;
+            };
+            if !self.is_inside(push_to.row, push_to.col) {
+                return StepOutcome::None;
+            }
+            if self.base_walkable[push_to.row][push_to.col] {
+                if let Some(path) = self.move_box_to_position(next, push_to) {
+                    return StepOutcome::BoxMoved {
+                        path: path.into_iter().map(board_cell).collect(),
+                    };
+                }
+            } else if self.push_box_into_void_position(next, push_to) {
+                return StepOutcome::BoxRemoved {
+                    to: board_cell(push_to),
+                };
+            }
+            return StepOutcome::None;
+        }
+
+        if self.base_walkable[next.row][next.col] {
+            self.player = next;
+            StepOutcome::PlayerMoved {
+                to: board_cell(next),
+            }
+        } else {
+            StepOutcome::None
+        }
     }
 
     fn last_box_move_destination_position(&self) -> Option<GridPosition> {
@@ -270,6 +318,22 @@ fn grid_position(cell: BoardCell) -> GridPosition {
 
 fn board_cell(position: GridPosition) -> BoardCell {
     BoardCell::new(position.col as u32, position.row as u32)
+}
+
+fn offset_position(
+    position: GridPosition,
+    direction: GameplayMoveDirection,
+) -> Option<GridPosition> {
+    let (row_delta, col_delta) = match direction {
+        GameplayMoveDirection::Up => (-1, 0),
+        GameplayMoveDirection::Down => (1, 0),
+        GameplayMoveDirection::Left => (0, -1),
+        GameplayMoveDirection::Right => (0, 1),
+    };
+    Some(GridPosition::new(
+        position.row.checked_add_signed(row_delta)?,
+        position.col.checked_add_signed(col_delta)?,
+    ))
 }
 
 #[cfg(test)]

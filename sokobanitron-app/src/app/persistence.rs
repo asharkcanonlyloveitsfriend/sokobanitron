@@ -1,5 +1,5 @@
 use super::{AppState, AppliedUpdate};
-use crate::gameplay::set_gameplay_level_sets;
+use crate::gameplay::{set_gameplay_level_sets, set_gameplay_zoomed_out};
 use crate::level_bootstrap::build_preview_boards;
 use crate::persistence::{LevelPersistence, SavedCreatedPuzzle};
 use sokobanitron_gameplay::{BoardView, GameplayController};
@@ -122,6 +122,7 @@ pub(crate) fn apply_runtime_effects(
             Ok(Some(activated)) => {
                 *controller = activated.controller;
                 *preview_boards = activated.preview_boards;
+                set_gameplay_zoomed_out(&mut app_state.gameplay);
                 effects.needs_gameplay_render = true;
             }
             Ok(None) => {}
@@ -162,7 +163,7 @@ mod tests {
         persist_editor_puzzle_to_default_set,
     };
     use crate::app::{AppState, AppliedUpdate};
-    use crate::gameplay::set_gameplay_level_sets;
+    use crate::gameplay::{set_gameplay_level_sets, set_gameplay_zoomed_in};
     use crate::level_bootstrap::load_initial_levels_for_app;
     use crate::persistence::LevelPersistence;
     use sokobanitron_level_editor::{DrawTool, EditorCommand, EditorMode, LevelEditor};
@@ -228,6 +229,7 @@ mod tests {
             initial.level_set_catalog.clone(),
             Some(initial.active_level_set_index),
         );
+        set_gameplay_zoomed_in(&mut app_state.gameplay, controller.board(), 1, 1);
         let mut level_persistence = initial.persistence;
         let mut preview_boards = initial.preview_boards;
 
@@ -251,6 +253,7 @@ mod tests {
 
         assert!(effects.needs_gameplay_render);
         assert_eq!(app_state.gameplay.active_level_set, Some(1));
+        assert!(!app_state.gameplay.viewport.zoomed_in);
         assert_eq!(controller.level_count(), 2);
         assert_eq!(preview_boards.len(), 2);
 

@@ -1,6 +1,9 @@
 use crate::board_cell::BoardCell;
 use crate::presenter::BoardView;
-use crate::session::{GameplayKey, GameplaySession, GameplayTapEffect, GameplayTapEvent};
+use crate::session::{
+    GameplayKey, GameplayMoveDirection, GameplaySession, GameplaySessionTapOutcome,
+    GameplayTapEffect, GameplayTapEvent,
+};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct GameplayControllerChanges {
@@ -109,6 +112,23 @@ impl GameplayController {
     pub fn click_cell_with_outcome(&mut self, cell: BoardCell) -> GameplayTapOutcome {
         let was_started = self.session.is_started();
         let session_outcome = self.session.click_cell(cell);
+        self.session_outcome_with_changes(was_started, session_outcome)
+    }
+
+    pub fn move_direction_with_outcome(
+        &mut self,
+        direction: GameplayMoveDirection,
+    ) -> GameplayTapOutcome {
+        let was_started = self.session.is_started();
+        let session_outcome = self.session.move_direction(direction);
+        self.session_outcome_with_changes(was_started, session_outcome)
+    }
+
+    fn session_outcome_with_changes(
+        &mut self,
+        was_started: bool,
+        session_outcome: GameplaySessionTapOutcome,
+    ) -> GameplayTapOutcome {
         let puzzle_started = !was_started && self.session.is_started();
 
         let mut changes = GameplayControllerChanges::default();
@@ -159,7 +179,7 @@ impl GameplayController {
 #[cfg(test)]
 mod tests {
     use super::GameplayController;
-    use crate::{BoardCell, GameplayTapEffect, GameplayTapEvent};
+    use crate::{BoardCell, GameplayMoveDirection, GameplayTapEffect, GameplayTapEvent};
 
     fn cell(x: u32, y: u32) -> BoardCell {
         BoardCell::new(x, y)
@@ -226,5 +246,37 @@ mod tests {
             }
         );
         assert_eq!(solved.event, GameplayTapEvent::PuzzleSolved { clean: true });
+    }
+
+    #[test]
+    fn directional_move_moves_player_one_cell() {
+        let level = "######\n#@ $.#\n######".to_string();
+        let mut controller = GameplayController::new(vec![level], None);
+
+        let outcome = controller.move_direction_with_outcome(GameplayMoveDirection::Right);
+
+        assert_eq!(
+            outcome.effect,
+            GameplayTapEffect::PlayerMoved { to: cell(2, 1) }
+        );
+        assert_eq!(controller.board().player(), Some(cell(2, 1)));
+        assert_eq!(outcome.changes.resume_level_to_persist, Some(0));
+    }
+
+    #[test]
+    fn directional_move_pushes_adjacent_box() {
+        let level = "######\n# @$ #\n#    #\n######".to_string();
+        let mut controller = GameplayController::new(vec![level], None);
+
+        let outcome = controller.move_direction_with_outcome(GameplayMoveDirection::Right);
+
+        assert_eq!(
+            outcome.effect,
+            GameplayTapEffect::BoxMoved {
+                path: vec![cell(3, 1), cell(4, 1)]
+            }
+        );
+        assert_eq!(controller.board().player(), Some(cell(3, 1)));
+        assert!(controller.board().has_box(cell(4, 1)));
     }
 }

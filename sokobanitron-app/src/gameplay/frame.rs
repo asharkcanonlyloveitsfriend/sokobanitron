@@ -8,7 +8,7 @@
 //! request that includes the board scene and viewport, and clients hand that request to the shared
 //! presentation layer.
 
-use super::view::build_gameplay_viewport;
+use super::view::{GameplayVisibleBoardWindow, build_gameplay_visible_window};
 use crate::app::presentation::{FrameRequest, PresentMode};
 use crate::app::state::AppState;
 use presentation::assets::UiIcon;
@@ -17,7 +17,7 @@ use presentation::screen_requests::{
     GameplayScreenMode, GameplayScreenRequest, LevelSelectScreenRequest, LevelSetListEntry,
     LevelSetSelectScreenRequest,
 };
-use sokobanitron_gameplay::GameplayController;
+use sokobanitron_gameplay::{BoardView, GameplayController};
 
 pub fn build_gameplay_frame_request(
     controller: &GameplayController,
@@ -132,29 +132,77 @@ pub fn build_current_gameplay_screen_frame_request(
     }
 }
 
-fn build_gameplay_screen_request(
-    controller: &GameplayController,
-    app_state: &AppState,
-    mode: GameplayScreenMode,
-) -> GameplayScreenRequest {
-    let board = controller.board();
-    GameplayScreenRequest {
-        board: board.clone(),
-        viewport: build_gameplay_viewport(&app_state.gameplay, board),
-        level_number: controller.current_level() + 1,
-        mode,
-    }
-}
-
 fn build_gameplay_presentation_update(
     controller: &GameplayController,
     app_state: &AppState,
     mode: GameplayScreenMode,
     cause: GameplayPresentationCause,
 ) -> GameplayPresentationUpdate {
+    let board = controller.board();
+    let visible_window = build_gameplay_visible_window(&app_state.gameplay, board);
+    let cause = if gameplay_window_is_cropped(board, &visible_window) {
+        localize_gameplay_presentation_cause(cause, &visible_window)
+    } else {
+        cause
+    };
     GameplayPresentationUpdate {
-        scene: build_gameplay_screen_request(controller, app_state, mode),
+        scene: GameplayScreenRequest {
+            board: visible_window.board,
+            viewport: visible_window.viewport,
+            level_number: controller.current_level() + 1,
+            mode,
+        },
         cause,
+    }
+}
+
+fn gameplay_window_is_cropped(
+    board: &BoardView,
+    visible_window: &GameplayVisibleBoardWindow,
+) -> bool {
+    visible_window.board_origin_x != 0
+        || visible_window.board_origin_y != 0
+        || visible_window.board.width() != board.width()
+        || visible_window.board.height() != board.height()
+}
+
+fn localize_gameplay_presentation_cause(
+    cause: GameplayPresentationCause,
+    visible_window: &GameplayVisibleBoardWindow,
+) -> GameplayPresentationCause {
+    match cause {
+        GameplayPresentationCause::CurrentState
+        | GameplayPresentationCause::BoxMoveRejected
+        | GameplayPresentationCause::PuzzleSolved { .. }
+        | GameplayPresentationCause::UndoApplied
+        | GameplayPresentationCause::Restarted => cause,
+        GameplayPresentationCause::SelectionChanged { selected_box } => {
+            GameplayPresentationCause::SelectionChanged {
+                selected_box: selected_box
+                    .and_then(|cell| visible_window.world_to_local_cell(cell)),
+            }
+        }
+        GameplayPresentationCause::PlayerMoved { to } => visible_window
+            .world_to_local_cell(to)
+            .map(|to| GameplayPresentationCause::PlayerMoved { to })
+            .unwrap_or(GameplayPresentationCause::CurrentState),
+        GameplayPresentationCause::BoxMoved { path } => {
+            let localized_path: Vec<_> = path
+                .into_iter()
+                .filter_map(|cell| visible_window.world_to_local_cell(cell))
+                .collect();
+            if localized_path.len() >= 2 {
+                GameplayPresentationCause::BoxMoved {
+                    path: localized_path,
+                }
+            } else {
+                GameplayPresentationCause::CurrentState
+            }
+        }
+        GameplayPresentationCause::BoxRemoved { to } => visible_window
+            .world_to_local_cell(to)
+            .map(|to| GameplayPresentationCause::BoxRemoved { to })
+            .unwrap_or(GameplayPresentationCause::CurrentState),
     }
 }
 
