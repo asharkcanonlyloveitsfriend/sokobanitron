@@ -73,6 +73,7 @@ pub struct AppState {
     pub editor: EditorUiState,
     pub gameplay: GameplayUiState,
     pub editor_available: bool,
+    pub supports_multi_touch: bool,
 }
 
 impl AppState {
@@ -143,6 +144,7 @@ mod tests {
         assert!(!app_state.is_overlay_open());
         assert!(app_state.is_gameplay_screen());
         assert!(!app_state.is_editor_screen());
+        assert!(!app_state.supports_multi_touch);
         assert_eq!(app_state.level_select_page_start(), None);
         assert_eq!(app_state.active_screen(), AppScreen::Gameplay);
         assert_eq!(app_state.interaction_mode(), AppInteractionMode::Gameplay);

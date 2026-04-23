@@ -58,6 +58,7 @@ impl App {
         );
         let mut app_state = AppState {
             editor_available: true,
+            supports_multi_touch: false,
             ..AppState::default()
         };
         resize_gameplay_surface(&mut app_state.gameplay, INITIAL_WIDTH, INITIAL_HEIGHT);

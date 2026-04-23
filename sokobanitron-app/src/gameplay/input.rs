@@ -97,7 +97,7 @@ pub(crate) fn gameplay_pointer_tap(
 ) -> AppInput {
     let tap = gameplay
         .interaction
-        .pointer
+        .touch
         .synthetic_tap(MOUSE_POINTER_ID, x, y, Instant::now());
     interpret_gameplay_gesture(gameplay, surface, policy, PointerGesture::Tap(tap), None)
 }
@@ -112,27 +112,26 @@ pub(crate) fn gameplay_pointer_event(
     y: f64,
 ) -> AppInput {
     let event = PointerEvent::new(id, phase, x, y, Instant::now());
-    let pinch_update = gameplay.interaction.pinch.handle_event(event);
-    if pinch_update.reset_single_pointer {
-        gameplay.interaction.pointer.reset();
+    let drag_start = match phase {
+        PointerPhase::Ended | PointerPhase::Cancelled => {
+            gameplay.interaction.touch.active_start_position()
+        }
+        PointerPhase::Started | PointerPhase::Moved => None,
+    };
+    let touch_update = gameplay.interaction.touch.handle_touch_event(event);
+    if touch_update.reset_screen_state {
         gameplay.interaction.double_tap.clear();
     }
-    if let Some(pinch) = pinch_update.gesture {
+    if let Some(pinch) = touch_update.pinch {
         gameplay.interaction.double_tap.clear();
         return interpret_gameplay_pinch(gameplay, surface, pinch);
     }
-    if pinch_update.suppress_single_pointer {
+    if touch_update.suppress_screen_gestures {
         gameplay.interaction.double_tap.clear();
         return AppInput::NoOp;
     }
 
-    let drag_start = match phase {
-        PointerPhase::Ended | PointerPhase::Cancelled => {
-            gameplay.interaction.pointer.active_start_position()
-        }
-        PointerPhase::Started | PointerPhase::Moved => None,
-    };
-    let Some(gesture) = gameplay.interaction.pointer.handle_event(event) else {
+    let Some(gesture) = touch_update.gesture else {
         return AppInput::NoOp;
     };
     interpret_gameplay_gesture(gameplay, surface, policy, gesture, drag_start)

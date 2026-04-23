@@ -4,13 +4,11 @@
 //! it shapes editor domain state into a visible window and viewport, but it does not
 //! own editor commands, undo/history, or any drawing logic.
 
-use presentation::layout::{
-    BoardViewport, ScreenRect, editor_bottom_left_button_rect, editor_bottom_right_button_rect,
-};
+use presentation::layout::BoardViewport;
 use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
 use sokobanitron_level_editor::{EditorMode, LevelEditor, NonVoidBounds, Tile};
 
-use crate::shared::{DoubleTapTracker, PointerId, SinglePointerGestureState};
+use crate::shared::{DoubleTapTracker, PointerId, TouchPointerState, TouchStartPolicy};
 use std::time::Duration;
 
 use super::paint_mode::PaintMode;
@@ -40,7 +38,7 @@ pub struct EditorViewportState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EditorInteractionState {
     pub cursor_position: Option<(i32, i32)>,
-    pub pointer: SinglePointerGestureState,
+    pub touch: TouchPointerState,
     pub active_stroke: Option<ActiveEditorStroke>,
     pub double_tap: DoubleTapTracker<(i32, i32)>,
     pub double_tap_window: Duration,
@@ -50,7 +48,7 @@ impl Default for EditorInteractionState {
     fn default() -> Self {
         Self {
             cursor_position: None,
-            pointer: SinglePointerGestureState::default(),
+            touch: TouchPointerState::with_touch_start_policy(TouchStartPolicy::Deferred),
             active_stroke: None,
             double_tap: DoubleTapTracker::default(),
             double_tap_window: Duration::from_millis(325),
@@ -86,7 +84,7 @@ pub fn resize_editor_surface(editor: &mut EditorUiState, width: u32, height: u32
 }
 
 pub fn set_editor_touch_slop(editor: &mut EditorUiState, tap_slop_px: i32) {
-    editor.interaction.pointer.set_tap_slop(tap_slop_px);
+    editor.interaction.touch.set_tap_slop(tap_slop_px);
 }
 
 pub fn set_editor_double_tap_window(editor: &mut EditorUiState, window: Duration) {
@@ -94,7 +92,7 @@ pub fn set_editor_double_tap_window(editor: &mut EditorUiState, window: Duration
 }
 
 pub fn reset_editor_interaction_state(editor: &mut EditorUiState) {
-    editor.interaction.pointer.reset();
+    editor.interaction.touch.reset();
     editor.interaction.active_stroke = None;
 }
 
@@ -319,16 +317,8 @@ fn centered_view_for_bounds(
     ))
 }
 
-pub(crate) fn zoom_out_button_rect(height: u32) -> ScreenRect {
-    editor_bottom_left_button_rect(height)
-}
-
-pub(crate) fn zoom_in_button_rect(width: u32, height: u32) -> ScreenRect {
-    editor_bottom_right_button_rect(width, height)
-}
-
 pub(crate) fn zoom_in(ui: &mut EditorUiState, editor: &LevelEditor) {
-    if ui.viewport.zoom_steps <= min_zoom_in_steps() {
+    if !can_zoom_in(ui, editor) {
         return;
     }
 

@@ -64,6 +64,7 @@ impl AndroidApp {
         );
         let mut app_state = AppState {
             editor_available: true,
+            supports_multi_touch: true,
             ..AppState::default()
         };
         resize_gameplay_surface(&mut app_state.gameplay, surface_width, surface_height);

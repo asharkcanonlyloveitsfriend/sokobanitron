@@ -6,7 +6,8 @@
 
 use crate::app::state::{AppOverlay, AppScreen, AppState};
 use crate::shared::{
-    MOUSE_POINTER_ID, PointerContact, PointerEvent, PointerGesture, PointerId, PointerPhase,
+    MOUSE_POINTER_ID, PinchDirection, PinchGesture, PointerContact, PointerEvent, PointerGesture,
+    PointerId, PointerPhase, TouchGestureUpdate,
 };
 use presentation::hit_test::ControlsButtonAction;
 use sokobanitron_level_editor::{EditorCommand, EditorMode, LevelEditor, Tile};
@@ -17,8 +18,7 @@ use super::hit_test::{
 };
 use super::paint_mode::PaintMode;
 use super::view::{
-    ActiveEditorStroke, EditorUiState, can_zoom_in, can_zoom_out, reset_editor_interaction_state,
-    zoom_in, zoom_out,
+    ActiveEditorStroke, EditorUiState, reset_editor_interaction_state, zoom_in, zoom_out,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,7 +33,7 @@ pub fn editor_cursor_moved(app_state: &mut AppState, editor: &mut LevelEditor, x
     if app_state
         .editor
         .interaction
-        .pointer
+        .touch
         .is_active_pointer(MOUSE_POINTER_ID)
     {
         handle_editor_pointer_event(
@@ -75,19 +75,19 @@ pub fn editor_mouse_released(app_state: &mut AppState) {
         app_state
             .editor
             .interaction
-            .pointer
+            .touch
             .active_position()
             .map(|position| (position.x, position.y))
     }) else {
-        app_state.editor.interaction.pointer.reset();
+        app_state.editor.interaction.touch.reset();
         app_state.editor.interaction.active_stroke = None;
         return;
     };
     let Some(gesture) = app_state
         .editor
         .interaction
-        .pointer
-        .handle_event(PointerEvent::new(
+        .touch
+        .handle_pointer_event(PointerEvent::new(
             MOUSE_POINTER_ID,
             PointerPhase::Ended,
             x as f64,
@@ -118,11 +118,20 @@ pub fn editor_touch(
     x: f64,
     y: f64,
 ) -> Option<EditorUiAction> {
-    handle_editor_pointer_event(
-        app_state,
-        editor,
-        PointerEvent::new(id, phase, x, y, Instant::now()),
-    )
+    let event = PointerEvent::new(id, phase, x, y, Instant::now());
+    let touch_update = app_state.editor.interaction.touch.handle_touch_event(event);
+    if touch_update.reset_screen_state {
+        reset_editor_screen_touch_state(&mut app_state.editor);
+    }
+    if let Some(pinch) = touch_update.pinch {
+        return handle_editor_pinch(app_state, editor, pinch);
+    }
+    if touch_update.suppress_screen_gestures {
+        app_state.editor.interaction.double_tap.clear();
+        return None;
+    }
+
+    handle_editor_touch_update(app_state, editor, touch_update)
 }
 
 fn handle_editor_pointer_event(
@@ -130,8 +139,21 @@ fn handle_editor_pointer_event(
     editor: &mut LevelEditor,
     event: PointerEvent,
 ) -> Option<EditorUiAction> {
-    let gesture = app_state.editor.interaction.pointer.handle_event(event)?;
+    let gesture = app_state
+        .editor
+        .interaction
+        .touch
+        .handle_pointer_event(event)?;
     handle_editor_gesture(app_state, editor, gesture)
+}
+
+fn handle_editor_touch_update(
+    app_state: &mut AppState,
+    editor: &mut LevelEditor,
+    update: TouchGestureUpdate,
+) -> Option<EditorUiAction> {
+    let gesture = update.gesture?;
+    handle_editor_touch_gesture(app_state, editor, gesture, update.deferred_start)
 }
 
 fn handle_editor_gesture(
@@ -162,6 +184,113 @@ fn handle_editor_gesture(
             clear_active_stroke(app_state, tap.id);
             None
         }
+    }
+}
+
+fn handle_editor_touch_gesture(
+    app_state: &mut AppState,
+    editor: &mut LevelEditor,
+    gesture: PointerGesture,
+    deferred_start: Option<PointerContact>,
+) -> Option<EditorUiAction> {
+    match gesture {
+        PointerGesture::Started(_) => None,
+        PointerGesture::DragStarted(contact) | PointerGesture::DragMoved(contact) => {
+            begin_touch_drag_if_needed(app_state, editor, deferred_start);
+            continue_editor_drag(app_state, editor, contact);
+            None
+        }
+        PointerGesture::Ended(contact) | PointerGesture::Cancelled(contact) => {
+            clear_active_stroke(app_state, contact.id);
+            None
+        }
+        PointerGesture::Tap(tap) => handle_editor_touch_tap(
+            app_state,
+            editor,
+            deferred_start,
+            PointerContact {
+                id: tap.id,
+                position: tap.position,
+                at: tap.at,
+            },
+        ),
+    }
+}
+
+fn handle_editor_pinch(
+    app_state: &mut AppState,
+    editor: &mut LevelEditor,
+    pinch: PinchGesture,
+) -> Option<EditorUiAction> {
+    app_state.editor.interaction.double_tap.clear();
+    if app_state.is_editor_menu_open() {
+        return None;
+    }
+
+    match pinch.direction {
+        PinchDirection::Out => zoom_in(&mut app_state.editor, editor),
+        PinchDirection::In => zoom_out(&mut app_state.editor),
+    }
+    None
+}
+
+fn handle_editor_touch_tap(
+    app_state: &mut AppState,
+    editor: &mut LevelEditor,
+    deferred_start: Option<PointerContact>,
+    contact: PointerContact,
+) -> Option<EditorUiAction> {
+    let Some(start) = deferred_start else {
+        clear_active_stroke(app_state, contact.id);
+        return None;
+    };
+
+    let surface = build_editor_surface_model(app_state, editor);
+    let (screen_x, screen_y) = start.position.as_f64();
+    let target = editor_surface_target_at(&surface, screen_x, screen_y);
+    let started_contact = PointerContact {
+        id: start.id,
+        position: start.position,
+        at: start.at,
+    };
+
+    let action = if app_state.is_editor_menu_open() {
+        handle_editor_menu_target(app_state, target)
+    } else {
+        handle_editor_started_target(app_state, editor, started_contact, target);
+        None
+    };
+    clear_active_stroke(app_state, contact.id);
+    action
+}
+
+fn begin_touch_drag_if_needed(
+    app_state: &mut AppState,
+    editor: &mut LevelEditor,
+    deferred_start: Option<PointerContact>,
+) {
+    let Some(start) = deferred_start else {
+        return;
+    };
+    if !matches!(editor.mode(), EditorMode::Draw) || app_state.is_editor_menu_open() {
+        return;
+    }
+
+    let surface = build_editor_surface_model(app_state, editor);
+    let (screen_x, screen_y) = start.position.as_f64();
+    let target = editor_surface_target_at(&surface, screen_x, screen_y);
+    if let Some(EditorSurfaceTarget::BoardCell { world_x, world_y }) = target {
+        begin_editor_board_interaction(
+            app_state,
+            editor,
+            PointerContact {
+                id: start.id,
+                position: start.position,
+                at: start.at,
+            },
+            world_x,
+            world_y,
+        );
     }
 }
 
@@ -217,10 +346,9 @@ fn apply_editor_control_slot(
     slot: EditorControlSlot,
 ) {
     match editor.mode() {
-        EditorMode::Draw => match resolve_zoom_action(&app_state.editor, editor, slot) {
-            Some(ZoomAction::ZoomIn) => zoom_in(&mut app_state.editor, editor),
-            Some(ZoomAction::ZoomOut) => zoom_out(&mut app_state.editor),
-            None => {}
+        EditorMode::Draw => match slot {
+            EditorControlSlot::BottomLeft => zoom_out(&mut app_state.editor),
+            EditorControlSlot::BottomRight => zoom_in(&mut app_state.editor, editor),
         },
         EditorMode::Move => match resolve_move_action(editor, slot) {
             Some(ControlsButtonAction::Undo) => {
@@ -319,6 +447,11 @@ fn leave_editor_for_gameplay(app_state: &mut AppState) {
     reset_editor_interaction_state(&mut app_state.editor);
 }
 
+fn reset_editor_screen_touch_state(ui: &mut EditorUiState) {
+    ui.interaction.active_stroke = None;
+    ui.interaction.double_tap.clear();
+}
+
 fn resolve_paint_mode(
     ui: &mut EditorUiState,
     editor: &LevelEditor,
@@ -343,18 +476,6 @@ fn resolve_paint_mode(
     }
 }
 
-fn resolve_zoom_action(
-    ui: &EditorUiState,
-    editor: &LevelEditor,
-    slot: EditorControlSlot,
-) -> Option<ZoomAction> {
-    match slot {
-        EditorControlSlot::BottomLeft if can_zoom_out(ui) => Some(ZoomAction::ZoomOut),
-        EditorControlSlot::BottomRight if can_zoom_in(ui, editor) => Some(ZoomAction::ZoomIn),
-        _ => None,
-    }
-}
-
 fn resolve_move_action(
     editor: &LevelEditor,
     slot: EditorControlSlot,
@@ -368,17 +489,14 @@ fn resolve_move_action(
     }
 }
 
-#[derive(Clone, Copy)]
-enum ZoomAction {
-    ZoomIn,
-    ZoomOut,
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{EditorUiAction, editor_mouse_pressed};
+    use super::{EditorUiAction, editor_mouse_pressed, editor_touch};
     use crate::app::state::{AppOverlay, AppScreen, AppState};
-    use presentation::layout::overlay_secondary_action_button_rect;
+    use crate::shared::PointerPhase;
+    use presentation::layout::{
+        editor_bottom_right_button_rect, overlay_secondary_action_button_rect,
+    };
     use sokobanitron_level_editor::{DrawTool, EditorCommand, EditorMode, LevelEditor};
 
     #[test]
@@ -420,5 +538,162 @@ mod tests {
 
         assert_eq!(action, Some(EditorUiAction::SavePuzzle));
         assert!(!app_state.is_editor_menu_open());
+    }
+
+    #[test]
+    fn desktop_draw_mode_zoom_button_zooms_in() {
+        let mut app_state = AppState {
+            supports_multi_touch: false,
+            ..AppState::default()
+        };
+        app_state.ui.screen = AppScreen::Editor;
+        let mut editor = LevelEditor::new();
+        let rect = editor_bottom_right_button_rect(
+            app_state.editor.viewport.surface_width,
+            app_state.editor.viewport.surface_height,
+        );
+
+        let action = editor_mouse_pressed(
+            &mut app_state,
+            &mut editor,
+            (rect.x + rect.w / 2) as f64,
+            (rect.y + rect.h / 2) as f64,
+        );
+
+        assert_eq!(action, None);
+        assert_eq!(app_state.editor.viewport.zoom_steps, -1);
+    }
+
+    #[test]
+    fn pinch_out_zooms_in_editor_in_draw_mode() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        let mut editor = LevelEditor::new();
+        let before = editor.snapshot();
+
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Started,
+            100.0,
+            100.0,
+        );
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            2,
+            PointerPhase::Started,
+            200.0,
+            100.0,
+        );
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Moved,
+            70.0,
+            100.0,
+        );
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            2,
+            PointerPhase::Moved,
+            230.0,
+            100.0,
+        );
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Ended,
+            70.0,
+            100.0,
+        );
+
+        assert_eq!(app_state.editor.viewport.zoom_steps, -1);
+        assert_eq!(editor.snapshot(), before);
+    }
+
+    #[test]
+    fn pinch_in_zooms_out_editor_in_move_mode() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        app_state.editor.viewport.zoom_steps = -1;
+        let mut editor = LevelEditor::new();
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Move));
+
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Started,
+            80.0,
+            100.0,
+        );
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            2,
+            PointerPhase::Started,
+            220.0,
+            100.0,
+        );
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Moved,
+            120.0,
+            100.0,
+        );
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            2,
+            PointerPhase::Moved,
+            180.0,
+            100.0,
+        );
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Ended,
+            120.0,
+            100.0,
+        );
+
+        assert_eq!(app_state.editor.viewport.zoom_steps, 0);
+    }
+
+    #[test]
+    fn single_touch_tap_in_draw_mode_still_paints() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        let mut editor = LevelEditor::new();
+        let before = editor.snapshot();
+        let screen_x = (app_state.editor.viewport.surface_width / 2) as f64;
+        let screen_y = (app_state.editor.viewport.surface_height / 2) as f64;
+
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Started,
+            screen_x,
+            screen_y,
+        );
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Ended,
+            screen_x,
+            screen_y,
+        );
+
+        assert_ne!(editor.snapshot(), before);
     }
 }

@@ -41,8 +41,12 @@ pub fn build_current_editor_frame_request(
                 board: visible.board,
                 viewport: visible.viewport,
                 draw_mode_active: matches!(snapshot.mode, EditorMode::Draw),
-                can_zoom_out: can_zoom_out(&app_state.editor),
-                can_zoom_in: can_zoom_in(&app_state.editor, editor),
+                can_zoom_out: !app_state.supports_multi_touch
+                    && matches!(snapshot.mode, EditorMode::Draw)
+                    && can_zoom_out(&app_state.editor),
+                can_zoom_in: !app_state.supports_multi_touch
+                    && matches!(snapshot.mode, EditorMode::Draw)
+                    && can_zoom_in(&app_state.editor, editor),
                 can_undo: snapshot.can_undo,
                 can_restart: snapshot.can_restart,
             },
@@ -234,5 +238,43 @@ mod tests {
                 .iter()
                 .all(|hint| hint.state == EditorHintState::Ready(EditorHintChange::Increase))
         );
+    }
+
+    #[test]
+    fn desktop_editor_frame_exposes_draw_mode_zoom_controls() {
+        let app_state = AppState {
+            supports_multi_touch: false,
+            ..AppState::default()
+        };
+        let editor = LevelEditor::new();
+
+        let FrameRequest::Editor { screen } =
+            build_current_editor_frame_request(&app_state, &editor)
+        else {
+            panic!("expected editor frame");
+        };
+
+        assert!(screen.draw_mode_active);
+        assert!(screen.can_zoom_out);
+        assert!(screen.can_zoom_in);
+    }
+
+    #[test]
+    fn touch_capable_editor_frame_hides_draw_mode_zoom_controls() {
+        let app_state = AppState {
+            supports_multi_touch: true,
+            ..AppState::default()
+        };
+        let editor = LevelEditor::new();
+
+        let FrameRequest::Editor { screen } =
+            build_current_editor_frame_request(&app_state, &editor)
+        else {
+            panic!("expected editor frame");
+        };
+
+        assert!(screen.draw_mode_active);
+        assert!(!screen.can_zoom_out);
+        assert!(!screen.can_zoom_in);
     }
 }

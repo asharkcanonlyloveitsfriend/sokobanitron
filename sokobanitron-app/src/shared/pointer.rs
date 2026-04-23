@@ -387,6 +387,158 @@ impl Default for TwoFingerPinchState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TouchStartPolicy {
+    #[default]
+    Immediate,
+    Deferred,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TouchGestureUpdate {
+    pub gesture: Option<PointerGesture>,
+    pub pinch: Option<PinchGesture>,
+    pub deferred_start: Option<PointerContact>,
+    pub reset_screen_state: bool,
+    pub suppress_screen_gestures: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TouchPointerState {
+    pointer: SinglePointerGestureState,
+    pinch: TwoFingerPinchState,
+    pending_touch_start: Option<PointerContact>,
+    touch_start_policy: TouchStartPolicy,
+}
+
+impl TouchPointerState {
+    pub fn with_touch_start_policy(touch_start_policy: TouchStartPolicy) -> Self {
+        Self {
+            pointer: SinglePointerGestureState::default(),
+            pinch: TwoFingerPinchState::default(),
+            pending_touch_start: None,
+            touch_start_policy,
+        }
+    }
+
+    pub fn set_tap_slop(&mut self, tap_slop_px: i32) {
+        self.pointer.set_tap_slop(tap_slop_px);
+    }
+
+    pub fn handle_touch_event(&mut self, event: PointerEvent) -> TouchGestureUpdate {
+        let mut update = TouchGestureUpdate::default();
+        let pinch_update = self.pinch.handle_event(event);
+        if pinch_update.reset_single_pointer {
+            self.pointer.reset();
+            self.pending_touch_start = None;
+            update.reset_screen_state = true;
+        }
+        if let Some(pinch) = pinch_update.gesture {
+            update.pinch = Some(pinch);
+            update.suppress_screen_gestures = pinch_update.suppress_single_pointer;
+            return update;
+        }
+        if pinch_update.suppress_single_pointer {
+            update.suppress_screen_gestures = true;
+            return update;
+        }
+
+        let Some(gesture) = self.pointer.handle_event(event) else {
+            return update;
+        };
+        match self.touch_start_policy {
+            TouchStartPolicy::Immediate => {
+                update.gesture = Some(gesture);
+            }
+            TouchStartPolicy::Deferred => {
+                self.apply_deferred_touch_policy(gesture, &mut update);
+            }
+        }
+        update
+    }
+
+    pub fn handle_pointer_event(&mut self, event: PointerEvent) -> Option<PointerGesture> {
+        self.pointer.handle_event(event)
+    }
+
+    pub fn synthetic_tap(&mut self, id: PointerId, x: f64, y: f64, at: Instant) -> TapGesture {
+        self.pointer.synthetic_tap(id, x, y, at)
+    }
+
+    pub fn is_active_pointer(&self, id: PointerId) -> bool {
+        self.pointer.is_active_pointer(id)
+    }
+
+    pub fn active_position(&self) -> Option<ScreenPoint> {
+        self.pointer.active_position()
+    }
+
+    pub fn active_start_position(&self) -> Option<ScreenPoint> {
+        self.pointer.active_start_position()
+    }
+
+    pub fn reset(&mut self) {
+        self.pointer.reset();
+        self.pinch.reset();
+        self.pending_touch_start = None;
+    }
+
+    fn apply_deferred_touch_policy(
+        &mut self,
+        gesture: PointerGesture,
+        update: &mut TouchGestureUpdate,
+    ) {
+        match gesture {
+            PointerGesture::Started(contact) => {
+                self.pending_touch_start = Some(contact);
+            }
+            PointerGesture::DragStarted(contact) => {
+                update.deferred_start = self.take_pending_touch_start(contact.id);
+                update.gesture = Some(PointerGesture::DragStarted(contact));
+            }
+            PointerGesture::DragMoved(contact) => {
+                update.gesture = Some(PointerGesture::DragMoved(contact));
+            }
+            PointerGesture::Ended(contact) => {
+                self.clear_pending_touch_start(contact.id);
+                update.gesture = Some(PointerGesture::Ended(contact));
+            }
+            PointerGesture::Cancelled(contact) => {
+                self.clear_pending_touch_start(contact.id);
+                update.gesture = Some(PointerGesture::Cancelled(contact));
+            }
+            PointerGesture::Tap(tap) => {
+                update.deferred_start = self.take_pending_touch_start(tap.id);
+                update.gesture = Some(PointerGesture::Tap(tap));
+            }
+        }
+    }
+
+    fn take_pending_touch_start(&mut self, pointer_id: PointerId) -> Option<PointerContact> {
+        let pending = self.pending_touch_start?;
+        if pending.id != pointer_id {
+            return None;
+        }
+        self.pending_touch_start = None;
+        Some(pending)
+    }
+
+    fn clear_pending_touch_start(&mut self, pointer_id: PointerId) {
+        if self
+            .pending_touch_start
+            .is_some_and(|pending| pending.id == pointer_id)
+        {
+            self.pending_touch_start = None;
+        }
+    }
+}
+
+impl Default for TouchPointerState {
+    fn default() -> Self {
+        Self::with_touch_start_policy(TouchStartPolicy::default())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DoubleTapTracker<T> {
     last_tap: Option<DoubleTapRecord<T>>,
@@ -450,7 +602,8 @@ fn distance_px(first: ScreenPoint, second: ScreenPoint) -> i32 {
 mod tests {
     use super::{
         DoubleTapTracker, MOUSE_POINTER_ID, PinchDirection, PointerEvent, PointerGesture,
-        PointerPhase, SinglePointerGestureState, TwoFingerPinchState,
+        PointerPhase, SinglePointerGestureState, TouchPointerState, TouchStartPolicy,
+        TwoFingerPinchState,
     };
     use std::time::{Duration, Instant};
 
@@ -594,5 +747,82 @@ mod tests {
         let final_update =
             state.handle_event(PointerEvent::new(1, PointerPhase::Ended, 10.0, 10.0, at));
         assert!(!final_update.suppress_single_pointer);
+    }
+
+    #[test]
+    fn immediate_touch_state_emits_started_and_tap() {
+        let at = Instant::now();
+        let mut state = TouchPointerState::default();
+
+        let started =
+            state.handle_touch_event(PointerEvent::new(1, PointerPhase::Started, 12.0, 34.0, at));
+        assert!(matches!(started.gesture, Some(PointerGesture::Started(_))));
+        assert_eq!(started.deferred_start, None);
+
+        let ended =
+            state.handle_touch_event(PointerEvent::new(1, PointerPhase::Ended, 12.0, 34.0, at));
+        assert!(matches!(ended.gesture, Some(PointerGesture::Tap(_))));
+        assert_eq!(ended.deferred_start, None);
+    }
+
+    #[test]
+    fn deferred_touch_state_converts_tap_into_tap_with_start_contact() {
+        let at = Instant::now();
+        let mut state = TouchPointerState::with_touch_start_policy(TouchStartPolicy::Deferred);
+
+        let started =
+            state.handle_touch_event(PointerEvent::new(1, PointerPhase::Started, 12.0, 34.0, at));
+        assert_eq!(started.gesture, None);
+
+        let ended =
+            state.handle_touch_event(PointerEvent::new(1, PointerPhase::Ended, 12.0, 34.0, at));
+        assert!(matches!(ended.gesture, Some(PointerGesture::Tap(_))));
+        assert_eq!(
+            ended.deferred_start.map(|contact| contact.position.x),
+            Some(12)
+        );
+        assert_eq!(
+            ended.deferred_start.map(|contact| contact.position.y),
+            Some(34)
+        );
+    }
+
+    #[test]
+    fn deferred_touch_state_carries_start_into_drag_started() {
+        let at = Instant::now();
+        let mut state = TouchPointerState::with_touch_start_policy(TouchStartPolicy::Deferred);
+
+        let _ =
+            state.handle_touch_event(PointerEvent::new(1, PointerPhase::Started, 10.0, 10.0, at));
+        let drag =
+            state.handle_touch_event(PointerEvent::new(1, PointerPhase::Moved, 30.0, 10.0, at));
+
+        assert!(matches!(drag.gesture, Some(PointerGesture::DragStarted(_))));
+        assert_eq!(
+            drag.deferred_start.map(|contact| contact.position.x),
+            Some(10)
+        );
+        assert_eq!(
+            drag.deferred_start.map(|contact| contact.position.y),
+            Some(10)
+        );
+    }
+
+    #[test]
+    fn deferred_touch_state_resets_pending_start_when_pinch_begins() {
+        let at = Instant::now();
+        let mut state = TouchPointerState::with_touch_start_policy(TouchStartPolicy::Deferred);
+
+        let _ =
+            state.handle_touch_event(PointerEvent::new(1, PointerPhase::Started, 10.0, 10.0, at));
+        let update =
+            state.handle_touch_event(PointerEvent::new(2, PointerPhase::Started, 40.0, 40.0, at));
+        assert!(update.reset_screen_state);
+        assert!(update.suppress_screen_gestures);
+
+        let ended =
+            state.handle_touch_event(PointerEvent::new(1, PointerPhase::Ended, 10.0, 10.0, at));
+        assert_eq!(ended.deferred_start, None);
+        assert_eq!(ended.gesture, None);
     }
 }

@@ -63,7 +63,10 @@ impl KindleApp {
             initial_levels.initial_level_index,
             initial_levels.persisted_resume_level_index,
         );
-        let mut app_state = AppState::default();
+        let mut app_state = AppState {
+            supports_multi_touch: true,
+            ..AppState::default()
+        };
         resize_gameplay_surface(
             &mut app_state.gameplay,
             config::WIDTH as u32,

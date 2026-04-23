@@ -11,12 +11,13 @@ use presentation::hit_test::{
     overlay_primary_action_button_contains, overlay_secondary_action_button_contains,
     top_menu_toggle_button_contains,
 };
-use presentation::layout::top_left_level_button_rect;
+use presentation::layout::{
+    editor_bottom_left_button_rect, editor_bottom_right_button_rect, top_left_level_button_rect,
+};
 use sokobanitron_level_editor::LevelEditor;
 
 use super::view::{
-    VisibleBoardWindow, build_visible_window, can_save_editor_puzzle, zoom_in_button_rect,
-    zoom_out_button_rect,
+    VisibleBoardWindow, build_visible_window, can_save_editor_puzzle, can_zoom_in, can_zoom_out,
 };
 
 #[derive(Debug)]
@@ -24,6 +25,11 @@ pub(super) struct EditorSurfaceModel {
     pub(super) surface_width: u32,
     pub(super) surface_height: u32,
     pub(super) show_save_button: bool,
+    pub(super) draw_mode_active: bool,
+    pub(super) can_zoom_out: bool,
+    pub(super) can_zoom_in: bool,
+    pub(super) can_undo: bool,
+    pub(super) can_restart: bool,
     pub(super) visible_window: VisibleBoardWindow,
 }
 
@@ -51,6 +57,15 @@ pub(super) fn build_editor_surface_model(
         surface_width: app_state.editor.viewport.surface_width,
         surface_height: app_state.editor.viewport.surface_height,
         show_save_button: can_save_editor_puzzle(editor),
+        draw_mode_active: matches!(editor.mode(), sokobanitron_level_editor::EditorMode::Draw),
+        can_zoom_out: !app_state.supports_multi_touch
+            && matches!(editor.mode(), sokobanitron_level_editor::EditorMode::Draw)
+            && can_zoom_out(&app_state.editor),
+        can_zoom_in: !app_state.supports_multi_touch
+            && matches!(editor.mode(), sokobanitron_level_editor::EditorMode::Draw)
+            && can_zoom_in(&app_state.editor, editor),
+        can_undo: editor.can_undo(),
+        can_restart: editor.can_restart(),
         visible_window: build_visible_window(&app_state.editor, editor),
     }
 }
@@ -84,17 +99,38 @@ pub(super) fn editor_surface_target_at(
     {
         return Some(EditorSurfaceTarget::OverlaySecondaryAction);
     }
-    if zoom_out_button_rect(surface.surface_height).contains(screen_x, screen_y) {
-        return Some(EditorSurfaceTarget::ControlSlot(
-            EditorControlSlot::BottomLeft,
-        ));
-    }
-    if zoom_in_button_rect(surface.surface_width, surface.surface_height)
-        .contains(screen_x, screen_y)
-    {
-        return Some(EditorSurfaceTarget::ControlSlot(
-            EditorControlSlot::BottomRight,
-        ));
+    if surface.draw_mode_active {
+        if surface.can_zoom_out
+            && editor_bottom_left_button_rect(surface.surface_height).contains(screen_x, screen_y)
+        {
+            return Some(EditorSurfaceTarget::ControlSlot(
+                EditorControlSlot::BottomLeft,
+            ));
+        }
+        if surface.can_zoom_in
+            && editor_bottom_right_button_rect(surface.surface_width, surface.surface_height)
+                .contains(screen_x, screen_y)
+        {
+            return Some(EditorSurfaceTarget::ControlSlot(
+                EditorControlSlot::BottomRight,
+            ));
+        }
+    } else {
+        if surface.can_undo
+            && editor_bottom_left_button_rect(surface.surface_height).contains(screen_x, screen_y)
+        {
+            return Some(EditorSurfaceTarget::ControlSlot(
+                EditorControlSlot::BottomLeft,
+            ));
+        }
+        if surface.can_restart
+            && editor_bottom_right_button_rect(surface.surface_width, surface.surface_height)
+                .contains(screen_x, screen_y)
+        {
+            return Some(EditorSurfaceTarget::ControlSlot(
+                EditorControlSlot::BottomRight,
+            ));
+        }
     }
 
     if let Some((world_x, world_y)) = surface
@@ -111,7 +147,9 @@ pub(super) fn editor_surface_target_at(
 mod tests {
     use super::{EditorSurfaceTarget, build_editor_surface_model, editor_surface_target_at};
     use crate::app::state::AppState;
-    use presentation::layout::overlay_secondary_action_button_rect;
+    use presentation::layout::{
+        editor_bottom_left_button_rect, overlay_secondary_action_button_rect,
+    };
     use sokobanitron_gameplay::BoardCell;
     use sokobanitron_level_editor::{DrawTool, EditorCommand, EditorMode, LevelEditor};
 
@@ -215,6 +253,87 @@ mod tests {
                 (rect.y + rect.h / 2) as f64,
             ),
             Some(EditorSurfaceTarget::OverlaySecondaryAction)
+        );
+    }
+
+    #[test]
+    fn touch_capable_draw_mode_has_no_bottom_zoom_controls() {
+        let app_state = AppState {
+            supports_multi_touch: true,
+            ..AppState::default()
+        };
+        let editor = LevelEditor::new();
+        let surface = build_editor_surface_model(&app_state, &editor);
+        let rect = editor_bottom_left_button_rect(surface.surface_height);
+
+        assert!(!matches!(
+            editor_surface_target_at(
+                &surface,
+                (rect.x + rect.w / 2) as f64,
+                (rect.y + rect.h / 2) as f64
+            ),
+            Some(EditorSurfaceTarget::ControlSlot(_))
+        ));
+    }
+
+    #[test]
+    fn desktop_draw_mode_bottom_left_control_hits_zoom_out() {
+        let app_state = AppState {
+            supports_multi_touch: false,
+            ..AppState::default()
+        };
+        let editor = LevelEditor::new();
+        let surface = build_editor_surface_model(&app_state, &editor);
+        let rect = editor_bottom_left_button_rect(surface.surface_height);
+
+        assert_eq!(
+            editor_surface_target_at(
+                &surface,
+                (rect.x + rect.w / 2) as f64,
+                (rect.y + rect.h / 2) as f64
+            ),
+            Some(EditorSurfaceTarget::ControlSlot(
+                super::EditorControlSlot::BottomLeft
+            ))
+        );
+    }
+
+    #[test]
+    fn move_mode_bottom_left_control_still_hits_undo() {
+        let app_state = AppState::default();
+        let mut editor = LevelEditor::new();
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 2,
+            cell_y: 0,
+            tool: DrawTool::Floor,
+        });
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 0,
+            cell_y: 0,
+            tool: DrawTool::GoalWithBox,
+        });
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Move));
+        editor.apply_command(EditorCommand::SelectBox {
+            cell_x: 0,
+            cell_y: 0,
+        });
+        editor.apply_command(EditorCommand::MoveSelectedBoxTo {
+            cell_x: 1,
+            cell_y: 0,
+        });
+
+        let surface = build_editor_surface_model(&app_state, &editor);
+        let rect = editor_bottom_left_button_rect(surface.surface_height);
+
+        assert_eq!(
+            editor_surface_target_at(
+                &surface,
+                (rect.x + rect.w / 2) as f64,
+                (rect.y + rect.h / 2) as f64
+            ),
+            Some(EditorSurfaceTarget::ControlSlot(
+                super::EditorControlSlot::BottomLeft
+            ))
         );
     }
 }

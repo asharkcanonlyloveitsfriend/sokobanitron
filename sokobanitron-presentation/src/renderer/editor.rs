@@ -155,7 +155,7 @@ fn draw_editor_controls(
                 editor_bottom_left_button_rect(height),
                 "-",
                 UI_TEXT_SCALE,
-                0,
+                1,
                 button_text_color(theme),
             );
         }
@@ -167,7 +167,7 @@ fn draw_editor_controls(
                 editor_bottom_right_button_rect(width, height),
                 "+",
                 UI_TEXT_SCALE,
-                0,
+                1,
                 button_text_color(theme),
             );
         }

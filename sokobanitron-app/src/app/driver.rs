@@ -955,7 +955,7 @@ mod tests {
                 .app_state
                 .editor
                 .interaction
-                .pointer
+                .touch
                 .active_position()
                 .is_some()
         );
@@ -968,7 +968,7 @@ mod tests {
                 .app_state
                 .editor
                 .interaction
-                .pointer
+                .touch
                 .active_position()
                 .is_none()
         );
@@ -1042,6 +1042,17 @@ mod tests {
         )
         .unwrap();
 
+        handle_pointer_input_and_render_in_context(
+            &mut context,
+            AppPointerInput::Pointer {
+                id: 7,
+                phase: PointerPhase::Ended,
+                x: rect_center_x(rect),
+                y: rect_center_y(rect),
+            },
+        )
+        .unwrap();
+
         assert!(context.app_state.is_editor_screen());
         assert_eq!(context.app_state.ui.overlay, None);
         assert_eq!(context.app_state.gameplay.level_sets.len(), 1);
@@ -1073,7 +1084,7 @@ mod tests {
                 .app_state
                 .editor
                 .interaction
-                .pointer
+                .touch
                 .active_position()
                 .is_some()
         );
@@ -1087,7 +1098,7 @@ mod tests {
                 .app_state
                 .editor
                 .interaction
-                .pointer
+                .touch
                 .active_position()
                 .is_none()
         );

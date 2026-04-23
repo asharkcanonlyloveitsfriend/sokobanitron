@@ -4,7 +4,7 @@
 //! and rendering can use the same device-agnostic viewport computation.
 
 use crate::persistence::LevelSetCatalogEntry;
-use crate::shared::{DoubleTapTracker, SinglePointerGestureState, TwoFingerPinchState};
+use crate::shared::{DoubleTapTracker, TouchPointerState};
 use presentation::layout::{
     BOARD_VERTICAL_MARGIN, BoardViewport, fit_board_viewport_for_controls_capped,
 };
@@ -36,8 +36,7 @@ pub struct GameplayViewportState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GameplayInteractionState {
-    pub(crate) pointer: SinglePointerGestureState,
-    pub(crate) pinch: TwoFingerPinchState,
+    pub(crate) touch: TouchPointerState,
     pub(crate) double_tap: DoubleTapTracker<BoardCell>,
     pub(crate) double_tap_window: Duration,
 }
@@ -45,8 +44,7 @@ pub(crate) struct GameplayInteractionState {
 impl Default for GameplayInteractionState {
     fn default() -> Self {
         Self {
-            pointer: SinglePointerGestureState::default(),
-            pinch: TwoFingerPinchState::default(),
+            touch: TouchPointerState::default(),
             double_tap: DoubleTapTracker::default(),
             double_tap_window: Duration::from_millis(325),
         }
@@ -132,7 +130,7 @@ pub fn resize_gameplay_surface(gameplay: &mut GameplayUiState, width: u32, heigh
 }
 
 pub fn set_gameplay_touch_slop(gameplay: &mut GameplayUiState, tap_slop_px: i32) {
-    gameplay.interaction.pointer.set_tap_slop(tap_slop_px);
+    gameplay.interaction.touch.set_tap_slop(tap_slop_px);
 }
 
 pub fn set_gameplay_double_tap_window(gameplay: &mut GameplayUiState, window: Duration) {
