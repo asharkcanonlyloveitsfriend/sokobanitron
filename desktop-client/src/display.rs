@@ -1,38 +1,24 @@
 use crate::app_driver::App;
-use sokobanitron_app::app::{FrameRequest, FrameSink, build_current_app_screen_frame_request};
+use sokobanitron_app::app::{FrameRequest, FrameSink};
 
 impl App {
     pub(crate) fn render_current(&mut self) {
-        let request =
-            build_current_app_screen_frame_request(&self.controller, &self.app_state, &self.editor);
+        let request = self.runtime.current_frame_request();
         let _ = self.render_request(&request);
     }
 
     pub(crate) fn render_pending_visible_presentation(&mut self) {
         if let Some(pixels) = &mut self.pixels {
-            let gray_frame = &mut self.gray_frame;
-            self.frame_renderer.draw_pending_visible_presentation(
-                &self.app_state,
-                gray_frame,
-                self.surface_width,
-                self.surface_height,
-            );
-            copy_gray_to_sepia_rgba(gray_frame, pixels.frame_mut());
+            self.runtime.draw_pending_visible_presentation();
+            copy_gray_to_sepia_rgba(self.runtime.gray_frame(), pixels.frame_mut());
             pixels.render().expect("render");
         }
     }
 
     fn render_request(&mut self, request: &FrameRequest) -> Result<(), ()> {
         if let Some(pixels) = &mut self.pixels {
-            let gray_frame = &mut self.gray_frame;
-            self.frame_renderer.draw_frame_request(
-                gray_frame,
-                self.surface_width,
-                self.surface_height,
-                request,
-                &self.preview_boards,
-            );
-            copy_gray_to_sepia_rgba(gray_frame, pixels.frame_mut());
+            self.runtime.draw_frame_request(request);
+            copy_gray_to_sepia_rgba(self.runtime.gray_frame(), pixels.frame_mut());
             pixels.render().expect("render");
         }
         Ok(())

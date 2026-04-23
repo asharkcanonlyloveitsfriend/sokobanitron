@@ -2,18 +2,13 @@ use pixels::{Pixels, SurfaceTexture};
 use sokobanitron_app::{
     app::{
         AppDriverContext, AppFrameRenderer, AppInput, AppPointerInput, AppRuntimeMut, AppState,
-        AppliedUpdate, EditorAppRuntimeMut, apply_input_and_render_in_context,
+        AppliedUpdate, EditorAppRuntimeMut, SharedAppRuntime, apply_input_and_render_in_context,
         continue_pending_render_work_and_render_in_context,
         handle_pointer_input_and_render_in_context,
     },
-    editor::resize_editor_surface,
-    gameplay::{resize_gameplay_surface, set_gameplay_level_sets},
     level_bootstrap::load_initial_levels_for_app,
-    persistence::LevelPersistence,
     shared::PointerPhase,
 };
-use sokobanitron_gameplay::{BoardView, GameplayController};
-use sokobanitron_level_editor::LevelEditor;
 use std::io;
 use std::sync::Arc;
 use winit::{
@@ -32,52 +27,29 @@ const LEVEL_SETS_ROOT: &str = "tmp/level_sets";
 pub struct App {
     window: Option<Arc<Window>>,
     pub(crate) pixels: Option<Pixels<'static>>,
-    pub(crate) gray_frame: Vec<u8>,
-    pub(crate) frame_renderer: AppFrameRenderer,
-    pub(crate) preview_boards: Vec<BoardView>,
-    pub(crate) controller: GameplayController,
-    pub(crate) app_state: AppState,
-    level_persistence: LevelPersistence,
+    pub(crate) runtime: SharedAppRuntime,
     cursor_position: Option<(f64, f64)>,
-    pub(crate) surface_width: u32,
-    pub(crate) surface_height: u32,
-    pub(crate) editor: LevelEditor,
 }
 
 impl App {
     pub fn new() -> io::Result<Self> {
         let initial_levels = load_initial_levels_for_app(std::path::Path::new(LEVEL_SETS_ROOT))?;
-        let levels = initial_levels.levels;
-        let preview_boards = initial_levels.preview_boards;
-        let controller = GameplayController::new_at_level(
-            levels.clone(),
-            initial_levels.initial_level_index,
-            initial_levels.persisted_resume_level_index,
-        );
-        let mut app_state = AppState {
+        let app_state = AppState {
             editor_available: true,
             supports_multi_touch: false,
             ..AppState::default()
         };
-        resize_gameplay_surface(&mut app_state.gameplay, INITIAL_WIDTH, INITIAL_HEIGHT);
-        set_gameplay_level_sets(
-            &mut app_state.gameplay,
-            initial_levels.level_set_catalog.clone(),
-            Some(initial_levels.active_level_set_index),
-        );
         Ok(Self {
             window: None,
             pixels: None,
-            gray_frame: vec![0; (INITIAL_WIDTH * INITIAL_HEIGHT) as usize],
-            frame_renderer: AppFrameRenderer::new(),
-            preview_boards,
-            controller,
-            app_state,
-            level_persistence: initial_levels.persistence,
+            runtime: SharedAppRuntime::new(
+                initial_levels,
+                app_state,
+                INITIAL_WIDTH,
+                INITIAL_HEIGHT,
+                AppFrameRenderer::new(),
+            ),
             cursor_position: None,
-            surface_width: INITIAL_WIDTH,
-            surface_height: INITIAL_HEIGHT,
-            editor: LevelEditor::new(),
         })
     }
 
@@ -112,35 +84,19 @@ impl AppDriverContext for App {
     type Error = ();
 
     fn app_runtime_mut(&mut self) -> AppRuntimeMut<'_> {
-        AppRuntimeMut {
-            controller: &mut self.controller,
-            app_state: &mut self.app_state,
-            level_persistence: &mut self.level_persistence,
-            preview_boards: &mut self.preview_boards,
-        }
+        self.runtime.app_runtime_mut()
     }
 
     fn editor_runtime_mut(&mut self) -> Option<EditorAppRuntimeMut<'_>> {
-        Some(
-            AppRuntimeMut {
-                controller: &mut self.controller,
-                app_state: &mut self.app_state,
-                level_persistence: &mut self.level_persistence,
-                preview_boards: &mut self.preview_boards,
-            }
-            .with_editor(&mut self.editor),
-        )
+        Some(self.runtime.editor_runtime_mut())
     }
 
     fn has_pending_frame_presentation(&mut self) -> bool {
-        self.frame_renderer
-            .has_pending_visible_presentation(&self.app_state)
+        self.runtime.has_pending_visible_presentation()
     }
 
     fn continue_frame_presentation_and_render(&mut self) -> Result<bool, Self::Error> {
-        let had_pending = self
-            .frame_renderer
-            .has_pending_visible_presentation(&self.app_state);
+        let had_pending = self.runtime.has_pending_visible_presentation();
         if had_pending {
             self.render_pending_visible_presentation();
         }
@@ -156,21 +112,19 @@ impl ApplicationHandler for App {
 
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
         let size = window.inner_size();
-        self.surface_width = size.width.max(1);
-        self.surface_height = size.height.max(1);
-        self.gray_frame = vec![0; (self.surface_width as usize) * (self.surface_height as usize)];
-        self.frame_renderer.clear_gameplay_presentation_state();
-        resize_gameplay_surface(
-            &mut self.app_state.gameplay,
-            self.surface_width,
-            self.surface_height,
-        );
-        resize_editor_surface(&mut self.app_state, self.surface_width, self.surface_height);
+        self.runtime.resize_surface(size.width, size.height);
 
-        let surface_texture =
-            SurfaceTexture::new(self.surface_width, self.surface_height, window.clone());
-        let pixels =
-            Pixels::new(self.surface_width, self.surface_height, surface_texture).expect("pixels");
+        let surface_texture = SurfaceTexture::new(
+            self.runtime.surface_width(),
+            self.runtime.surface_height(),
+            window.clone(),
+        );
+        let pixels = Pixels::new(
+            self.runtime.surface_width(),
+            self.runtime.surface_height(),
+            surface_texture,
+        )
+        .expect("pixels");
 
         self.window = Some(window);
         self.pixels = Some(pixels);
@@ -186,51 +140,27 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(PhysicalSize { width, height }) => {
-                self.surface_width = width.max(1);
-                self.surface_height = height.max(1);
+                self.runtime.resize_surface(width, height);
                 if let Some(pixels) = &mut self.pixels {
                     pixels
-                        .resize_surface(self.surface_width, self.surface_height)
+                        .resize_surface(self.runtime.surface_width(), self.runtime.surface_height())
                         .expect("resize surface");
                     pixels
-                        .resize_buffer(self.surface_width, self.surface_height)
+                        .resize_buffer(self.runtime.surface_width(), self.runtime.surface_height())
                         .expect("resize buffer");
                 }
-                resize_gameplay_surface(
-                    &mut self.app_state.gameplay,
-                    self.surface_width,
-                    self.surface_height,
-                );
-                self.gray_frame =
-                    vec![0; (self.surface_width as usize) * (self.surface_height as usize)];
-                self.frame_renderer.clear_gameplay_presentation_state();
-                resize_editor_surface(&mut self.app_state, self.surface_width, self.surface_height);
                 self.render_current();
             }
             WindowEvent::ScaleFactorChanged { .. } => {
                 if let (Some(window), Some(pixels)) = (&self.window, &mut self.pixels) {
                     let size = window.inner_size();
-                    self.surface_width = size.width.max(1);
-                    self.surface_height = size.height.max(1);
+                    self.runtime.resize_surface(size.width, size.height);
                     pixels
-                        .resize_surface(self.surface_width, self.surface_height)
+                        .resize_surface(self.runtime.surface_width(), self.runtime.surface_height())
                         .expect("resize surface");
                     pixels
-                        .resize_buffer(self.surface_width, self.surface_height)
+                        .resize_buffer(self.runtime.surface_width(), self.runtime.surface_height())
                         .expect("resize buffer");
-                    resize_gameplay_surface(
-                        &mut self.app_state.gameplay,
-                        self.surface_width,
-                        self.surface_height,
-                    );
-                    self.gray_frame =
-                        vec![0; (self.surface_width as usize) * (self.surface_height as usize)];
-                    self.frame_renderer.clear_gameplay_presentation_state();
-                    resize_editor_surface(
-                        &mut self.app_state,
-                        self.surface_width,
-                        self.surface_height,
-                    );
                     self.render_current();
                 }
             }

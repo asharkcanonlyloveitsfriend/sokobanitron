@@ -1,13 +1,9 @@
 use crate::{
     app_driver::KindleApp,
-    config,
     platform::{Display, Region},
 };
-use sokobanitron_app::{
-    app::{
-        AppFrameRenderer, FrameDamage, FrameRequest, FrameSink, GameplayAnimationPolicy, ScreenRect,
-    },
-    gameplay::{build_current_gameplay_screen_frame_request, build_sleep_gameplay_frame_request},
+use sokobanitron_app::app::{
+    AppFrameRenderer, FrameDamage, FrameRequest, FrameSink, GameplayAnimationPolicy, ScreenRect,
 };
 use std::io::Result;
 
@@ -17,30 +13,17 @@ impl KindleApp {
     }
 
     pub(crate) fn render(&mut self) -> Result<()> {
-        let request =
-            build_current_gameplay_screen_frame_request(&self.controller, &self.app_state);
+        let request = self.runtime.current_frame_request();
         self.render_request(&request)
     }
 
     fn render_request(&mut self, request: &FrameRequest) -> Result<()> {
-        let (renderer, gray, display, preview_boards) = (
-            &mut self.frame_renderer,
-            &mut self.gray_frame,
-            &mut self.display,
-            &self.preview_boards,
-        );
-        let damage = renderer.draw_frame_request(
-            gray,
-            config::WIDTH as u32,
-            config::HEIGHT as u32,
-            request,
-            preview_boards,
-        );
-        present_frame_damage(display, damage, gray)
+        let damage = self.runtime.draw_frame_request(request);
+        present_frame_damage(&mut self.display, damage, self.runtime.gray_frame())
     }
 
     pub(crate) fn render_sleep_screen(&mut self) -> Result<()> {
-        let request = build_sleep_gameplay_frame_request(&self.controller, &self.app_state);
+        let request = self.runtime.sleep_gameplay_frame_request();
         self.render_request(&request)
     }
 }

@@ -2,19 +2,14 @@ use crate::{config, platform};
 use sokobanitron_app::{
     AppPreferences,
     app::{
-        AppDriverContext, AppFrameRenderer, AppPointerInput, AppRuntimeMut, AppState,
+        AppDriverContext, AppPointerInput, AppRuntimeMut, AppState, SharedAppRuntime,
         continue_pending_render_work_and_render_in_context,
         handle_pointer_input_and_render_in_context, has_pending_render_work_in_context,
     },
-    gameplay::{
-        resize_gameplay_surface, set_gameplay_level_sets, set_gameplay_max_cell_size,
-        set_gameplay_touch_slop,
-    },
+    gameplay::{set_gameplay_max_cell_size, set_gameplay_touch_slop},
     level_bootstrap::load_initial_levels_for_app,
-    persistence::LevelPersistence,
     shared::PointerPhase,
 };
-use sokobanitron_gameplay::{BoardView, GameplayController};
 use std::io::Result;
 
 const KINDLE_GAMEPLAY_TAP_SLOP_PX: i32 = 24;
@@ -34,14 +29,9 @@ enum SleepSyncOutcome {
 }
 
 pub struct KindleApp {
-    pub(crate) frame_renderer: AppFrameRenderer,
-    pub(crate) gray_frame: Vec<u8>,
+    pub(crate) runtime: SharedAppRuntime,
     sleep_state: AppSleepState,
-    pub(crate) preview_boards: Vec<BoardView>,
-    pub(crate) controller: GameplayController,
-    pub(crate) app_state: AppState,
     preferences: AppPreferences,
-    level_persistence: LevelPersistence,
     pub(crate) display: platform::Display,
 }
 
@@ -49,43 +39,34 @@ impl KindleApp {
     pub fn new() -> Result<Self> {
         let initial_levels =
             load_initial_levels_for_app(std::path::Path::new(config::LEVEL_SETS_ROOT))?;
-        let levels = initial_levels.levels;
-        let preview_boards = initial_levels.preview_boards;
         let preferences = AppPreferences::load_and_save_normalized(config::PREFERENCES_PATH)
             .unwrap_or_else(|err| {
                 eprintln!("warning: failed to load or normalize preferences: {err}");
                 AppPreferences::default()
             });
-        let controller = GameplayController::new_at_level(
-            levels.clone(),
-            initial_levels.initial_level_index,
-            initial_levels.persisted_resume_level_index,
-        );
-        let mut app_state = AppState {
+        let app_state = AppState {
             supports_multi_touch: true,
             ..AppState::default()
         };
-        resize_gameplay_surface(
-            &mut app_state.gameplay,
+        let mut runtime = SharedAppRuntime::new(
+            initial_levels,
+            app_state,
             config::WIDTH as u32,
             config::HEIGHT as u32,
+            Self::build_frame_renderer(),
         );
-        set_gameplay_max_cell_size(&mut app_state.gameplay, KINDLE_GAMEPLAY_MAX_CELL_SIZE);
-        set_gameplay_touch_slop(&mut app_state.gameplay, KINDLE_GAMEPLAY_TAP_SLOP_PX);
-        set_gameplay_level_sets(
-            &mut app_state.gameplay,
-            initial_levels.level_set_catalog.clone(),
-            Some(initial_levels.active_level_set_index),
+        set_gameplay_max_cell_size(
+            &mut runtime.app_state_mut().gameplay,
+            KINDLE_GAMEPLAY_MAX_CELL_SIZE,
+        );
+        set_gameplay_touch_slop(
+            &mut runtime.app_state_mut().gameplay,
+            KINDLE_GAMEPLAY_TAP_SLOP_PX,
         );
         Ok(Self {
-            frame_renderer: Self::build_frame_renderer(),
-            gray_frame: vec![0; config::WIDTH * config::HEIGHT],
+            runtime,
             sleep_state: AppSleepState::Awake,
-            preview_boards,
-            controller,
-            app_state,
             preferences,
-            level_persistence: initial_levels.persistence,
             display: platform::Display::new()?,
         })
     }
@@ -130,18 +111,8 @@ impl KindleApp {
     }
 
     fn render_pending_visible_presentation(&mut self) -> Result<()> {
-        let (frame_renderer, gray, display) = (
-            &mut self.frame_renderer,
-            &mut self.gray_frame,
-            &mut self.display,
-        );
-        let damage = frame_renderer.draw_pending_visible_presentation(
-            &self.app_state,
-            gray,
-            config::WIDTH as u32,
-            config::HEIGHT as u32,
-        );
-        crate::display::present_frame_damage(display, damage, gray)?;
+        let damage = self.runtime.draw_pending_visible_presentation();
+        crate::display::present_frame_damage(&mut self.display, damage, self.runtime.gray_frame())?;
         Ok(())
     }
 
@@ -254,23 +225,15 @@ impl AppDriverContext for KindleApp {
     type Error = std::io::Error;
 
     fn app_runtime_mut(&mut self) -> AppRuntimeMut<'_> {
-        AppRuntimeMut {
-            controller: &mut self.controller,
-            app_state: &mut self.app_state,
-            level_persistence: &mut self.level_persistence,
-            preview_boards: &mut self.preview_boards,
-        }
+        self.runtime.app_runtime_mut()
     }
 
     fn has_pending_frame_presentation(&mut self) -> bool {
-        self.frame_renderer
-            .has_pending_visible_presentation(&self.app_state)
+        self.runtime.has_pending_visible_presentation()
     }
 
     fn continue_frame_presentation_and_render(&mut self) -> Result<bool> {
-        let had_pending = self
-            .frame_renderer
-            .has_pending_visible_presentation(&self.app_state);
+        let had_pending = self.runtime.has_pending_visible_presentation();
         if had_pending {
             self.render_pending_visible_presentation()?;
         }

@@ -4,19 +4,21 @@ use super::persistence::{
     apply_runtime_effects, persist_editor_puzzle_to_default_set, refresh_level_set_for_app,
     sync_level_set_catalog_for_app,
 };
-use super::presentation::PresentationPlan;
+use super::presentation::{AppFrameRenderer, FrameDamage, PresentationPlan};
 use super::presentation::{FrameRequest, FrameSink, render_presentation_plan};
 use super::reducer::PersistenceUpdate;
 use super::reducer::apply_action;
 use super::state::{AppInteractionMode, AppScreen, AppState};
 use crate::editor::{
     EditorUiAction, build_current_editor_frame_request, editor_cursor_moved, editor_mouse_pressed,
-    editor_mouse_released, editor_touch, reset_editor_interaction_state,
+    editor_mouse_released, editor_touch, reset_editor_interaction_state, resize_editor_surface,
 };
 use crate::gameplay::{
     build_current_gameplay_board_frame_request, build_current_gameplay_screen_frame_request,
-    interpret_gameplay_pointer_event, interpret_gameplay_pointer_tap,
+    build_sleep_gameplay_frame_request, interpret_gameplay_pointer_event,
+    interpret_gameplay_pointer_tap, resize_gameplay_surface, set_gameplay_level_sets,
 };
+use crate::level_bootstrap::InitialLevels;
 use crate::persistence::LevelPersistence;
 use crate::shared::PointerPhase;
 use sokobanitron_gameplay::{BoardView, GameplayController, GameplayControllerChanges};
@@ -95,10 +97,168 @@ pub struct EditorAppRuntimeMut<'a> {
     pub editor: &'a mut LevelEditor,
 }
 
+/// Shared app runtime state that clients can embed next to platform-specific handles.
+///
+/// It owns the app model, editor, persistence-facing state, preview boards, gray frame, surface
+/// size, and frame renderer. Clients still decide when to wake and how to present the rendered
+/// frame to their platform surface.
+pub struct SharedAppRuntime {
+    controller: GameplayController,
+    app_state: AppState,
+    level_persistence: LevelPersistence,
+    preview_boards: Vec<BoardView>,
+    editor: LevelEditor,
+    frame_renderer: AppFrameRenderer,
+    gray_frame: Vec<u8>,
+    surface_width: u32,
+    surface_height: u32,
+}
+
 impl<'a> AppRuntimeMut<'a> {
     pub fn with_editor(self, editor: &'a mut LevelEditor) -> EditorAppRuntimeMut<'a> {
         EditorAppRuntimeMut { app: self, editor }
     }
+}
+
+impl SharedAppRuntime {
+    pub fn new(
+        initial_levels: InitialLevels,
+        mut app_state: AppState,
+        surface_width: u32,
+        surface_height: u32,
+        frame_renderer: AppFrameRenderer,
+    ) -> Self {
+        let surface_width = surface_width.max(1);
+        let surface_height = surface_height.max(1);
+        resize_gameplay_surface(&mut app_state.gameplay, surface_width, surface_height);
+        resize_editor_surface(&mut app_state, surface_width, surface_height);
+        set_gameplay_level_sets(
+            &mut app_state.gameplay,
+            initial_levels.level_set_catalog,
+            Some(initial_levels.active_level_set_index),
+        );
+        let controller = GameplayController::new_at_level(
+            initial_levels.levels,
+            initial_levels.initial_level_index,
+            initial_levels.persisted_resume_level_index,
+        );
+
+        Self {
+            controller,
+            app_state,
+            level_persistence: initial_levels.persistence,
+            preview_boards: initial_levels.preview_boards,
+            editor: LevelEditor::new(),
+            frame_renderer,
+            gray_frame: allocate_gray_frame(surface_width, surface_height),
+            surface_width,
+            surface_height,
+        }
+    }
+
+    pub fn app_state(&self) -> &AppState {
+        &self.app_state
+    }
+
+    pub fn app_state_mut(&mut self) -> &mut AppState {
+        &mut self.app_state
+    }
+
+    pub fn surface_width(&self) -> u32 {
+        self.surface_width
+    }
+
+    pub fn surface_height(&self) -> u32 {
+        self.surface_height
+    }
+
+    pub fn gray_frame(&self) -> &[u8] {
+        &self.gray_frame
+    }
+
+    pub fn resize_surface(&mut self, surface_width: u32, surface_height: u32) {
+        self.surface_width = surface_width.max(1);
+        self.surface_height = surface_height.max(1);
+        self.gray_frame = allocate_gray_frame(self.surface_width, self.surface_height);
+        resize_gameplay_surface(
+            &mut self.app_state.gameplay,
+            self.surface_width,
+            self.surface_height,
+        );
+        resize_editor_surface(&mut self.app_state, self.surface_width, self.surface_height);
+        self.frame_renderer.clear_gameplay_presentation_state();
+    }
+
+    pub fn app_runtime_mut(&mut self) -> AppRuntimeMut<'_> {
+        AppRuntimeMut {
+            controller: &mut self.controller,
+            app_state: &mut self.app_state,
+            level_persistence: &mut self.level_persistence,
+            preview_boards: &mut self.preview_boards,
+        }
+    }
+
+    pub fn editor_runtime_mut(&mut self) -> EditorAppRuntimeMut<'_> {
+        AppRuntimeMut {
+            controller: &mut self.controller,
+            app_state: &mut self.app_state,
+            level_persistence: &mut self.level_persistence,
+            preview_boards: &mut self.preview_boards,
+        }
+        .with_editor(&mut self.editor)
+    }
+
+    pub fn current_frame_request(&self) -> FrameRequest {
+        build_current_app_screen_frame_request(&self.controller, &self.app_state, &self.editor)
+    }
+
+    pub fn sleep_gameplay_frame_request(&self) -> FrameRequest {
+        build_sleep_gameplay_frame_request(&self.controller, &self.app_state)
+    }
+
+    pub fn draw_frame_request(&mut self, request: &FrameRequest) -> FrameDamage {
+        self.frame_renderer.draw_frame_request(
+            &mut self.gray_frame,
+            self.surface_width,
+            self.surface_height,
+            request,
+            &self.preview_boards,
+        )
+    }
+
+    pub fn draw_full_frame_request(&mut self, request: &FrameRequest) -> FrameDamage {
+        self.frame_renderer.draw_full_frame_request(
+            &mut self.gray_frame,
+            self.surface_width,
+            self.surface_height,
+            request,
+            &self.preview_boards,
+        )
+    }
+
+    pub fn has_pending_visible_presentation(&self) -> bool {
+        self.frame_renderer
+            .has_pending_visible_presentation(&self.app_state)
+    }
+
+    pub fn draw_pending_visible_presentation(&mut self) -> FrameDamage {
+        self.frame_renderer.draw_pending_visible_presentation(
+            &self.app_state,
+            &mut self.gray_frame,
+            self.surface_width,
+            self.surface_height,
+        )
+    }
+}
+
+fn allocate_gray_frame(surface_width: u32, surface_height: u32) -> Vec<u8> {
+    vec![0; frame_len(surface_width, surface_height)]
+}
+
+fn frame_len(surface_width: u32, surface_height: u32) -> usize {
+    usize::try_from(surface_width)
+        .expect("surface width should fit usize")
+        .saturating_mul(usize::try_from(surface_height).expect("surface height should fit usize"))
 }
 
 pub fn apply_action_in_context<C: AppDriverContext>(
@@ -452,18 +612,20 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        AppDriverContext, AppPointerInput, AppRuntimeMut, apply_action_and_render_in_context,
-        apply_action_in_context, apply_editor_ui_action, apply_input_and_render_in_context,
-        continue_pending_render_work_and_render_in_context,
+        AppDriverContext, AppPointerInput, AppRuntimeMut, SharedAppRuntime,
+        apply_action_and_render_in_context, apply_action_in_context, apply_editor_ui_action,
+        apply_input_and_render_in_context, continue_pending_render_work_and_render_in_context,
         handle_pointer_input_and_render_in_context, has_pending_render_work_in_context,
     };
     use crate::app::action::AppAction;
     use crate::app::input::AppInput;
-    use crate::app::presentation::FrameRequest;
+    use crate::app::presentation::{AppFrameRenderer, FrameDamage, FrameRequest};
     use crate::app::state::{AppInteractionMode, AppOverlay, AppScreen, AppState};
     use crate::editor::{EditorUiAction, build_current_editor_frame_request, editor_mouse_pressed};
-    use crate::level_bootstrap::{build_preview_boards, load_initial_levels_for_app};
-    use crate::persistence::LevelPersistence;
+    use crate::level_bootstrap::{
+        InitialLevels, build_preview_boards, load_initial_levels_for_app,
+    };
+    use crate::persistence::{LevelPersistence, LevelSetCatalogEntry, LevelSetKind};
     use crate::shared::PointerPhase;
     use presentation::layout::{
         overlay_primary_action_button_rect, overlay_secondary_action_button_rect,
@@ -726,6 +888,45 @@ mod tests {
             }
             Ok(())
         }
+    }
+
+    fn runtime_initial_levels(levels: Vec<String>) -> InitialLevels {
+        InitialLevels {
+            preview_boards: build_preview_boards(&levels),
+            levels,
+            initial_level_index: 0,
+            persisted_resume_level_index: None,
+            persistence: LevelPersistence::default(),
+            level_set_catalog: vec![LevelSetCatalogEntry {
+                kind: LevelSetKind::Imported,
+                title: "Test Levels".to_string(),
+                completed_puzzle_count: 0,
+                total_puzzle_count: 1,
+            }],
+            active_level_set_index: 0,
+        }
+    }
+
+    #[test]
+    fn shared_app_runtime_owns_model_and_frame_state() {
+        let mut runtime = SharedAppRuntime::new(
+            runtime_initial_levels(vec!["###\n#@#\n###".to_string()]),
+            AppState::default(),
+            128,
+            96,
+            AppFrameRenderer::new(),
+        );
+        let request = runtime.current_frame_request();
+
+        assert_eq!(runtime.gray_frame().len(), 128 * 96);
+        assert!(matches!(request, FrameRequest::Gameplay { .. }));
+        assert_eq!(runtime.draw_frame_request(&request), FrameDamage::Full);
+
+        runtime.resize_surface(64, 32);
+
+        assert_eq!(runtime.surface_width(), 64);
+        assert_eq!(runtime.surface_height(), 32);
+        assert_eq!(runtime.gray_frame().len(), 64 * 32);
     }
 
     #[test]
