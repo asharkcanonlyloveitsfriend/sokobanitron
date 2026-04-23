@@ -200,27 +200,23 @@ impl AndroidApp {
     }
 
     fn render_request_into_frame(&mut self, request: &FrameRequest) -> FrameDamage {
-        self.renderer
-            .draw_frame_request(
-                &mut self.gray_frame,
-                self.surface_width,
-                self.surface_height,
-                request,
-                &mut self.gameplay_presentation,
-                &self.preview_boards,
-            )
-            .damage
+        self.renderer.draw_frame_request(
+            &mut self.gray_frame,
+            self.surface_width,
+            self.surface_height,
+            request,
+            &mut self.gameplay_presentation,
+            &self.preview_boards,
+        )
     }
 
     fn render_active_gameplay_presentation_into_frame(&mut self) -> FrameDamage {
-        self.renderer
-            .draw_active_gameplay_presentation(
-                &mut self.gray_frame,
-                self.surface_width,
-                self.surface_height,
-                &mut self.gameplay_presentation,
-            )
-            .damage
+        self.renderer.draw_active_gameplay_presentation(
+            &mut self.gray_frame,
+            self.surface_width,
+            self.surface_height,
+            &mut self.gameplay_presentation,
+        )
     }
 
     fn draw_full_request_into_frame(&mut self, request: &FrameRequest) {

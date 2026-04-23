@@ -25,8 +25,7 @@ pub use driver::{
 };
 pub use input::{AppInput, interpret_input};
 pub use presentation::{
-    FrameRequest, FrameSink, PresentMode, PresentationPlan, build_presentation_plan,
-    render_presentation_plan,
+    FrameRequest, FrameSink, PresentationPlan, build_presentation_plan, render_presentation_plan,
 };
 pub use reducer::{AppUpdate, PersistenceUpdate, apply_action};
 pub use state::{AppInteractionMode, AppOverlay, AppScreen, AppState, UiState};

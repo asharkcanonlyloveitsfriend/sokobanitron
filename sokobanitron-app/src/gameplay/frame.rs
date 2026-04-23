@@ -9,7 +9,7 @@
 //! presentation layer.
 
 use super::view::{GameplayVisibleBoardWindow, build_gameplay_visible_window};
-use crate::app::presentation::{FrameRequest, PresentMode};
+use crate::app::presentation::FrameRequest;
 use crate::app::state::AppState;
 use presentation::screen_requests::{
     GameplayMenuScreenRequest, GameplayPresentationCause, GameplayPresentationUpdate,
@@ -21,7 +21,6 @@ use sokobanitron_gameplay::{BoardView, GameplayController};
 pub fn build_gameplay_frame_request(
     controller: &GameplayController,
     app_state: &AppState,
-    present_mode: PresentMode,
 ) -> FrameRequest {
     FrameRequest::Gameplay {
         update: build_gameplay_presentation_update(
@@ -30,7 +29,6 @@ pub fn build_gameplay_frame_request(
             GameplayScreenMode::Normal,
             GameplayPresentationCause::CurrentState,
         ),
-        present_mode,
     }
 }
 
@@ -45,7 +43,6 @@ pub fn build_sleep_gameplay_frame_request(
             GameplayScreenMode::Sleep,
             GameplayPresentationCause::CurrentState,
         ),
-        present_mode: PresentMode::Full,
     }
 }
 
@@ -53,7 +50,6 @@ pub(crate) fn build_gameplay_frame_request_with_cause(
     controller: &GameplayController,
     app_state: &AppState,
     cause: GameplayPresentationCause,
-    present_mode: PresentMode,
 ) -> FrameRequest {
     FrameRequest::Gameplay {
         update: build_gameplay_presentation_update(
@@ -62,28 +58,21 @@ pub(crate) fn build_gameplay_frame_request_with_cause(
             GameplayScreenMode::Normal,
             cause,
         ),
-        present_mode,
     }
 }
 
-pub fn build_level_select_frame_request(
-    page_start: usize,
-    resume_level: usize,
-    present_mode: PresentMode,
-) -> FrameRequest {
+pub fn build_level_select_frame_request(page_start: usize, resume_level: usize) -> FrameRequest {
     FrameRequest::LevelSelect {
         screen: LevelSelectScreenRequest {
             page_start,
             resume_level,
         },
-        present_mode,
     }
 }
 
 pub fn build_level_set_select_frame_request(
     page_start: usize,
     app_state: &AppState,
-    present_mode: PresentMode,
 ) -> FrameRequest {
     FrameRequest::LevelSetSelect {
         screen: LevelSetSelectScreenRequest {
@@ -100,7 +89,6 @@ pub fn build_level_set_select_frame_request(
                 })
                 .collect(),
         },
-        present_mode,
     }
 }
 
@@ -108,7 +96,7 @@ pub fn build_current_gameplay_board_frame_request(
     controller: &GameplayController,
     app_state: &AppState,
 ) -> FrameRequest {
-    build_gameplay_frame_request(controller, app_state, PresentMode::Full)
+    build_gameplay_frame_request(controller, app_state)
 }
 
 pub fn build_current_gameplay_screen_frame_request(
@@ -116,9 +104,9 @@ pub fn build_current_gameplay_screen_frame_request(
     app_state: &AppState,
 ) -> FrameRequest {
     if let Some(page_start) = app_state.level_set_select_page_start() {
-        build_level_set_select_frame_request(page_start, app_state, PresentMode::Full)
+        build_level_set_select_frame_request(page_start, app_state)
     } else if let Some(page_start) = app_state.level_select_page_start() {
-        build_level_select_frame_request(page_start, controller.resume_level(), PresentMode::Full)
+        build_level_select_frame_request(page_start, controller.resume_level())
     } else if app_state.is_gameplay_menu_open() {
         FrameRequest::GameplayMenu {
             screen: GameplayMenuScreenRequest {
@@ -208,7 +196,7 @@ fn localize_gameplay_presentation_cause(
 #[cfg(test)]
 mod tests {
     use super::{build_current_gameplay_screen_frame_request, build_level_select_frame_request};
-    use crate::app::presentation::{FrameRequest, PresentMode};
+    use crate::app::presentation::FrameRequest;
     use crate::app::state::{AppOverlay, AppState};
     use presentation::screen_requests::{
         GameplayMenuScreenRequest, GameplayPresentationCause, GameplayScreenRequest,
@@ -228,7 +216,7 @@ mod tests {
 
         assert_eq!(
             build_current_gameplay_screen_frame_request(&controller, &app_state),
-            build_level_select_frame_request(12, controller.resume_level(), PresentMode::Full,),
+            build_level_select_frame_request(12, controller.resume_level()),
         );
     }
 
@@ -276,13 +264,11 @@ mod tests {
                     scene: GameplayScreenRequest { level_number, .. },
                     cause,
                 },
-            present_mode,
         } = build_current_gameplay_screen_frame_request(&controller, &app_state)
         else {
             panic!("expected gameplay request");
         };
 
-        assert_eq!(present_mode, PresentMode::Full);
         assert_eq!(level_number, 1);
         assert_eq!(cause, GameplayPresentationCause::CurrentState);
     }

@@ -185,26 +185,18 @@ impl Display {
     }
 
     pub fn present_gray(&mut self, gray: &[u8]) -> Result<()> {
-        self.present_gray_inner(gray, None)
-    }
-
-    pub fn present_gray_fast_partial(&mut self, gray: &[u8]) -> Result<()> {
-        self.present_gray_inner(gray, Some(WAVEFORM_MODE_DU))
+        self.present_gray_inner(gray)
     }
 
     pub fn present_gray_region(&mut self, gray: &[u8], region: Region) -> Result<()> {
-        self.present_gray_region_inner(gray, region, None)
-    }
-
-    pub fn present_gray_region_fast_partial(&mut self, gray: &[u8], region: Region) -> Result<()> {
-        self.present_gray_region_inner(gray, region, Some(WAVEFORM_MODE_DU))
+        self.present_gray_region_inner(gray, region)
     }
 
     pub fn force_full_refresh_next(&mut self) {
         self.has_previous_gray = false;
     }
 
-    fn present_gray_inner(&mut self, gray: &[u8], partial_waveform: Option<u32>) -> Result<()> {
+    fn present_gray_inner(&mut self, gray: &[u8]) -> Result<()> {
         let present_start = Instant::now();
         let scan_start = Instant::now();
         let dirty = if self.has_previous_gray {
@@ -265,7 +257,7 @@ impl Display {
                 }
                 let write_elapsed = write_start.elapsed();
                 let refresh_start = Instant::now();
-                self.request_partial_refresh(region, partial_waveform)?;
+                self.request_partial_refresh(region)?;
                 let refresh_elapsed = refresh_start.elapsed();
                 copy_gray_region(gray, &mut self.previous_gray, region);
                 self.log_present_metric(PresentMetric {
@@ -284,14 +276,9 @@ impl Display {
         Ok(())
     }
 
-    fn present_gray_region_inner(
-        &mut self,
-        gray: &[u8],
-        region: Region,
-        partial_waveform: Option<u32>,
-    ) -> Result<()> {
+    fn present_gray_region_inner(&mut self, gray: &[u8], region: Region) -> Result<()> {
         if !self.has_previous_gray {
-            return self.present_gray_inner(gray, partial_waveform);
+            return self.present_gray_inner(gray);
         }
 
         let present_start = Instant::now();
@@ -314,7 +301,7 @@ impl Display {
         let write_elapsed = write_start.elapsed();
 
         let refresh_start = Instant::now();
-        self.request_partial_refresh(region, partial_waveform)?;
+        self.request_partial_refresh(region)?;
         let refresh_elapsed = refresh_start.elapsed();
 
         copy_gray_region(gray, &mut self.previous_gray, aligned_region(region));
@@ -375,18 +362,13 @@ impl Display {
         );
     }
 
-    fn request_partial_refresh(
-        &mut self,
-        region: Region,
-        waveform_mode: Option<u32>,
-    ) -> Result<()> {
-        let waveform = waveform_mode.unwrap_or(WAVEFORM_MODE_DU);
+    fn request_partial_refresh(&mut self, region: Region) -> Result<()> {
         if let Some(abi) = self.update_abi {
             match send_update_ioctl(
                 &self.fb,
                 abi,
                 region,
-                waveform,
+                WAVEFORM_MODE_DU,
                 UPDATE_MODE_PARTIAL,
                 self.update_marker,
             ) {
@@ -401,7 +383,7 @@ impl Display {
             }
         }
 
-        self.sysfs_region_refresh(region, UPDATE_MODE_PARTIAL, waveform_mode)
+        self.sysfs_region_refresh(region)
     }
 
     fn request_full_refresh(&mut self) -> Result<()> {
@@ -449,32 +431,15 @@ impl Display {
         );
     }
 
-    fn sysfs_region_refresh(
-        &mut self,
-        region: Region,
-        update_mode: u32,
-        waveform_mode: Option<u32>,
-    ) -> Result<()> {
+    fn sysfs_region_refresh(&mut self, region: Region) -> Result<()> {
         let aligned = align_region_for_epdc(region);
         // Observed Kindle sysfs format:
         //   <waveform> <update_mode> <top> <left> <width> <height>
-        // Use waveform=0 (AUTO) by default for stability; allow explicit override.
-        let waveform = waveform_mode.unwrap_or(0);
+        // Use waveform=0 (AUTO) for stability.
         let cmd = format!(
             "{} {} {} {} {} {}\n",
-            waveform, update_mode, aligned.top, aligned.left, aligned.width, aligned.height
+            0, UPDATE_MODE_PARTIAL, aligned.top, aligned.left, aligned.width, aligned.height
         );
-        if write_sysfs_refresh(&cmd).is_ok() {
-            return Ok(());
-        }
-        if waveform_mode.is_some() {
-            // Fallback to AUTO waveform if explicit mode is unsupported.
-            let fallback = format!(
-                "{} {} {} {} {} {}\n",
-                0, update_mode, aligned.top, aligned.left, aligned.width, aligned.height
-            );
-            return write_sysfs_refresh(&fallback);
-        }
         write_sysfs_refresh(&cmd)
     }
 }

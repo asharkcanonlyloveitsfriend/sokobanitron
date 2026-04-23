@@ -4,10 +4,7 @@ use crate::gameplay_presentation::{
     GameplayDamage, GameplayPresentationState, gameplay_damage_union_rect,
 };
 use crate::layout::ScreenRect;
-use crate::screen_requests::{
-    FrameRequest, GameplayMenuScreenRequest, GameplayPresentationCause, GameplayPresentationUpdate,
-    PresentMode,
-};
+use crate::screen_requests::{FrameRequest, GameplayMenuScreenRequest};
 
 use super::Renderer;
 use super::chrome::{
@@ -20,12 +17,6 @@ pub enum FrameDamage {
     Full,
     Region(ScreenRect),
     Noop,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FrameRenderResult {
-    pub damage: FrameDamage,
-    pub present_mode: PresentMode,
 }
 
 impl FrameDamage {
@@ -47,33 +38,19 @@ impl Renderer {
         request: &FrameRequest,
         gameplay_presentation: &mut GameplayPresentationState,
         preview_boards: &[BoardView],
-    ) -> FrameRenderResult {
+    ) -> FrameDamage {
         match request {
-            FrameRequest::Gameplay {
-                update,
-                present_mode,
-            } => {
+            FrameRequest::Gameplay { update } => {
                 let result = gameplay_presentation.replace_update_with_damage(update.clone());
                 gameplay_presentation.draw_damage(self, frame, width, height, &result.damage);
-                FrameRenderResult {
-                    damage: frame_damage_from_gameplay(
-                        &update.scene,
-                        &result.damage,
-                        width,
-                        height,
-                    ),
-                    present_mode: effective_gameplay_present_mode(update, *present_mode),
-                }
+                frame_damage_from_gameplay(&update.scene, &result.damage, width, height)
             }
             FrameRequest::GameplayMenu { screen } => {
                 gameplay_presentation.clear();
                 self.draw_gameplay_menu(frame, width, height, screen);
-                full_frame_result()
+                FrameDamage::Full
             }
-            FrameRequest::LevelSelect {
-                screen,
-                present_mode,
-            } => {
+            FrameRequest::LevelSelect { screen } => {
                 gameplay_presentation.clear();
                 self.draw_background_only(frame, width, height);
                 self.draw_level_select_menu_contents(
@@ -85,33 +62,24 @@ impl Renderer {
                     screen.page_start,
                 );
                 draw_controls_ui(frame, width, height, true, self.theme());
-                FrameRenderResult {
-                    damage: FrameDamage::Full,
-                    present_mode: *present_mode,
-                }
+                FrameDamage::Full
             }
-            FrameRequest::LevelSetSelect {
-                screen,
-                present_mode,
-            } => {
+            FrameRequest::LevelSetSelect { screen } => {
                 gameplay_presentation.clear();
                 self.draw_background_only(frame, width, height);
                 self.draw_level_set_select_menu_contents(frame, width, height, screen);
                 draw_controls_ui(frame, width, height, true, self.theme());
-                FrameRenderResult {
-                    damage: FrameDamage::Full,
-                    present_mode: *present_mode,
-                }
+                FrameDamage::Full
             }
             FrameRequest::Editor { screen } => {
                 gameplay_presentation.clear();
                 self.draw_editor_screen(frame, width, height, screen);
-                full_frame_result()
+                FrameDamage::Full
             }
             FrameRequest::EditorMenu { screen } => {
                 gameplay_presentation.clear();
                 self.draw_editor_menu(frame, width, height, screen);
-                full_frame_result()
+                FrameDamage::Full
             }
         }
     }
@@ -124,21 +92,15 @@ impl Renderer {
         request: &FrameRequest,
         gameplay_presentation: &mut GameplayPresentationState,
         preview_boards: &[BoardView],
-    ) -> FrameRenderResult {
+    ) -> FrameDamage {
         match request {
-            FrameRequest::Gameplay {
-                update,
-                present_mode,
-            } => {
+            FrameRequest::Gameplay { update } => {
                 gameplay_presentation.replace_update(update.clone());
                 gameplay_presentation.draw(self, frame, width, height);
-                FrameRenderResult {
-                    damage: FrameDamage::Full,
-                    present_mode: effective_gameplay_present_mode(update, *present_mode),
-                }
+                FrameDamage::Full
             }
             _ => {
-                let mut result = self.draw_frame_request(
+                self.draw_frame_request(
                     frame,
                     width,
                     height,
@@ -146,8 +108,7 @@ impl Renderer {
                     gameplay_presentation,
                     preview_boards,
                 );
-                result.damage = FrameDamage::Full;
-                result
+                FrameDamage::Full
             }
         }
     }
@@ -158,19 +119,13 @@ impl Renderer {
         width: u32,
         height: u32,
         gameplay_presentation: &mut GameplayPresentationState,
-    ) -> FrameRenderResult {
+    ) -> FrameDamage {
         let Some(scene) = gameplay_presentation.current_scene().cloned() else {
-            return FrameRenderResult {
-                damage: FrameDamage::Noop,
-                present_mode: PresentMode::Full,
-            };
+            return FrameDamage::Noop;
         };
         let result = gameplay_presentation.advance_presentation_with_damage();
         gameplay_presentation.draw_damage(self, frame, width, height, &result.damage);
-        FrameRenderResult {
-            damage: frame_damage_from_gameplay(&scene, &result.damage, width, height),
-            present_mode: PresentMode::FastPartial,
-        }
+        frame_damage_from_gameplay(&scene, &result.damage, width, height)
     }
 
     pub fn draw_gameplay_menu(
@@ -192,13 +147,6 @@ impl Renderer {
     }
 }
 
-fn full_frame_result() -> FrameRenderResult {
-    FrameRenderResult {
-        damage: FrameDamage::Full,
-        present_mode: PresentMode::Full,
-    }
-}
-
 fn frame_damage_from_gameplay(
     scene: &crate::screen_requests::GameplayScreenRequest,
     damage: &GameplayDamage,
@@ -215,32 +163,6 @@ fn frame_damage_from_gameplay(
     }
 }
 
-fn effective_gameplay_present_mode(
-    update: &GameplayPresentationUpdate,
-    requested: PresentMode,
-) -> PresentMode {
-    if matches!(requested, PresentMode::FastPartial)
-        || gameplay_update_starts_animation(&update.cause)
-    {
-        PresentMode::FastPartial
-    } else {
-        requested
-    }
-}
-
-fn gameplay_update_starts_animation(cause: &GameplayPresentationCause) -> bool {
-    matches!(
-        cause,
-        GameplayPresentationCause::PlayerMoved { .. }
-            | GameplayPresentationCause::BoxMoved { .. }
-            | GameplayPresentationCause::BoxRemoved { .. }
-            | GameplayPresentationCause::BoxMoveRejected
-            | GameplayPresentationCause::PuzzleSolved { .. }
-            | GameplayPresentationCause::UndoApplied
-            | GameplayPresentationCause::Restarted
-    )
-}
-
 fn union_screen_rect(a: ScreenRect, b: ScreenRect) -> ScreenRect {
     let left = a.x.min(b.x);
     let top = a.y.min(b.y);
@@ -251,55 +173,5 @@ fn union_screen_rect(a: ScreenRect, b: ScreenRect) -> ScreenRect {
         y: top,
         w: right.saturating_sub(left),
         h: bottom.saturating_sub(top),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::effective_gameplay_present_mode;
-    use crate::screen_requests::{
-        GameplayPresentationCause, GameplayPresentationUpdate, GameplayScreenMode,
-        GameplayScreenRequest, PresentMode,
-    };
-    use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
-
-    fn update_with_cause(cause: GameplayPresentationCause) -> GameplayPresentationUpdate {
-        let board = BoardView::new(
-            1,
-            1,
-            vec![TileKind::Floor],
-            vec![false],
-            Some(BoardCell::new(0, 0)),
-            None,
-            false,
-        );
-        let viewport = crate::layout::fit_board_viewport_for_controls(64, 64, &board);
-        GameplayPresentationUpdate {
-            scene: GameplayScreenRequest {
-                board,
-                viewport,
-                level_number: 1,
-                mode: GameplayScreenMode::Normal,
-            },
-            cause,
-        }
-    }
-
-    #[test]
-    fn undo_and_restart_upgrade_to_fast_partial_present_mode() {
-        assert_eq!(
-            effective_gameplay_present_mode(
-                &update_with_cause(GameplayPresentationCause::UndoApplied),
-                PresentMode::Full,
-            ),
-            PresentMode::FastPartial
-        );
-        assert_eq!(
-            effective_gameplay_present_mode(
-                &update_with_cause(GameplayPresentationCause::Restarted),
-                PresentMode::Full,
-            ),
-            PresentMode::FastPartial
-        );
     }
 }

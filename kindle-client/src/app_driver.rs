@@ -137,13 +137,13 @@ impl KindleApp {
     fn render_active_gameplay_presentation(&mut self) -> Result<()> {
         let (renderer, gray, display) =
             (&mut self.renderer, &mut self.gray_frame, &mut self.display);
-        let result = renderer.draw_active_gameplay_presentation(
+        let damage = renderer.draw_active_gameplay_presentation(
             gray,
             config::WIDTH as u32,
             config::HEIGHT as u32,
             &mut self.gameplay_presentation,
         );
-        crate::display::present_frame_damage(display, result.damage, gray, result.present_mode)?;
+        crate::display::present_frame_damage(display, damage, gray)?;
         Ok(())
     }
 

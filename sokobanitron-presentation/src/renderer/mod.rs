@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use crate::layout::{BoardViewport, ScreenRect};
 
 pub use chrome::{draw_controls_ui, draw_top_left_level_button, draw_top_menu_toggle};
-pub use frame::{FrameDamage, FrameRenderResult};
+pub use frame::FrameDamage;
 pub use pixel_ui::{
     PIXEL_FONT_HEIGHT, draw_centered_text_in_rect, draw_icon_bits_in_rect, draw_text,
     measure_text_width,

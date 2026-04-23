@@ -121,7 +121,7 @@ Use this file to answer:
 
 #### `sokobanitron-app/src/gameplay/frame.rs`
 - building `GameplayPresentationUpdate`
-- building `FrameRequest::Gameplay { update, present_mode }`
+- building `FrameRequest::Gameplay { update }`
 - snapshotting gameplay scene data for presentation
 
 #### `sokobanitron-app/src/app/driver.rs`

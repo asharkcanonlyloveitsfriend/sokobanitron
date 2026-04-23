@@ -5,7 +5,7 @@ use crate::{
 };
 use presentation::{FrameDamage, Renderer};
 use sokobanitron_app::{
-    app::{FrameRequest, FrameSink, PresentMode},
+    app::{FrameRequest, FrameSink},
     gameplay::{build_current_gameplay_screen_frame_request, build_sleep_gameplay_frame_request},
 };
 use std::io::Result;
@@ -28,7 +28,7 @@ impl KindleApp {
             &mut self.display,
             &self.preview_boards,
         );
-        let result = renderer.draw_frame_request(
+        let damage = renderer.draw_frame_request(
             gray,
             config::WIDTH as u32,
             config::HEIGHT as u32,
@@ -36,7 +36,7 @@ impl KindleApp {
             &mut self.gameplay_presentation,
             preview_boards,
         );
-        present_frame_damage(display, result.damage, gray, result.present_mode)
+        present_frame_damage(display, damage, gray)
     }
 
     pub(crate) fn render_sleep_screen(&mut self) -> Result<()> {
@@ -45,44 +45,16 @@ impl KindleApp {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FrameDamageSubmission {
-    Full,
-    Noop,
-    UnionRegion(Region),
-}
-
 pub(crate) fn present_frame_damage(
     display: &mut Display,
     damage: FrameDamage,
     gray: &[u8],
-    present_mode: PresentMode,
 ) -> Result<()> {
-    match kindle_frame_damage_submission(damage) {
-        FrameDamageSubmission::Full if matches!(present_mode, PresentMode::FastPartial) => {
-            display.present_gray_fast_partial(gray)
-        }
-        FrameDamageSubmission::Full => display.present_gray(gray),
-        FrameDamageSubmission::Noop => Ok(()),
-        FrameDamageSubmission::UnionRegion(region) => {
-            if matches!(present_mode, PresentMode::FastPartial) {
-                display.present_gray_region_fast_partial(gray, region)
-            } else {
-                display.present_gray_region(gray, region)
-            }
-        }
-    }
-}
-
-fn kindle_frame_damage_submission(damage: FrameDamage) -> FrameDamageSubmission {
     match damage {
-        FrameDamage::Full => FrameDamageSubmission::Full,
-        FrameDamage::Noop => FrameDamageSubmission::Noop,
-        // Pass one keeps one union rect on Kindle. The PW3 test showed that back-to-back disjoint
-        // submissions were supported but slower than one union region, so we keep the single
-        // submission policy as the conservative partial-damage choice for now.
+        FrameDamage::Full => display.present_gray(gray),
+        FrameDamage::Noop => Ok(()),
         FrameDamage::Region(rect) => {
-            FrameDamageSubmission::UnionRegion(region_from_screen_rect(rect))
+            display.present_gray_region(gray, region_from_screen_rect(rect))
         }
     }
 }
@@ -106,14 +78,14 @@ impl FrameSink for KindleApp {
 
 #[cfg(test)]
 mod tests {
-    use super::{FrameDamageSubmission, kindle_frame_damage_submission, region_from_screen_rect};
+    use super::region_from_screen_rect;
     use presentation::screen_requests::{GameplayPresentationCause, GameplayPresentationUpdate};
     use presentation::{
         FrameDamage, GameplayAnimationPolicy, GameplayDamage, GameplayPresentationState, Renderer,
         gameplay_damage_union_rect,
     };
     use sokobanitron_app::app::presentation::PresentationStep;
-    use sokobanitron_app::app::{AppAction, AppState, FrameRequest, PresentMode, apply_action};
+    use sokobanitron_app::app::{AppAction, AppState, FrameRequest, apply_action};
     use sokobanitron_app::gameplay::build_current_gameplay_board_frame_request;
     use sokobanitron_gameplay::{BoardCell, GameplayController};
 
@@ -122,86 +94,32 @@ mod tests {
     }
 
     fn gameplay_update(request: FrameRequest) -> GameplayPresentationUpdate {
-        let FrameRequest::Gameplay { update, .. } = request else {
+        let FrameRequest::Gameplay { update } = request else {
             panic!("expected gameplay frame");
         };
         update
     }
 
     #[test]
-    fn animation_start_gameplay_requests_upgrade_to_fast_partial() {
-        let request = FrameRequest::Gameplay {
-            update: GameplayPresentationUpdate {
-                scene: gameplay_update(build_current_gameplay_board_frame_request(
-                    &GameplayController::new(vec!["###\n#@#\n###".to_string()], None),
-                    &AppState::default(),
-                ))
-                .scene,
-                cause: GameplayPresentationCause::BoxMoveRejected,
-            },
-            present_mode: PresentMode::Full,
-        };
-        let mut renderer = Renderer::new();
-        let mut frame = vec![0; crate::config::WIDTH * crate::config::HEIGHT];
-        let mut presentation =
-            GameplayPresentationState::with_animation_policy(GameplayAnimationPolicy::Limited);
-
-        assert_eq!(
-            renderer
-                .draw_frame_request(
-                    &mut frame,
-                    crate::config::WIDTH as u32,
-                    crate::config::HEIGHT as u32,
-                    &request,
-                    &mut presentation,
-                    &[],
-                )
-                .present_mode,
-            PresentMode::FastPartial
-        );
-    }
-
-    #[test]
-    fn non_animated_gameplay_requests_keep_requested_present_mode() {
-        let request = build_current_gameplay_board_frame_request(
-            &GameplayController::new(vec!["###\n#@#\n###".to_string()], None),
-            &AppState::default(),
-        );
-        let mut renderer = Renderer::new();
-        let mut frame = vec![0; crate::config::WIDTH * crate::config::HEIGHT];
-        let mut presentation =
-            GameplayPresentationState::with_animation_policy(GameplayAnimationPolicy::Limited);
-
-        assert_eq!(
-            renderer
-                .draw_frame_request(
-                    &mut frame,
-                    crate::config::WIDTH as u32,
-                    crate::config::HEIGHT as u32,
-                    &request,
-                    &mut presentation,
-                    &[],
-                )
-                .present_mode,
-            PresentMode::Full
-        );
-    }
-
-    #[test]
-    fn solving_move_reaches_kindle_gameplay_partial_path() {
+    fn solved_move_returns_region_damage_and_leaves_pending_presentation() {
         let level = "########\n#@$   .#\n########".to_string();
         let mut controller = GameplayController::new(vec![level], None);
         let mut app_state = AppState::default();
+        let mut renderer = Renderer::new();
+        let mut frame = vec![0; crate::config::WIDTH * crate::config::HEIGHT];
         let mut presentation =
             GameplayPresentationState::with_animation_policy(GameplayAnimationPolicy::Limited);
 
-        let initial = gameplay_update(build_current_gameplay_board_frame_request(
-            &controller,
-            &app_state,
-        ));
         assert_eq!(
-            presentation.replace_update_with_damage(initial).damage,
-            GameplayDamage::Full
+            renderer.draw_frame_request(
+                &mut frame,
+                crate::config::WIDTH as u32,
+                crate::config::HEIGHT as u32,
+                &build_current_gameplay_board_frame_request(&controller, &app_state),
+                &mut presentation,
+                &[],
+            ),
+            FrameDamage::Full
         );
 
         let first_move = apply_action(
@@ -215,7 +133,14 @@ mod tests {
         let [PresentationStep::Render(first_request)] = first_plan.steps.as_slice() else {
             panic!("expected one gameplay render step");
         };
-        let _ = presentation.replace_update_with_damage(gameplay_update(first_request.clone()));
+        let _ = renderer.draw_frame_request(
+            &mut frame,
+            crate::config::WIDTH as u32,
+            crate::config::HEIGHT as u32,
+            first_request,
+            &mut presentation,
+            &[],
+        );
 
         let solved_move = apply_action(
             &mut controller,
@@ -256,31 +181,44 @@ mod tests {
             cell(5, 1),
             cell(6, 1),
         ];
-        let result = presentation.replace_update_with_damage(move_update.clone());
-        assert_eq!(result.damage, GameplayDamage::Cells(expected_cells.clone()));
+        let expected_rect = gameplay_damage_union_rect(
+            &move_update.scene,
+            &GameplayDamage::Cells(expected_cells),
+            crate::config::WIDTH as u32,
+            crate::config::HEIGHT as u32,
+        )
+        .expect("solved entity cells should map to a screen rect");
+
+        let damage = renderer.draw_frame_request(
+            &mut frame,
+            crate::config::WIDTH as u32,
+            crate::config::HEIGHT as u32,
+            move_request,
+            &mut presentation,
+            &[],
+        );
+        assert_eq!(damage, FrameDamage::Region(expected_rect));
         assert_eq!(
-            kindle_frame_damage_submission(FrameDamage::Region(
-                gameplay_damage_union_rect(
-                    &move_update.scene,
-                    &result.damage,
-                    crate::config::WIDTH as u32,
-                    crate::config::HEIGHT as u32,
-                )
-                .expect("solved entity cells should map to a screen rect"),
-            )),
-            FrameDamageSubmission::UnionRegion(region_from_screen_rect(
-                gameplay_damage_union_rect(
-                    &move_update.scene,
-                    &GameplayDamage::Cells(expected_cells),
-                    crate::config::WIDTH as u32,
-                    crate::config::HEIGHT as u32,
-                )
-                .expect("solved entity cells should map to a screen rect"),
-            ))
+            region_from_screen_rect(expected_rect),
+            crate::platform::Region {
+                left: expected_rect.x as usize,
+                top: expected_rect.y as usize,
+                width: expected_rect.w as usize,
+                height: expected_rect.h as usize,
+            }
         );
 
-        let solved_result = presentation.replace_update_with_damage(solved_update.clone());
-        assert_eq!(solved_result.damage, GameplayDamage::Cells(Vec::new()));
+        assert_eq!(
+            renderer.draw_frame_request(
+                &mut frame,
+                crate::config::WIDTH as u32,
+                crate::config::HEIGHT as u32,
+                solved_request,
+                &mut presentation,
+                &[],
+            ),
+            FrameDamage::Noop
+        );
         assert!(presentation.has_pending_presentation());
     }
 }

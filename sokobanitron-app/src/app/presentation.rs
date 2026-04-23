@@ -18,7 +18,7 @@ use sokobanitron_gameplay::{
     GameplayController, GameplayTapEffect, GameplayTapEvent, GameplayTapOutcome,
 };
 
-pub use presentation::screen_requests::{FrameRequest, PresentMode};
+pub use presentation::screen_requests::FrameRequest;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PresentationStep {
@@ -56,19 +56,13 @@ pub fn build_presentation_plan(
 
     if let Some(cause) = gameplay_presentation_cause_for_effect(&outcome.effect) {
         steps.push(gameplay_render_step_with_cause(
-            controller,
-            app_state,
-            cause,
-            PresentMode::Full,
+            controller, app_state, cause,
         ));
     }
 
     if let Some(cause) = gameplay_presentation_cause_for_event(outcome.event) {
         steps.push(gameplay_render_step_with_cause(
-            controller,
-            app_state,
-            cause,
-            PresentMode::Full,
+            controller, app_state, cause,
         ));
     }
 
@@ -90,14 +84,10 @@ pub(crate) fn gameplay_presentation_plan(
     controller: &GameplayController,
     app_state: &AppState,
     cause: GameplayPresentationCause,
-    present_mode: PresentMode,
 ) -> PresentationPlan {
     PresentationPlan {
         steps: vec![gameplay_render_step_with_cause(
-            controller,
-            app_state,
-            cause,
-            present_mode,
+            controller, app_state, cause,
         )],
     }
 }
@@ -106,13 +96,9 @@ fn gameplay_render_step_with_cause(
     controller: &GameplayController,
     app_state: &AppState,
     cause: GameplayPresentationCause,
-    present_mode: PresentMode,
 ) -> PresentationStep {
     PresentationStep::Render(build_gameplay_frame_request_with_cause(
-        controller,
-        app_state,
-        cause,
-        present_mode,
+        controller, app_state, cause,
     ))
 }
 
@@ -144,7 +130,7 @@ fn gameplay_presentation_cause_for_effect(
 #[cfg(test)]
 mod tests {
     use super::{
-        FrameSink, PresentMode, PresentationPlan, PresentationStep, build_presentation_plan,
+        FrameSink, PresentationPlan, PresentationStep, build_presentation_plan,
         gameplay_presentation_plan, render_presentation_plan,
     };
     use crate::app::{AppState, FrameRequest};
@@ -189,17 +175,12 @@ mod tests {
         )
     }
 
-    fn gameplay_render(plan: &PresentationPlan) -> (&GameplayPresentationUpdate, &PresentMode) {
-        let [
-            PresentationStep::Render(FrameRequest::Gameplay {
-                update,
-                present_mode,
-            }),
-        ] = plan.steps.as_slice()
+    fn gameplay_render(plan: &PresentationPlan) -> &GameplayPresentationUpdate {
+        let [PresentationStep::Render(FrameRequest::Gameplay { update })] = plan.steps.as_slice()
         else {
             panic!("expected one gameplay render step");
         };
-        (update, present_mode)
+        update
     }
 
     #[test]
@@ -210,9 +191,7 @@ mod tests {
             &controller,
             &app_state,
         );
-        let (update, present_mode) = gameplay_render(&plan);
-
-        assert_eq!(*present_mode, PresentMode::Full);
+        let update = gameplay_render(&plan);
         assert_eq!(update.scene.level_number, 1);
         assert_eq!(
             update.cause,
@@ -228,9 +207,7 @@ mod tests {
             &controller,
             &app_state,
         );
-        let (update, present_mode) = gameplay_render(&plan);
-
-        assert_eq!(*present_mode, PresentMode::Full);
+        let update = gameplay_render(&plan);
         assert_eq!(update.scene.level_number, 1);
         assert_eq!(
             update.cause,
@@ -246,9 +223,7 @@ mod tests {
             &controller,
             &app_state,
         );
-        let (update, present_mode) = gameplay_render(&plan);
-
-        assert_eq!(*present_mode, PresentMode::Full);
+        let update = gameplay_render(&plan);
         assert_eq!(update.scene.level_number, 1);
         assert_eq!(
             update.cause,
@@ -264,9 +239,7 @@ mod tests {
             &controller,
             &app_state,
         );
-        let (update, present_mode) = gameplay_render(&plan);
-
-        assert_eq!(*present_mode, PresentMode::Full);
+        let update = gameplay_render(&plan);
         assert_eq!(update.scene.level_number, 1);
         assert_eq!(update.cause, GameplayPresentationCause::BoxMoveRejected);
     }
@@ -290,11 +263,8 @@ mod tests {
             &controller,
             &app_state,
             GameplayPresentationCause::Restarted,
-            PresentMode::Full,
         );
-        let (update, present_mode) = gameplay_render(&plan);
-
-        assert_eq!(*present_mode, PresentMode::Full);
+        let update = gameplay_render(&plan);
         assert_eq!(update.cause, GameplayPresentationCause::Restarted);
     }
 
@@ -317,18 +287,14 @@ mod tests {
         let [
             PresentationStep::Render(FrameRequest::Gameplay {
                 update: move_update,
-                present_mode: move_present_mode,
             }),
             PresentationStep::Render(FrameRequest::Gameplay {
                 update: solved_update,
-                present_mode: solved_present_mode,
             }),
         ] = plan.steps.as_slice()
         else {
             panic!("expected move render followed by solved render");
         };
-
-        assert_eq!(*move_present_mode, PresentMode::Full);
         assert_eq!(
             move_update.cause,
             GameplayPresentationCause::BoxMoved {
@@ -336,7 +302,6 @@ mod tests {
             }
         );
         assert!(move_update.scene.board.is_solved());
-        assert_eq!(*solved_present_mode, PresentMode::Full);
         assert_eq!(
             solved_update.cause,
             GameplayPresentationCause::PuzzleSolved { clean: true }
@@ -373,7 +338,6 @@ mod tests {
                         page_start: 3,
                         resume_level: 0,
                     },
-                    present_mode: PresentMode::Full,
                 }),
             ],
         };
@@ -395,7 +359,6 @@ mod tests {
                         page_start: 3,
                         resume_level: 0,
                     },
-                    present_mode: PresentMode::Full,
                 },
             ]
         );

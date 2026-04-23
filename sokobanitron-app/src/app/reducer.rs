@@ -170,7 +170,6 @@ fn apply_restart_command(
         controller,
         app_state,
         GameplayPresentationCause::Restarted,
-        super::presentation::PresentMode::Full,
     ));
 }
 
@@ -184,7 +183,6 @@ fn apply_undo_command(
         controller,
         app_state,
         GameplayPresentationCause::UndoApplied,
-        super::presentation::PresentMode::Full,
     ));
 }
 
@@ -203,7 +201,6 @@ fn apply_advance_after_solved(
         controller,
         app_state,
         GameplayPresentationCause::CurrentState,
-        super::presentation::PresentMode::Full,
     ));
 }
 
@@ -348,7 +345,6 @@ fn schedule_current_gameplay_presentation(
         controller,
         app_state,
         GameplayPresentationCause::CurrentState,
-        super::presentation::PresentMode::Full,
     ));
 }
 

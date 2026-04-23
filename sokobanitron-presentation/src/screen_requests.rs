@@ -49,35 +49,14 @@ pub struct GameplayPresentationUpdate {
     pub cause: GameplayPresentationCause,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PresentMode {
-    Full,
-    FastPartial,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrameRequest {
-    Gameplay {
-        update: GameplayPresentationUpdate,
-        present_mode: PresentMode,
-    },
-    GameplayMenu {
-        screen: GameplayMenuScreenRequest,
-    },
-    LevelSelect {
-        screen: LevelSelectScreenRequest,
-        present_mode: PresentMode,
-    },
-    LevelSetSelect {
-        screen: LevelSetSelectScreenRequest,
-        present_mode: PresentMode,
-    },
-    Editor {
-        screen: EditorScreenRequest,
-    },
-    EditorMenu {
-        screen: EditorMenuScreenRequest,
-    },
+    Gameplay { update: GameplayPresentationUpdate },
+    GameplayMenu { screen: GameplayMenuScreenRequest },
+    LevelSelect { screen: LevelSelectScreenRequest },
+    LevelSetSelect { screen: LevelSetSelectScreenRequest },
+    Editor { screen: EditorScreenRequest },
+    EditorMenu { screen: EditorMenuScreenRequest },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
