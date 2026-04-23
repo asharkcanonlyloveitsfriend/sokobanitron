@@ -17,8 +17,6 @@ struct EditorControlsState {
     draw_mode_active: bool,
     can_zoom_out: bool,
     can_zoom_in: bool,
-    can_undo: bool,
-    can_restart: bool,
 }
 
 impl Renderer {
@@ -117,8 +115,6 @@ impl Renderer {
                 draw_mode_active: request.draw_mode_active,
                 can_zoom_out: request.can_zoom_out,
                 can_zoom_in: request.can_zoom_in,
-                can_undo: request.can_undo,
-                can_restart: request.can_restart,
             },
         );
         draw_top_menu_toggle(frame, width, height, false, self.theme);
@@ -168,27 +164,6 @@ fn draw_editor_controls(
                 "+",
                 UI_TEXT_SCALE,
                 1,
-                button_text_color(theme),
-            );
-        }
-    } else {
-        if controls.can_undo {
-            draw_ui_icon_in_rect(
-                frame,
-                width,
-                height,
-                editor_bottom_left_button_rect(height),
-                UiIcon::Undo,
-                button_text_color(theme),
-            );
-        }
-        if controls.can_restart {
-            draw_ui_icon_in_rect(
-                frame,
-                width,
-                height,
-                editor_bottom_right_button_rect(width, height),
-                UiIcon::Restart,
                 button_text_color(theme),
             );
         }
@@ -268,8 +243,6 @@ mod tests {
             draw_mode_active: false,
             can_zoom_out: false,
             can_zoom_in: false,
-            can_undo: false,
-            can_restart: false,
         };
         let mut renderer = Renderer::new();
         let mut frame = vec![0; 64 * 64];

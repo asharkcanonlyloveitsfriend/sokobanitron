@@ -40,7 +40,7 @@ pub(crate) struct EditorInteractionState {
     pub cursor_position: Option<(i32, i32)>,
     pub touch: TouchPointerState,
     pub active_stroke: Option<ActiveEditorStroke>,
-    pub double_tap: DoubleTapTracker<(i32, i32)>,
+    pub double_tap: DoubleTapTracker<EditorDoubleTapTarget>,
     pub double_tap_window: Duration,
 }
 
@@ -60,6 +60,13 @@ impl Default for EditorInteractionState {
 pub(crate) struct ActiveEditorStroke {
     pub pointer_id: PointerId,
     pub mode: PaintMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EditorDoubleTapTarget {
+    DrawCell(i32, i32),
+    MovePlayer,
+    MoveBox(i32, i32),
 }
 
 impl Default for EditorUiState {

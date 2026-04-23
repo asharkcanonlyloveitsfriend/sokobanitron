@@ -47,8 +47,6 @@ pub fn build_current_editor_frame_request(
                 can_zoom_in: !app_state.supports_multi_touch
                     && matches!(snapshot.mode, EditorMode::Draw)
                     && can_zoom_in(&app_state.editor, editor),
-                can_undo: snapshot.can_undo,
-                can_restart: snapshot.can_restart,
             },
         }
     }

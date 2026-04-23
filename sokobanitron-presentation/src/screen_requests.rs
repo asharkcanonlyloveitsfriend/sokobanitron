@@ -85,8 +85,6 @@ pub struct EditorScreenRequest {
     pub draw_mode_active: bool,
     pub can_zoom_out: bool,
     pub can_zoom_in: bool,
-    pub can_undo: bool,
-    pub can_restart: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

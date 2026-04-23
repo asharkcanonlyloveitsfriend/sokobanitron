@@ -113,6 +113,14 @@ impl LevelEditor {
         !self.is_reset_state()
     }
 
+    pub fn last_move_destination(&self) -> Option<(i32, i32)> {
+        let snapshot = self.undo_history.last()?;
+        self.world
+            .box_positions()
+            .into_iter()
+            .find(|position| !snapshot.world.has_box(position.0, position.1))
+    }
+
     pub fn export_puzzle(&self) -> Result<ExportedPuzzle, ExportPuzzleError> {
         let Some(bounds) = self.world.non_void_bounds() else {
             return Err(ExportPuzzleError::EmptyBoard);

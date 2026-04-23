@@ -28,8 +28,6 @@ pub(super) struct EditorSurfaceModel {
     pub(super) draw_mode_active: bool,
     pub(super) can_zoom_out: bool,
     pub(super) can_zoom_in: bool,
-    pub(super) can_undo: bool,
-    pub(super) can_restart: bool,
     pub(super) visible_window: VisibleBoardWindow,
 }
 
@@ -64,8 +62,6 @@ pub(super) fn build_editor_surface_model(
         can_zoom_in: !app_state.supports_multi_touch
             && matches!(editor.mode(), sokobanitron_level_editor::EditorMode::Draw)
             && can_zoom_in(&app_state.editor, editor),
-        can_undo: editor.can_undo(),
-        can_restart: editor.can_restart(),
         visible_window: build_visible_window(&app_state.editor, editor),
     }
 }
@@ -108,22 +104,6 @@ pub(super) fn editor_surface_target_at(
             ));
         }
         if surface.can_zoom_in
-            && editor_bottom_right_button_rect(surface.surface_width, surface.surface_height)
-                .contains(screen_x, screen_y)
-        {
-            return Some(EditorSurfaceTarget::ControlSlot(
-                EditorControlSlot::BottomRight,
-            ));
-        }
-    } else {
-        if surface.can_undo
-            && editor_bottom_left_button_rect(surface.surface_height).contains(screen_x, screen_y)
-        {
-            return Some(EditorSurfaceTarget::ControlSlot(
-                EditorControlSlot::BottomLeft,
-            ));
-        }
-        if surface.can_restart
             && editor_bottom_right_button_rect(surface.surface_width, surface.surface_height)
                 .contains(screen_x, screen_y)
         {
@@ -299,7 +279,7 @@ mod tests {
     }
 
     #[test]
-    fn move_mode_bottom_left_control_still_hits_undo() {
+    fn move_mode_has_no_bottom_controls() {
         let app_state = AppState::default();
         let mut editor = LevelEditor::new();
         editor.apply_command(EditorCommand::PaintCell {
@@ -325,15 +305,13 @@ mod tests {
         let surface = build_editor_surface_model(&app_state, &editor);
         let rect = editor_bottom_left_button_rect(surface.surface_height);
 
-        assert_eq!(
+        assert!(!matches!(
             editor_surface_target_at(
                 &surface,
                 (rect.x + rect.w / 2) as f64,
                 (rect.y + rect.h / 2) as f64
             ),
-            Some(EditorSurfaceTarget::ControlSlot(
-                super::EditorControlSlot::BottomLeft
-            ))
-        );
+            Some(EditorSurfaceTarget::ControlSlot(_))
+        ));
     }
 }

@@ -9,7 +9,6 @@ use crate::shared::{
     MOUSE_POINTER_ID, PinchDirection, PinchGesture, PointerContact, PointerEvent, PointerGesture,
     PointerId, PointerPhase, TouchGestureUpdate,
 };
-use presentation::hit_test::ControlsButtonAction;
 use sokobanitron_level_editor::{EditorCommand, EditorMode, LevelEditor, Tile};
 use std::time::Instant;
 
@@ -18,7 +17,8 @@ use super::hit_test::{
 };
 use super::paint_mode::PaintMode;
 use super::view::{
-    ActiveEditorStroke, EditorUiState, reset_editor_interaction_state, zoom_in, zoom_out,
+    ActiveEditorStroke, EditorDoubleTapTarget, EditorUiState, reset_editor_interaction_state,
+    zoom_in, zoom_out,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -345,20 +345,9 @@ fn apply_editor_control_slot(
     editor: &mut LevelEditor,
     slot: EditorControlSlot,
 ) {
-    match editor.mode() {
-        EditorMode::Draw => match slot {
-            EditorControlSlot::BottomLeft => zoom_out(&mut app_state.editor),
-            EditorControlSlot::BottomRight => zoom_in(&mut app_state.editor, editor),
-        },
-        EditorMode::Move => match resolve_move_action(editor, slot) {
-            Some(ControlsButtonAction::Undo) => {
-                editor.apply_command(EditorCommand::Undo);
-            }
-            Some(ControlsButtonAction::Restart) => {
-                editor.apply_command(EditorCommand::RestartToGoals);
-            }
-            _ => {}
-        },
+    match slot {
+        EditorControlSlot::BottomLeft => zoom_out(&mut app_state.editor),
+        EditorControlSlot::BottomRight => zoom_in(&mut app_state.editor, editor),
     }
 }
 
@@ -380,6 +369,9 @@ fn begin_editor_board_interaction(
             });
         }
         EditorMode::Move => {
+            if handle_move_mode_double_tap(app_state, editor, world_x, world_y, contact.at) {
+                return;
+            }
             if editor.world().has_box(world_x, world_y) {
                 editor.apply_command(EditorCommand::SelectBox {
                     cell_x: world_x,
@@ -466,7 +458,7 @@ fn resolve_paint_mode(
     }
 
     if ui.interaction.double_tap.register_tap(
-        (world_x, world_y),
+        EditorDoubleTapTarget::DrawCell(world_x, world_y),
         at,
         ui.interaction.double_tap_window,
     ) {
@@ -476,28 +468,122 @@ fn resolve_paint_mode(
     }
 }
 
-fn resolve_move_action(
-    editor: &LevelEditor,
-    slot: EditorControlSlot,
-) -> Option<ControlsButtonAction> {
-    match slot {
-        EditorControlSlot::BottomLeft if editor.can_undo() => Some(ControlsButtonAction::Undo),
-        EditorControlSlot::BottomRight if editor.can_restart() => {
-            Some(ControlsButtonAction::Restart)
+fn handle_move_mode_double_tap(
+    app_state: &mut AppState,
+    editor: &mut LevelEditor,
+    world_x: i32,
+    world_y: i32,
+    at: Instant,
+) -> bool {
+    let target = move_mode_double_tap_target(editor, world_x, world_y);
+    let Some(target) = target else {
+        app_state.editor.interaction.double_tap.clear();
+        return false;
+    };
+
+    let is_double_tap = app_state.editor.interaction.double_tap.register_tap(
+        target,
+        at,
+        app_state.editor.interaction.double_tap_window,
+    );
+    if is_double_tap {
+        match target {
+            EditorDoubleTapTarget::MovePlayer => {
+                editor.apply_command(EditorCommand::RestartToGoals);
+                return true;
+            }
+            EditorDoubleTapTarget::MoveBox(world_x, world_y) => {
+                if editor.last_move_destination() == Some((world_x, world_y)) {
+                    editor.apply_command(EditorCommand::Undo);
+                    return true;
+                }
+            }
+            EditorDoubleTapTarget::DrawCell(_, _) => {}
         }
-        _ => None,
     }
+
+    matches!(target, EditorDoubleTapTarget::MovePlayer) && editor.selected_box().is_none()
+}
+
+fn move_mode_double_tap_target(
+    editor: &LevelEditor,
+    world_x: i32,
+    world_y: i32,
+) -> Option<EditorDoubleTapTarget> {
+    if editor.world().player() == Some((world_x, world_y)) && editor.can_restart() {
+        return Some(EditorDoubleTapTarget::MovePlayer);
+    }
+    if editor.world().has_box(world_x, world_y) && editor.can_undo() {
+        return Some(EditorDoubleTapTarget::MoveBox(world_x, world_y));
+    }
+    None
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{EditorUiAction, editor_mouse_pressed, editor_touch};
+    use super::{
+        EditorUiAction, build_editor_surface_model, editor_mouse_pressed, editor_mouse_released,
+        editor_touch,
+    };
     use crate::app::state::{AppOverlay, AppScreen, AppState};
     use crate::shared::PointerPhase;
     use presentation::layout::{
         editor_bottom_right_button_rect, overlay_secondary_action_button_rect,
     };
+    use sokobanitron_gameplay::BoardCell;
     use sokobanitron_level_editor::{DrawTool, EditorCommand, EditorMode, LevelEditor};
+
+    fn screen_center_for_world_cell(
+        app_state: &AppState,
+        editor: &LevelEditor,
+        world_x: i32,
+        world_y: i32,
+    ) -> (f64, f64) {
+        let surface = build_editor_surface_model(app_state, editor);
+        let local_x = (world_x - surface.visible_window.world_origin_x) as u32;
+        let local_y = (world_y - surface.visible_window.world_origin_y) as u32;
+        let (screen_x, screen_y, width, height) = surface
+            .visible_window
+            .viewport
+            .cell_to_screen_rect(BoardCell::new(local_x, local_y));
+        (
+            (screen_x + (width / 2) as i32) as f64,
+            (screen_y + (height / 2) as i32) as f64,
+        )
+    }
+
+    fn move_mode_editor_with_history() -> (AppState, LevelEditor) {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        let mut editor = LevelEditor::new();
+        for x in 0..=4 {
+            editor.apply_command(EditorCommand::PaintCell {
+                cell_x: x,
+                cell_y: 0,
+                tool: DrawTool::Floor,
+            });
+        }
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 0,
+            cell_y: 0,
+            tool: DrawTool::GoalWithBox,
+        });
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 4,
+            cell_y: 0,
+            tool: DrawTool::GoalWithBox,
+        });
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Move));
+        editor.apply_command(EditorCommand::SelectBox {
+            cell_x: 0,
+            cell_y: 0,
+        });
+        editor.apply_command(EditorCommand::MoveSelectedBoxTo {
+            cell_x: 1,
+            cell_y: 0,
+        });
+        (app_state, editor)
+    }
 
     #[test]
     fn save_button_returns_action_and_closes_editor_menu() {
@@ -695,5 +781,59 @@ mod tests {
         );
 
         assert_ne!(editor.snapshot(), before);
+    }
+
+    #[test]
+    fn double_clicking_player_in_move_mode_restarts() {
+        let (mut app_state, mut editor) = move_mode_editor_with_history();
+        let player = editor
+            .world()
+            .player()
+            .expect("expected player after first move");
+        let (screen_x, screen_y) =
+            screen_center_for_world_cell(&app_state, &editor, player.0, player.1);
+
+        editor_mouse_pressed(&mut app_state, &mut editor, screen_x, screen_y);
+        editor_mouse_released(&mut app_state);
+        editor_mouse_pressed(&mut app_state, &mut editor, screen_x, screen_y);
+        editor_mouse_released(&mut app_state);
+
+        assert!(!editor.can_restart());
+        assert_eq!(editor.world().player(), None);
+        assert!(editor.world().has_box(0, 0));
+        assert!(editor.world().has_box(4, 0));
+        assert!(!editor.world().has_box(1, 0));
+    }
+
+    #[test]
+    fn double_clicking_last_moved_box_in_move_mode_undoes_last_move() {
+        let (mut app_state, mut editor) = move_mode_editor_with_history();
+        let (screen_x, screen_y) = screen_center_for_world_cell(&app_state, &editor, 1, 0);
+
+        editor_mouse_pressed(&mut app_state, &mut editor, screen_x, screen_y);
+        editor_mouse_released(&mut app_state);
+        editor_mouse_pressed(&mut app_state, &mut editor, screen_x, screen_y);
+        editor_mouse_released(&mut app_state);
+
+        assert!(!editor.can_undo());
+        assert!(editor.world().has_box(0, 0));
+        assert!(editor.world().has_box(4, 0));
+        assert!(!editor.world().has_box(1, 0));
+    }
+
+    #[test]
+    fn double_clicking_non_last_box_in_move_mode_only_toggles_selection() {
+        let (mut app_state, mut editor) = move_mode_editor_with_history();
+        let (screen_x, screen_y) = screen_center_for_world_cell(&app_state, &editor, 4, 0);
+
+        editor_mouse_pressed(&mut app_state, &mut editor, screen_x, screen_y);
+        editor_mouse_released(&mut app_state);
+        editor_mouse_pressed(&mut app_state, &mut editor, screen_x, screen_y);
+        editor_mouse_released(&mut app_state);
+
+        assert!(editor.can_undo());
+        assert_eq!(editor.selected_box(), None);
+        assert!(editor.world().has_box(1, 0));
+        assert!(editor.world().has_box(4, 0));
     }
 }
