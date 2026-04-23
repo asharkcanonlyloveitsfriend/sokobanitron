@@ -3,21 +3,11 @@ use crate::{
     config,
     platform::{Display, Region},
 };
-use presentation::screen_requests::{
-    GameplayPresentationCause, GameplayPresentationUpdate, GameplayScreenRequest,
-};
-use presentation::{
-    GameplayDamage, gameplay_damage_union_rect,
-    renderer::{
-        Renderer, draw_controls_ui, draw_gameplay_menu_level_set_button,
-        draw_overlay_primary_action_button, draw_top_menu_toggle,
-    },
-};
+use presentation::{FrameDamage, Renderer};
 use sokobanitron_app::{
     app::{FrameRequest, FrameSink, PresentMode},
     gameplay::{build_current_gameplay_screen_frame_request, build_sleep_gameplay_frame_request},
 };
-use sokobanitron_gameplay::BoardCell;
 use std::io::Result;
 
 impl KindleApp {
@@ -32,134 +22,21 @@ impl KindleApp {
     }
 
     fn render_request(&mut self, request: &FrameRequest) -> Result<()> {
-        match request {
-            FrameRequest::Gameplay {
-                update,
-                present_mode,
-            } => {
-                let effective_present_mode = kindle_gameplay_present_mode(update, *present_mode);
-                let result = self
-                    .gameplay_presentation
-                    .replace_update_with_damage(update.clone());
-                let (renderer, gray, display) =
-                    (&mut self.renderer, &mut self.gray_frame, &mut self.display);
-                self.gameplay_presentation.draw_damage(
-                    renderer,
-                    gray,
-                    config::WIDTH as u32,
-                    config::HEIGHT as u32,
-                    &result.damage,
-                );
-                present_gameplay_damage(
-                    display,
-                    &update.scene,
-                    &result.damage,
-                    gray,
-                    effective_present_mode,
-                )
-            }
-            FrameRequest::GameplayMenu { screen } => {
-                self.gameplay_presentation.clear();
-                let (renderer, gray, display) =
-                    (&mut self.renderer, &mut self.gray_frame, &mut self.display);
-                renderer.draw_background_only(gray, config::WIDTH as u32, config::HEIGHT as u32);
-                let theme = renderer.theme();
-                draw_top_menu_toggle(
-                    gray,
-                    config::WIDTH as u32,
-                    config::HEIGHT as u32,
-                    true,
-                    theme,
-                );
-                if screen.show_change_level_set {
-                    draw_gameplay_menu_level_set_button(
-                        gray,
-                        config::WIDTH as u32,
-                        config::HEIGHT as u32,
-                        theme,
-                    );
-                }
-                if let Some(icon) = screen.primary_action_icon {
-                    draw_overlay_primary_action_button(
-                        gray,
-                        config::WIDTH as u32,
-                        config::HEIGHT as u32,
-                        icon,
-                        theme.gray_2,
-                    );
-                }
-                display.present_gray(gray)
-            }
-            FrameRequest::LevelSelect {
-                screen,
-                present_mode,
-            } => {
-                self.gameplay_presentation.clear();
-                let (renderer, gray, display, preview_boards) = (
-                    &mut self.renderer,
-                    &mut self.gray_frame,
-                    &mut self.display,
-                    &self.preview_boards,
-                );
-                renderer.draw_background_only(gray, config::WIDTH as u32, config::HEIGHT as u32);
-                renderer.draw_level_select_menu_contents(
-                    gray,
-                    config::WIDTH as u32,
-                    config::HEIGHT as u32,
-                    preview_boards,
-                    screen.resume_level,
-                    screen.page_start,
-                );
-                draw_controls_ui(
-                    gray,
-                    config::WIDTH as u32,
-                    config::HEIGHT as u32,
-                    true,
-                    renderer.theme(),
-                );
-                if matches!(present_mode, PresentMode::FastPartial) {
-                    display.present_gray_fast_partial(gray)
-                } else {
-                    display.present_gray(gray)
-                }
-            }
-            FrameRequest::LevelSetSelect {
-                screen,
-                present_mode,
-            } => {
-                self.gameplay_presentation.clear();
-                let (renderer, gray, display) =
-                    (&mut self.renderer, &mut self.gray_frame, &mut self.display);
-                renderer.draw_background_only(gray, config::WIDTH as u32, config::HEIGHT as u32);
-                renderer.draw_level_set_select_menu_contents(
-                    gray,
-                    config::WIDTH as u32,
-                    config::HEIGHT as u32,
-                    screen,
-                );
-                draw_controls_ui(
-                    gray,
-                    config::WIDTH as u32,
-                    config::HEIGHT as u32,
-                    true,
-                    renderer.theme(),
-                );
-                if matches!(present_mode, PresentMode::FastPartial) {
-                    display.present_gray_fast_partial(gray)
-                } else {
-                    display.present_gray(gray)
-                }
-            }
-            FrameRequest::Editor { .. } | FrameRequest::EditorMenu { .. } => {
-                self.gameplay_presentation.clear();
-                let (renderer, gray, display) =
-                    (&mut self.renderer, &mut self.gray_frame, &mut self.display);
-                // Kindle still opts out of editor support; keep the fallback explicit until
-                // that client is migrated onto a real editor presentation path.
-                renderer.draw_background_only(gray, config::WIDTH as u32, config::HEIGHT as u32);
-                display.present_gray(gray)
-            }
-        }
+        let (renderer, gray, display, preview_boards) = (
+            &mut self.renderer,
+            &mut self.gray_frame,
+            &mut self.display,
+            &self.preview_boards,
+        );
+        let result = renderer.draw_frame_request(
+            gray,
+            config::WIDTH as u32,
+            config::HEIGHT as u32,
+            request,
+            &mut self.gameplay_presentation,
+            preview_boards,
+        );
+        present_frame_damage(display, result.damage, gray, result.present_mode)
     }
 
     pub(crate) fn render_sleep_screen(&mut self) -> Result<()> {
@@ -169,26 +46,25 @@ impl KindleApp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum GameplayDamageSubmission {
+enum FrameDamageSubmission {
     Full,
     Noop,
     UnionRegion(Region),
 }
 
-pub(crate) fn present_gameplay_damage(
+pub(crate) fn present_frame_damage(
     display: &mut Display,
-    scene: &GameplayScreenRequest,
-    damage: &GameplayDamage,
+    damage: FrameDamage,
     gray: &[u8],
     present_mode: PresentMode,
 ) -> Result<()> {
-    match kindle_gameplay_damage_submission(scene, damage) {
-        GameplayDamageSubmission::Full if matches!(present_mode, PresentMode::FastPartial) => {
+    match kindle_frame_damage_submission(damage) {
+        FrameDamageSubmission::Full if matches!(present_mode, PresentMode::FastPartial) => {
             display.present_gray_fast_partial(gray)
         }
-        GameplayDamageSubmission::Full => display.present_gray(gray),
-        GameplayDamageSubmission::Noop => Ok(()),
-        GameplayDamageSubmission::UnionRegion(region) => {
+        FrameDamageSubmission::Full => display.present_gray(gray),
+        FrameDamageSubmission::Noop => Ok(()),
+        FrameDamageSubmission::UnionRegion(region) => {
             if matches!(present_mode, PresentMode::FastPartial) {
                 display.present_gray_region_fast_partial(gray, region)
             } else {
@@ -198,61 +74,26 @@ pub(crate) fn present_gameplay_damage(
     }
 }
 
-fn kindle_gameplay_present_mode(
-    update: &GameplayPresentationUpdate,
-    requested: PresentMode,
-) -> PresentMode {
-    if matches!(requested, PresentMode::FastPartial) || kindle_cause_starts_animation(&update.cause)
-    {
-        PresentMode::FastPartial
-    } else {
-        requested
-    }
-}
-
-fn kindle_cause_starts_animation(cause: &GameplayPresentationCause) -> bool {
-    matches!(
-        cause,
-        GameplayPresentationCause::PlayerMoved { .. }
-            | GameplayPresentationCause::BoxMoved { .. }
-            | GameplayPresentationCause::BoxRemoved { .. }
-            | GameplayPresentationCause::BoxMoveRejected
-            | GameplayPresentationCause::PuzzleSolved { .. }
-            | GameplayPresentationCause::UndoApplied
-            | GameplayPresentationCause::Restarted
-    )
-}
-
-fn kindle_gameplay_damage_submission(
-    scene: &GameplayScreenRequest,
-    damage: &GameplayDamage,
-) -> GameplayDamageSubmission {
+fn kindle_frame_damage_submission(damage: FrameDamage) -> FrameDamageSubmission {
     match damage {
-        GameplayDamage::Full => GameplayDamageSubmission::Full,
-        GameplayDamage::Cells(cells) if cells.is_empty() => GameplayDamageSubmission::Noop,
+        FrameDamage::Full => FrameDamageSubmission::Full,
+        FrameDamage::Noop => FrameDamageSubmission::Noop,
         // Pass one keeps one union rect on Kindle. The PW3 test showed that back-to-back disjoint
         // submissions were supported but slower than one union region, so we keep the single
-        // submission policy as the conservative gameplay-only choice for now.
-        GameplayDamage::Cells(cells) => GameplayDamageSubmission::UnionRegion(
-            gameplay_damage_region(scene, cells)
-                .expect("non-empty gameplay cell damage should map to a Kindle region"),
-        ),
+        // submission policy as the conservative partial-damage choice for now.
+        FrameDamage::Region(rect) => {
+            FrameDamageSubmission::UnionRegion(region_from_screen_rect(rect))
+        }
     }
 }
 
-fn gameplay_damage_region(scene: &GameplayScreenRequest, cells: &[BoardCell]) -> Option<Region> {
-    gameplay_damage_union_rect(
-        scene,
-        &GameplayDamage::Cells(cells.to_vec()),
-        config::WIDTH as u32,
-        config::HEIGHT as u32,
-    )
-    .map(|rect| Region {
+fn region_from_screen_rect(rect: presentation::ScreenRect) -> Region {
+    Region {
         left: rect.x as usize,
         top: rect.y as usize,
         width: rect.w as usize,
         height: rect.h as usize,
-    })
+    }
 }
 
 impl FrameSink for KindleApp {
@@ -265,12 +106,12 @@ impl FrameSink for KindleApp {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        GameplayDamageSubmission, gameplay_damage_region, kindle_gameplay_damage_submission,
-        kindle_gameplay_present_mode,
-    };
+    use super::{FrameDamageSubmission, kindle_frame_damage_submission, region_from_screen_rect};
     use presentation::screen_requests::{GameplayPresentationCause, GameplayPresentationUpdate};
-    use presentation::{GameplayAnimationPolicy, GameplayDamage, GameplayPresentationState};
+    use presentation::{
+        FrameDamage, GameplayAnimationPolicy, GameplayDamage, GameplayPresentationState, Renderer,
+        gameplay_damage_union_rect,
+    };
     use sokobanitron_app::app::presentation::PresentationStep;
     use sokobanitron_app::app::{AppAction, AppState, FrameRequest, PresentMode, apply_action};
     use sokobanitron_app::gameplay::build_current_gameplay_board_frame_request;
@@ -289,7 +130,7 @@ mod tests {
 
     #[test]
     fn animation_start_gameplay_requests_upgrade_to_fast_partial() {
-        let update = gameplay_update(FrameRequest::Gameplay {
+        let request = FrameRequest::Gameplay {
             update: GameplayPresentationUpdate {
                 scene: gameplay_update(build_current_gameplay_board_frame_request(
                     &GameplayController::new(vec!["###\n#@#\n###".to_string()], None),
@@ -299,23 +140,49 @@ mod tests {
                 cause: GameplayPresentationCause::BoxMoveRejected,
             },
             present_mode: PresentMode::Full,
-        });
+        };
+        let mut renderer = Renderer::new();
+        let mut frame = vec![0; crate::config::WIDTH * crate::config::HEIGHT];
+        let mut presentation =
+            GameplayPresentationState::with_animation_policy(GameplayAnimationPolicy::Limited);
 
         assert_eq!(
-            kindle_gameplay_present_mode(&update, PresentMode::Full),
+            renderer
+                .draw_frame_request(
+                    &mut frame,
+                    crate::config::WIDTH as u32,
+                    crate::config::HEIGHT as u32,
+                    &request,
+                    &mut presentation,
+                    &[],
+                )
+                .present_mode,
             PresentMode::FastPartial
         );
     }
 
     #[test]
     fn non_animated_gameplay_requests_keep_requested_present_mode() {
-        let update = gameplay_update(build_current_gameplay_board_frame_request(
+        let request = build_current_gameplay_board_frame_request(
             &GameplayController::new(vec!["###\n#@#\n###".to_string()], None),
             &AppState::default(),
-        ));
+        );
+        let mut renderer = Renderer::new();
+        let mut frame = vec![0; crate::config::WIDTH * crate::config::HEIGHT];
+        let mut presentation =
+            GameplayPresentationState::with_animation_policy(GameplayAnimationPolicy::Limited);
 
         assert_eq!(
-            kindle_gameplay_present_mode(&update, PresentMode::Full),
+            renderer
+                .draw_frame_request(
+                    &mut frame,
+                    crate::config::WIDTH as u32,
+                    crate::config::HEIGHT as u32,
+                    &request,
+                    &mut presentation,
+                    &[],
+                )
+                .present_mode,
             PresentMode::Full
         );
     }
@@ -392,11 +259,24 @@ mod tests {
         let result = presentation.replace_update_with_damage(move_update.clone());
         assert_eq!(result.damage, GameplayDamage::Cells(expected_cells.clone()));
         assert_eq!(
-            kindle_gameplay_damage_submission(&move_update.scene, &result.damage),
-            GameplayDamageSubmission::UnionRegion(
-                gameplay_damage_region(&move_update.scene, &expected_cells)
-                    .expect("solved entity cells should map to a Kindle region"),
-            )
+            kindle_frame_damage_submission(FrameDamage::Region(
+                gameplay_damage_union_rect(
+                    &move_update.scene,
+                    &result.damage,
+                    crate::config::WIDTH as u32,
+                    crate::config::HEIGHT as u32,
+                )
+                .expect("solved entity cells should map to a screen rect"),
+            )),
+            FrameDamageSubmission::UnionRegion(region_from_screen_rect(
+                gameplay_damage_union_rect(
+                    &move_update.scene,
+                    &GameplayDamage::Cells(expected_cells),
+                    crate::config::WIDTH as u32,
+                    crate::config::HEIGHT as u32,
+                )
+                .expect("solved entity cells should map to a screen rect"),
+            ))
         );
 
         let solved_result = presentation.replace_update_with_damage(solved_update.clone());

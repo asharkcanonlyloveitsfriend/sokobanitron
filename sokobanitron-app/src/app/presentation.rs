@@ -13,45 +13,12 @@
 
 use super::state::AppState;
 use crate::gameplay::build_gameplay_frame_request_with_cause;
-use presentation::screen_requests::{
-    EditorMenuScreenRequest, EditorScreenRequest, GameplayMenuScreenRequest,
-    GameplayPresentationCause, GameplayPresentationUpdate, LevelSelectScreenRequest,
-    LevelSetSelectScreenRequest,
-};
+use presentation::screen_requests::GameplayPresentationCause;
 use sokobanitron_gameplay::{
     GameplayController, GameplayTapEffect, GameplayTapEvent, GameplayTapOutcome,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PresentMode {
-    Full,
-    FastPartial,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FrameRequest {
-    Gameplay {
-        update: GameplayPresentationUpdate,
-        present_mode: PresentMode,
-    },
-    GameplayMenu {
-        screen: GameplayMenuScreenRequest,
-    },
-    LevelSelect {
-        screen: LevelSelectScreenRequest,
-        present_mode: PresentMode,
-    },
-    LevelSetSelect {
-        screen: LevelSetSelectScreenRequest,
-        present_mode: PresentMode,
-    },
-    Editor {
-        screen: EditorScreenRequest,
-    },
-    EditorMenu {
-        screen: EditorMenuScreenRequest,
-    },
-}
+pub use presentation::screen_requests::{FrameRequest, PresentMode};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PresentationStep {
@@ -397,7 +364,7 @@ mod tests {
             steps: vec![
                 PresentationStep::Render(FrameRequest::GameplayMenu {
                     screen: GameplayMenuScreenRequest {
-                        primary_action_icon: None,
+                        primary_action_label: None,
                         show_change_level_set: false,
                     },
                 }),
@@ -419,7 +386,7 @@ mod tests {
             vec![
                 FrameRequest::GameplayMenu {
                     screen: GameplayMenuScreenRequest {
-                        primary_action_icon: None,
+                        primary_action_label: None,
                         show_change_level_set: false,
                     },
                 },

@@ -11,7 +11,6 @@
 use super::view::{GameplayVisibleBoardWindow, build_gameplay_visible_window};
 use crate::app::presentation::{FrameRequest, PresentMode};
 use crate::app::state::AppState;
-use presentation::assets::UiIcon;
 use presentation::screen_requests::{
     GameplayMenuScreenRequest, GameplayPresentationCause, GameplayPresentationUpdate,
     GameplayScreenMode, GameplayScreenRequest, LevelSelectScreenRequest, LevelSetListEntry,
@@ -123,7 +122,7 @@ pub fn build_current_gameplay_screen_frame_request(
     } else if app_state.is_gameplay_menu_open() {
         FrameRequest::GameplayMenu {
             screen: GameplayMenuScreenRequest {
-                primary_action_icon: app_state.editor_available.then_some(UiIcon::Draw),
+                primary_action_label: app_state.editor_available.then_some("EDIT"),
                 show_change_level_set: app_state.gameplay.level_sets.len() > 1,
             },
         }
@@ -259,7 +258,7 @@ mod tests {
             build_current_gameplay_screen_frame_request(&controller, &app_state),
             FrameRequest::GameplayMenu {
                 screen: GameplayMenuScreenRequest {
-                    primary_action_icon: None,
+                    primary_action_label: None,
                     show_change_level_set: false,
                 },
             },

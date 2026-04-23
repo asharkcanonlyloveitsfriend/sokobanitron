@@ -1,4 +1,3 @@
-use crate::assets::UiIcon;
 use crate::layout::{BoardViewport, ScreenRect};
 use sokobanitron_gameplay::{BoardCell, BoardView};
 
@@ -50,9 +49,40 @@ pub struct GameplayPresentationUpdate {
     pub cause: GameplayPresentationCause,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PresentMode {
+    Full,
+    FastPartial,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FrameRequest {
+    Gameplay {
+        update: GameplayPresentationUpdate,
+        present_mode: PresentMode,
+    },
+    GameplayMenu {
+        screen: GameplayMenuScreenRequest,
+    },
+    LevelSelect {
+        screen: LevelSelectScreenRequest,
+        present_mode: PresentMode,
+    },
+    LevelSetSelect {
+        screen: LevelSetSelectScreenRequest,
+        present_mode: PresentMode,
+    },
+    Editor {
+        screen: EditorScreenRequest,
+    },
+    EditorMenu {
+        screen: EditorMenuScreenRequest,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameplayMenuScreenRequest {
-    pub primary_action_icon: Option<UiIcon>,
+    pub primary_action_label: Option<&'static str>,
     pub show_change_level_set: bool,
 }
 
@@ -90,7 +120,7 @@ pub struct EditorScreenRequest {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EditorMenuScreenRequest {
-    pub primary_action_icon: UiIcon,
+    pub primary_action_label: &'static str,
     pub show_save_button: bool,
 }
 

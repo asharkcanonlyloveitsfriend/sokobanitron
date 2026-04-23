@@ -5,7 +5,6 @@
 
 use crate::app::presentation::FrameRequest;
 use crate::app::state::AppState;
-use presentation::assets::UiIcon;
 use presentation::layout::ScreenRect;
 use presentation::screen_requests::{
     EditorCountOverlay, EditorHintChange, EditorHintOverlay, EditorHintState,
@@ -28,7 +27,7 @@ pub fn build_current_editor_frame_request(
     if app_state.is_editor_menu_open() {
         FrameRequest::EditorMenu {
             screen: EditorMenuScreenRequest {
-                primary_action_icon: UiIcon::Select,
+                primary_action_label: "PLAY",
                 show_save_button: can_save_editor_puzzle(editor),
             },
         }

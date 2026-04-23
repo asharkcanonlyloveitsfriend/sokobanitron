@@ -7,7 +7,7 @@ use crate::screen_requests::{
     EditorHintChange, EditorHintState, EditorMenuScreenRequest, EditorScreenRequest,
 };
 
-use super::chrome::{draw_overlay_primary_action_button, draw_top_menu_toggle};
+use super::chrome::{draw_overlay_primary_action_button_label, draw_top_menu_toggle};
 use super::pixel_ui::{PIXEL_FONT_HEIGHT, draw_centered_text_in_rect, measure_text_width};
 use super::{BoardSceneComposition, Renderer, RendererTheme};
 
@@ -58,12 +58,12 @@ impl Renderer {
     ) {
         self.draw_background_only(frame, width, height);
         draw_top_menu_toggle(frame, width, height, true, self.theme);
-        draw_overlay_primary_action_button(
+        draw_overlay_primary_action_button_label(
             frame,
             width,
             height,
-            request.primary_action_icon,
-            button_text_color(self.theme),
+            request.primary_action_label,
+            self.theme,
         );
         if request.show_save_button {
             draw_centered_text_in_rect(

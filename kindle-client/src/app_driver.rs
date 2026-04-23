@@ -3,7 +3,7 @@ use presentation::{GameplayAnimationPolicy, GameplayPresentationState, Renderer}
 use sokobanitron_app::{
     AppPreferences,
     app::{
-        AppDriverContext, AppPointerInput, AppRuntimeMut, AppState, PresentMode,
+        AppDriverContext, AppPointerInput, AppRuntimeMut, AppState,
         continue_pending_render_work_and_render_in_context,
         handle_pointer_input_and_render_in_context, has_pending_render_work_in_context,
     },
@@ -135,29 +135,15 @@ impl KindleApp {
     }
 
     fn render_active_gameplay_presentation(&mut self) -> Result<()> {
-        let result = self
-            .gameplay_presentation
-            .advance_presentation_with_damage();
-        let scene = self.gameplay_presentation.current_scene().cloned();
         let (renderer, gray, display) =
             (&mut self.renderer, &mut self.gray_frame, &mut self.display);
-        self.gameplay_presentation.draw_damage(
-            renderer,
+        let result = renderer.draw_active_gameplay_presentation(
             gray,
             config::WIDTH as u32,
             config::HEIGHT as u32,
-            &result.damage,
+            &mut self.gameplay_presentation,
         );
-        let Some(scene) = scene else {
-            return Ok(());
-        };
-        crate::display::present_gameplay_damage(
-            display,
-            &scene,
-            &result.damage,
-            gray,
-            PresentMode::FastPartial,
-        )?;
+        crate::display::present_frame_damage(display, result.damage, gray, result.present_mode)?;
         Ok(())
     }
 

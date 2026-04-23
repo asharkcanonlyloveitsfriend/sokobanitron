@@ -1,11 +1,6 @@
 use crate::native_window::NativeWindow;
-use presentation::renderer::{
-    Renderer, RendererOverrides, draw_controls_ui, draw_gameplay_menu_level_set_button,
-    draw_overlay_primary_action_button, draw_top_menu_toggle,
-};
 use presentation::{
-    GameplayDamage, GameplayPresentationState, Renderer as GameplayRenderer, ScreenRect,
-    gameplay_damage_union_rect,
+    FrameDamage, GameplayPresentationState, Renderer as GameplayRenderer, RendererOverrides,
 };
 use sokobanitron_app::{
     app::{
@@ -82,7 +77,7 @@ impl AndroidApp {
             build_current_app_screen_frame_request(&controller, &app_state, &editor);
 
         let mut app = Self {
-            renderer: Renderer::with_overrides(android_renderer_overrides()),
+            renderer: GameplayRenderer::with_overrides(android_renderer_overrides()),
             gameplay_presentation: GameplayPresentationState::new(),
             gray_frame: allocate_gray_frame(surface_width, surface_height),
             current_request,
@@ -205,168 +200,38 @@ impl AndroidApp {
     }
 
     fn render_request_into_frame(&mut self, request: &FrameRequest) -> FrameDamage {
-        match request {
-            FrameRequest::Gameplay { update, .. } => {
-                let result = self
-                    .gameplay_presentation
-                    .replace_update_with_damage(update.clone());
-                self.gameplay_presentation.draw_damage(
-                    &mut self.renderer,
-                    &mut self.gray_frame,
-                    self.surface_width,
-                    self.surface_height,
-                    &result.damage,
-                );
-                FrameDamage::from_gameplay_damage(
-                    &update.scene,
-                    &result.damage,
-                    self.surface_width,
-                    self.surface_height,
-                )
-            }
-            FrameRequest::GameplayMenu { screen } => {
-                self.gameplay_presentation.clear();
-                self.renderer.draw_background_only(
-                    &mut self.gray_frame,
-                    self.surface_width,
-                    self.surface_height,
-                );
-                draw_top_menu_toggle(
-                    &mut self.gray_frame,
-                    self.surface_width,
-                    self.surface_height,
-                    true,
-                    self.renderer.theme(),
-                );
-                if screen.show_change_level_set {
-                    draw_gameplay_menu_level_set_button(
-                        &mut self.gray_frame,
-                        self.surface_width,
-                        self.surface_height,
-                        self.renderer.theme(),
-                    );
-                }
-                if let Some(icon) = screen.primary_action_icon {
-                    draw_overlay_primary_action_button(
-                        &mut self.gray_frame,
-                        self.surface_width,
-                        self.surface_height,
-                        icon,
-                        self.renderer.theme().gray_2,
-                    );
-                }
-                FrameDamage::Full
-            }
-            FrameRequest::LevelSelect { screen, .. } => {
-                self.gameplay_presentation.clear();
-                self.renderer.draw_background_only(
-                    &mut self.gray_frame,
-                    self.surface_width,
-                    self.surface_height,
-                );
-                self.renderer.draw_level_select_menu_contents(
-                    &mut self.gray_frame,
-                    self.surface_width,
-                    self.surface_height,
-                    &self.preview_boards,
-                    screen.resume_level,
-                    screen.page_start,
-                );
-                draw_controls_ui(
-                    &mut self.gray_frame,
-                    self.surface_width,
-                    self.surface_height,
-                    true,
-                    self.renderer.theme(),
-                );
-                FrameDamage::Full
-            }
-            FrameRequest::LevelSetSelect { screen, .. } => {
-                self.gameplay_presentation.clear();
-                self.renderer.draw_background_only(
-                    &mut self.gray_frame,
-                    self.surface_width,
-                    self.surface_height,
-                );
-                self.renderer.draw_level_set_select_menu_contents(
-                    &mut self.gray_frame,
-                    self.surface_width,
-                    self.surface_height,
-                    screen,
-                );
-                draw_controls_ui(
-                    &mut self.gray_frame,
-                    self.surface_width,
-                    self.surface_height,
-                    true,
-                    self.renderer.theme(),
-                );
-                FrameDamage::Full
-            }
-            FrameRequest::Editor { screen } => {
-                self.gameplay_presentation.clear();
-                self.renderer.draw_editor_screen(
-                    &mut self.gray_frame,
-                    self.surface_width,
-                    self.surface_height,
-                    screen,
-                );
-                FrameDamage::Full
-            }
-            FrameRequest::EditorMenu { screen } => {
-                self.gameplay_presentation.clear();
-                self.renderer.draw_editor_menu(
-                    &mut self.gray_frame,
-                    self.surface_width,
-                    self.surface_height,
-                    screen,
-                );
-                FrameDamage::Full
-            }
-        }
+        self.renderer
+            .draw_frame_request(
+                &mut self.gray_frame,
+                self.surface_width,
+                self.surface_height,
+                request,
+                &mut self.gameplay_presentation,
+                &self.preview_boards,
+            )
+            .damage
     }
 
     fn render_active_gameplay_presentation_into_frame(&mut self) -> FrameDamage {
-        let Some(scene) = self.gameplay_presentation.current_scene().cloned() else {
-            return FrameDamage::Noop;
-        };
-        let result = self
-            .gameplay_presentation
-            .advance_presentation_with_damage();
-        self.gameplay_presentation.draw_damage(
-            &mut self.renderer,
-            &mut self.gray_frame,
-            self.surface_width,
-            self.surface_height,
-            &result.damage,
-        );
-        FrameDamage::from_gameplay_damage(
-            &scene,
-            &result.damage,
-            self.surface_width,
-            self.surface_height,
-        )
+        self.renderer
+            .draw_active_gameplay_presentation(
+                &mut self.gray_frame,
+                self.surface_width,
+                self.surface_height,
+                &mut self.gameplay_presentation,
+            )
+            .damage
     }
 
     fn draw_full_request_into_frame(&mut self, request: &FrameRequest) {
-        match request {
-            FrameRequest::Gameplay { update, .. } => {
-                self.gameplay_presentation.replace_update(update.clone());
-                self.gameplay_presentation.draw(
-                    &mut self.renderer,
-                    &mut self.gray_frame,
-                    self.surface_width,
-                    self.surface_height,
-                );
-            }
-            FrameRequest::GameplayMenu { .. }
-            | FrameRequest::LevelSelect { .. }
-            | FrameRequest::LevelSetSelect { .. }
-            | FrameRequest::Editor { .. }
-            | FrameRequest::EditorMenu { .. } => {
-                let _ = self.render_request_into_frame(request);
-            }
-        }
+        self.renderer.draw_full_frame_request(
+            &mut self.gray_frame,
+            self.surface_width,
+            self.surface_height,
+            request,
+            &mut self.gameplay_presentation,
+            &self.preview_boards,
+        );
     }
 }
 
@@ -386,52 +251,6 @@ fn android_renderer_overrides() -> RendererOverrides {
         gray_12: Some(112),
         gray_13: Some(102),
         gray_14: Some(90),
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FrameDamage {
-    Full,
-    Region(ScreenRect),
-    Noop,
-}
-
-impl FrameDamage {
-    fn from_gameplay_damage(
-        scene: &presentation::GameplayScreenRequest,
-        damage: &GameplayDamage,
-        surface_width: u32,
-        surface_height: u32,
-    ) -> Self {
-        match damage {
-            GameplayDamage::Full => Self::Full,
-            GameplayDamage::Cells(cells) if cells.is_empty() => Self::Noop,
-            GameplayDamage::Cells(_) => Self::Region(
-                gameplay_damage_union_rect(scene, damage, surface_width, surface_height)
-                    .expect("non-empty gameplay damage should map to an Android screen rect"),
-            ),
-        }
-    }
-
-    fn merge(self, other: Self) -> Self {
-        match (self, other) {
-            (Self::Full, _) | (_, Self::Full) => Self::Full,
-            (Self::Noop, damage) | (damage, Self::Noop) => damage,
-            (Self::Region(a), Self::Region(b)) => Self::Region(union_screen_rect(a, b)),
-        }
-    }
-}
-
-fn union_screen_rect(a: ScreenRect, b: ScreenRect) -> ScreenRect {
-    let left = a.x.min(b.x);
-    let top = a.y.min(b.y);
-    let right = a.x.saturating_add(a.w).max(b.x.saturating_add(b.w));
-    let bottom = a.y.saturating_add(a.h).max(b.y.saturating_add(b.h));
-    ScreenRect {
-        x: left,
-        y: top,
-        w: right - left,
-        h: bottom - top,
     }
 }
 

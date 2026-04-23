@@ -1,4 +1,3 @@
-use crate::assets::{UiIcon, draw_ui_icon_in_rect};
 use crate::layout::{
     ScreenRect, gameplay_menu_level_set_button_rect, overlay_primary_action_button_rect,
     top_left_level_button_rect, top_menu_toggle_button_rect,
@@ -60,15 +59,21 @@ pub fn draw_top_menu_toggle(
     );
 }
 
-pub fn draw_overlay_primary_action_button(
+pub fn draw_overlay_primary_action_button_label(
     frame: &mut [u8],
     width: u32,
     height: u32,
-    icon: UiIcon,
-    color: u8,
+    label: &str,
+    theme: RendererTheme,
 ) {
-    let rect = overlay_primary_action_button_rect(width, height);
-    draw_ui_icon_in_rect(frame, width, height, rect, icon, color);
+    draw_button(
+        frame,
+        width,
+        height,
+        overlay_primary_action_button_rect(width, height),
+        label,
+        theme,
+    );
 }
 
 pub fn draw_gameplay_menu_level_set_button(
