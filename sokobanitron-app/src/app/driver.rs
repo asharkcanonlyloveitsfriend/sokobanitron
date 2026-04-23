@@ -4,7 +4,9 @@ use super::persistence::{
     apply_runtime_effects, persist_editor_puzzle_to_default_set, refresh_level_set_for_app,
     sync_level_set_catalog_for_app,
 };
-use super::presentation::{AppFrameRenderer, FrameDamage, PresentationPlan};
+use super::presentation::{
+    AppFrameRenderer, FrameDamage, GameplayAnimationPolicy, PresentationPlan, RendererOverrides,
+};
 use super::presentation::{FrameRequest, FrameSink, render_presentation_plan};
 use super::reducer::PersistenceUpdate;
 use super::reducer::apply_action;
@@ -12,17 +14,20 @@ use super::state::{AppInteractionMode, AppScreen, AppState};
 use crate::editor::{
     EditorUiAction, build_current_editor_frame_request, editor_cursor_moved, editor_mouse_pressed,
     editor_mouse_released, editor_touch, reset_editor_interaction_state, resize_editor_surface,
+    set_editor_double_tap_window, set_editor_touch_slop,
 };
 use crate::gameplay::{
     build_current_gameplay_board_frame_request, build_current_gameplay_screen_frame_request,
     build_sleep_gameplay_frame_request, interpret_gameplay_pointer_event,
     interpret_gameplay_pointer_tap, resize_gameplay_surface, set_gameplay_level_sets,
+    set_gameplay_max_cell_size, set_gameplay_touch_slop,
 };
 use crate::level_bootstrap::InitialLevels;
 use crate::persistence::LevelPersistence;
 use crate::shared::PointerPhase;
 use sokobanitron_gameplay::{BoardView, GameplayController, GameplayControllerChanges};
 use sokobanitron_level_editor::{EditorCommand, LevelEditor};
+use std::time::Duration;
 
 const EDITOR_HINT_ADVANCE_STEPS: usize = 8;
 
@@ -42,6 +47,55 @@ pub struct AppliedUpdate {
     pub presentation_plan: Option<PresentationPlan>,
     pub rendered_frame: bool,
     pub render_work: RenderWorkResult,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SharedAppRendererConfig {
+    pub renderer_overrides: RendererOverrides,
+    pub gameplay_animation_policy: GameplayAnimationPolicy,
+}
+
+impl SharedAppRendererConfig {
+    fn build_renderer(self) -> AppFrameRenderer {
+        AppFrameRenderer::with_renderer_overrides_and_gameplay_animation_policy(
+            self.renderer_overrides,
+            self.gameplay_animation_policy,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SharedAppRuntimeConfig {
+    pub editor_available: bool,
+    pub supports_multi_touch: bool,
+    pub gameplay_touch_slop_px: Option<i32>,
+    pub gameplay_max_cell_size: Option<u32>,
+    pub editor_touch_slop_px: Option<i32>,
+    pub editor_double_tap_window: Option<Duration>,
+    pub renderer: SharedAppRendererConfig,
+}
+
+impl SharedAppRuntimeConfig {
+    fn build_app_state(self) -> AppState {
+        let mut app_state = AppState {
+            editor_available: self.editor_available,
+            supports_multi_touch: self.supports_multi_touch,
+            ..AppState::default()
+        };
+        if let Some(max_cell_size) = self.gameplay_max_cell_size {
+            set_gameplay_max_cell_size(&mut app_state.gameplay, max_cell_size);
+        }
+        if let Some(touch_slop) = self.gameplay_touch_slop_px {
+            set_gameplay_touch_slop(&mut app_state.gameplay, touch_slop);
+        }
+        if let Some(touch_slop) = self.editor_touch_slop_px {
+            set_editor_touch_slop(&mut app_state, touch_slop);
+        }
+        if let Some(double_tap_window) = self.editor_double_tap_window {
+            set_editor_double_tap_window(&mut app_state, double_tap_window);
+        }
+        app_state
+    }
 }
 
 trait AppDriverContext {
@@ -139,11 +193,12 @@ impl<'a> AppRuntimeMut<'a> {
 impl SharedAppRuntime {
     pub fn new(
         initial_levels: InitialLevels,
-        mut app_state: AppState,
         surface_width: u32,
         surface_height: u32,
-        frame_renderer: AppFrameRenderer,
+        config: SharedAppRuntimeConfig,
     ) -> Self {
+        let mut app_state = config.build_app_state();
+        let frame_renderer = config.renderer.build_renderer();
         let surface_width = surface_width.max(1);
         let surface_height = surface_height.max(1);
         resize_gameplay_surface(&mut app_state.gameplay, surface_width, surface_height);
@@ -170,14 +225,6 @@ impl SharedAppRuntime {
             surface_width,
             surface_height,
         }
-    }
-
-    pub fn app_state(&self) -> &AppState {
-        &self.app_state
-    }
-
-    pub fn app_state_mut(&mut self) -> &mut AppState {
-        &mut self.app_state
     }
 
     pub fn surface_width(&self) -> u32 {
@@ -773,14 +820,17 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        AppDriverContext, AppFramePresenter, AppPointerInput, AppRuntimeMut, SharedAppRuntime,
+        AppDriverContext, AppFramePresenter, AppPointerInput, AppRuntimeMut,
+        SharedAppRendererConfig, SharedAppRuntime, SharedAppRuntimeConfig,
         apply_action_and_render_in_context, apply_action_in_context, apply_editor_ui_action,
         apply_input_and_render_in_context, continue_pending_render_work_and_render_in_context,
         handle_pointer_input_and_render_in_context, has_pending_render_work_in_context,
     };
     use crate::app::action::AppAction;
     use crate::app::input::AppInput;
-    use crate::app::presentation::{AppFrameRenderer, FrameDamage, FrameRequest};
+    use crate::app::presentation::{
+        FrameDamage, FrameRequest, GameplayAnimationPolicy, RendererOverrides,
+    };
     use crate::app::state::{AppInteractionMode, AppOverlay, AppScreen, AppState};
     use crate::editor::{EditorUiAction, build_current_editor_frame_request, editor_mouse_pressed};
     use crate::level_bootstrap::{
@@ -798,7 +848,7 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     static NEXT_TEMP_DIR_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -1092,10 +1142,9 @@ mod tests {
     fn shared_app_runtime_owns_model_and_frame_state() {
         let mut runtime = SharedAppRuntime::new(
             runtime_initial_levels(vec!["###\n#@#\n###".to_string()]),
-            AppState::default(),
             128,
             96,
-            AppFrameRenderer::new(),
+            SharedAppRuntimeConfig::default(),
         );
         let request = runtime.current_frame_request();
 
@@ -1111,14 +1160,83 @@ mod tests {
     }
 
     #[test]
+    fn runtime_renderer_config_is_applied_to_rendering() {
+        let mut default_runtime = SharedAppRuntime::new(
+            runtime_initial_levels(vec!["#####\n#@$.#\n#####".to_string()]),
+            128,
+            96,
+            SharedAppRuntimeConfig::default(),
+        );
+        let mut custom_runtime = SharedAppRuntime::new(
+            runtime_initial_levels(vec!["#####\n#@$.#\n#####".to_string()]),
+            128,
+            96,
+            SharedAppRuntimeConfig {
+                renderer: SharedAppRendererConfig {
+                    renderer_overrides: RendererOverrides {
+                        gray_1: Some(1),
+                        gray_2: Some(2),
+                        gray_3: Some(3),
+                        gray_4: Some(4),
+                        gray_5: Some(5),
+                        gray_6: Some(6),
+                        gray_7: Some(7),
+                        gray_8: Some(8),
+                        gray_9: Some(9),
+                        gray_10: Some(10),
+                        gray_11: Some(11),
+                        gray_12: Some(12),
+                        gray_13: Some(13),
+                        gray_14: Some(14),
+                    },
+                    gameplay_animation_policy: GameplayAnimationPolicy::Limited,
+                },
+                ..SharedAppRuntimeConfig::default()
+            },
+        );
+        let default_request = default_runtime.current_frame_request();
+        let custom_request = custom_runtime.current_frame_request();
+
+        default_runtime.draw_frame_request(&default_request);
+        custom_runtime.draw_frame_request(&custom_request);
+
+        assert_ne!(default_runtime.gray_frame(), custom_runtime.gray_frame());
+    }
+
+    #[test]
+    fn shared_app_runtime_builds_state_from_generic_config() {
+        let runtime = SharedAppRuntime::new(
+            runtime_initial_levels(vec!["###\n#@#\n###".to_string()]),
+            128,
+            96,
+            SharedAppRuntimeConfig {
+                editor_available: true,
+                supports_multi_touch: true,
+                gameplay_touch_slop_px: Some(17),
+                gameplay_max_cell_size: Some(123),
+                editor_touch_slop_px: Some(19),
+                editor_double_tap_window: Some(Duration::from_millis(640)),
+                renderer: SharedAppRendererConfig::default(),
+            },
+        );
+
+        assert!(runtime.app_state.supports_multi_touch);
+        assert!(runtime.app_state.editor_available);
+        assert_eq!(runtime.app_state.gameplay.max_cell_size, 123);
+        assert_eq!(
+            runtime.app_state.editor.interaction.double_tap_window,
+            Duration::from_millis(640)
+        );
+    }
+
+    #[test]
     fn shared_app_runtime_applies_input_and_outputs_rendered_frames() {
         let level = "    ###   \n $$     #@\n $ #...   \n   #######".to_string();
         let mut runtime = SharedAppRuntime::new(
             runtime_initial_levels(vec![level.clone(), level]),
-            AppState::default(),
             128,
             96,
-            AppFrameRenderer::new(),
+            SharedAppRuntimeConfig::default(),
         );
         let mut presenter = RecordingPresenter::default();
 

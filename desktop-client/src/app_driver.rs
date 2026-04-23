@@ -1,6 +1,6 @@
 use pixels::{Pixels, SurfaceTexture};
 use sokobanitron_app::{
-    app::{AppFrameRenderer, AppInput, AppPointerInput, AppState, AppliedUpdate, SharedAppRuntime},
+    app::{AppInput, AppPointerInput, AppliedUpdate, SharedAppRuntime, SharedAppRuntimeConfig},
     level_bootstrap::load_initial_levels_for_app,
     shared::PointerPhase,
 };
@@ -29,20 +29,14 @@ pub struct App {
 impl App {
     pub fn new() -> io::Result<Self> {
         let initial_levels = load_initial_levels_for_app(std::path::Path::new(LEVEL_SETS_ROOT))?;
-        let app_state = AppState {
-            editor_available: true,
-            supports_multi_touch: false,
-            ..AppState::default()
-        };
         Ok(Self {
             window: None,
             pixels: None,
             runtime: SharedAppRuntime::new(
                 initial_levels,
-                app_state,
                 INITIAL_WIDTH,
                 INITIAL_HEIGHT,
-                AppFrameRenderer::new(),
+                desktop_runtime_config(),
             ),
             cursor_position: None,
         })
@@ -73,6 +67,14 @@ impl App {
         if let Some(window) = &self.window {
             window.request_redraw();
         }
+    }
+}
+
+fn desktop_runtime_config() -> SharedAppRuntimeConfig {
+    SharedAppRuntimeConfig {
+        editor_available: true,
+        supports_multi_touch: false,
+        ..SharedAppRuntimeConfig::default()
     }
 }
 

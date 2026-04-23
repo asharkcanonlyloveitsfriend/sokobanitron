@@ -1,11 +1,9 @@
 use crate::native_window::NativeWindow;
 use sokobanitron_app::{
     app::{
-        AppFramePresenter, AppFrameRenderer, AppPointerInput, AppState, FrameDamage,
-        GameplayAnimationPolicy, RendererOverrides, SharedAppRuntime,
+        AppFramePresenter, AppPointerInput, FrameDamage, GameplayAnimationPolicy,
+        RendererOverrides, SharedAppRendererConfig, SharedAppRuntime, SharedAppRuntimeConfig,
     },
-    editor::{set_editor_double_tap_window, set_editor_touch_slop},
-    gameplay::set_gameplay_touch_slop,
     level_bootstrap::load_initial_levels_for_app,
     shared::PointerPhase,
 };
@@ -32,27 +30,12 @@ impl AndroidApp {
         let surface_width = surface_width.max(1);
         let surface_height = surface_height.max(1);
         let initial_levels = load_initial_levels_for_app(level_sets_root)?;
-        let app_state = AppState {
-            editor_available: true,
-            supports_multi_touch: true,
-            ..AppState::default()
-        };
-        let mut runtime = SharedAppRuntime::new(
+        let runtime = SharedAppRuntime::new(
             initial_levels,
-            app_state,
             surface_width,
             surface_height,
-            AppFrameRenderer::with_renderer_overrides_and_gameplay_animation_policy(
-                android_renderer_overrides(),
-                GameplayAnimationPolicy::Full,
-            ),
+            android_runtime_config(),
         );
-        set_gameplay_touch_slop(
-            &mut runtime.app_state_mut().gameplay,
-            ANDROID_GAMEPLAY_TAP_SLOP_PX,
-        );
-        set_editor_touch_slop(runtime.app_state_mut(), ANDROID_EDITOR_TAP_SLOP_PX);
-        set_editor_double_tap_window(runtime.app_state_mut(), ANDROID_EDITOR_DOUBLE_TAP_WINDOW);
         let mut app = Self {
             runtime,
             pending_present_damage: FrameDamage::Noop,
@@ -164,22 +147,18 @@ impl AndroidApp {
     }
 }
 
-struct AndroidFramePresenter<'a> {
-    pending_present_damage: &'a mut FrameDamage,
-}
-
-impl AppFramePresenter for AndroidFramePresenter<'_> {
-    type Error = ();
-
-    fn present_frame(
-        &mut self,
-        damage: FrameDamage,
-        _gray_frame: &[u8],
-        _width: u32,
-        _height: u32,
-    ) -> Result<(), Self::Error> {
-        *self.pending_present_damage = (*self.pending_present_damage).merge(damage);
-        Ok(())
+fn android_runtime_config() -> SharedAppRuntimeConfig {
+    SharedAppRuntimeConfig {
+        editor_available: true,
+        supports_multi_touch: true,
+        gameplay_touch_slop_px: Some(ANDROID_GAMEPLAY_TAP_SLOP_PX),
+        editor_touch_slop_px: Some(ANDROID_EDITOR_TAP_SLOP_PX),
+        editor_double_tap_window: Some(ANDROID_EDITOR_DOUBLE_TAP_WINDOW),
+        renderer: SharedAppRendererConfig {
+            renderer_overrides: android_renderer_overrides(),
+            gameplay_animation_policy: GameplayAnimationPolicy::Full,
+        },
+        ..SharedAppRuntimeConfig::default()
     }
 }
 
@@ -199,5 +178,24 @@ fn android_renderer_overrides() -> RendererOverrides {
         gray_12: Some(112),
         gray_13: Some(102),
         gray_14: Some(90),
+    }
+}
+
+struct AndroidFramePresenter<'a> {
+    pending_present_damage: &'a mut FrameDamage,
+}
+
+impl AppFramePresenter for AndroidFramePresenter<'_> {
+    type Error = ();
+
+    fn present_frame(
+        &mut self,
+        damage: FrameDamage,
+        _gray_frame: &[u8],
+        _width: u32,
+        _height: u32,
+    ) -> Result<(), Self::Error> {
+        *self.pending_present_damage = (*self.pending_present_damage).merge(damage);
+        Ok(())
     }
 }

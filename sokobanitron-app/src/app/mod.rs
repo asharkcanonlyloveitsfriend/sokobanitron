@@ -17,7 +17,8 @@ pub mod state;
 
 pub use action::AppAction;
 pub use driver::{
-    AppFramePresenter, AppPointerInput, AppliedUpdate, RenderWorkResult, SharedAppRuntime,
+    AppFramePresenter, AppPointerInput, AppliedUpdate, RenderWorkResult, SharedAppRendererConfig,
+    SharedAppRuntime, SharedAppRuntimeConfig,
 };
 pub use input::{AppInput, interpret_input};
 pub use presentation::{

@@ -3,16 +3,11 @@ use crate::{
     platform::{Display, Region},
 };
 use sokobanitron_app::app::{
-    AppFramePresenter, AppFrameRenderer, AppPointerInput, FrameDamage, GameplayAnimationPolicy,
-    RenderWorkResult, ScreenRect,
+    AppFramePresenter, AppPointerInput, FrameDamage, RenderWorkResult, ScreenRect,
 };
 use std::io::Result;
 
 impl KindleApp {
-    pub(crate) fn build_frame_renderer() -> AppFrameRenderer {
-        AppFrameRenderer::with_gameplay_animation_policy(GameplayAnimationPolicy::Limited)
-    }
-
     pub(crate) fn render(&mut self) -> Result<()> {
         let mut presenter = KindleFramePresenter {
             display: &mut self.display,

@@ -1,8 +1,10 @@
 use crate::{config, platform};
 use sokobanitron_app::{
     AppPreferences,
-    app::{AppPointerInput, AppState, SharedAppRuntime},
-    gameplay::{set_gameplay_max_cell_size, set_gameplay_touch_slop},
+    app::{
+        AppPointerInput, GameplayAnimationPolicy, SharedAppRendererConfig, SharedAppRuntime,
+        SharedAppRuntimeConfig,
+    },
     level_bootstrap::load_initial_levels_for_app,
     shared::PointerPhase,
 };
@@ -40,24 +42,11 @@ impl KindleApp {
                 eprintln!("warning: failed to load or normalize preferences: {err}");
                 AppPreferences::default()
             });
-        let app_state = AppState {
-            supports_multi_touch: true,
-            ..AppState::default()
-        };
-        let mut runtime = SharedAppRuntime::new(
+        let runtime = SharedAppRuntime::new(
             initial_levels,
-            app_state,
             config::WIDTH as u32,
             config::HEIGHT as u32,
-            Self::build_frame_renderer(),
-        );
-        set_gameplay_max_cell_size(
-            &mut runtime.app_state_mut().gameplay,
-            KINDLE_GAMEPLAY_MAX_CELL_SIZE,
-        );
-        set_gameplay_touch_slop(
-            &mut runtime.app_state_mut().gameplay,
-            KINDLE_GAMEPLAY_TAP_SLOP_PX,
+            kindle_runtime_config(),
         );
         Ok(Self {
             runtime,
@@ -205,5 +194,18 @@ impl KindleApp {
             y: screen_y as f64,
         })?;
         Ok(())
+    }
+}
+
+fn kindle_runtime_config() -> SharedAppRuntimeConfig {
+    SharedAppRuntimeConfig {
+        supports_multi_touch: true,
+        gameplay_touch_slop_px: Some(KINDLE_GAMEPLAY_TAP_SLOP_PX),
+        gameplay_max_cell_size: Some(KINDLE_GAMEPLAY_MAX_CELL_SIZE),
+        renderer: SharedAppRendererConfig {
+            gameplay_animation_policy: GameplayAnimationPolicy::Limited,
+            ..SharedAppRendererConfig::default()
+        },
+        ..SharedAppRuntimeConfig::default()
     }
 }
