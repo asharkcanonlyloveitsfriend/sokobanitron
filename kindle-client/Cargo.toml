@@ -4,9 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-sokobanitron-gameplay = { path = "../sokobanitron-gameplay" }
 sokobanitron-app = { path = "../sokobanitron-app" }
-sokobanitron-core = { path = "../sokobanitron-core" }
 
 [dev-dependencies]
 presentation = { package = "sokobanitron-presentation", path = "../sokobanitron-presentation" }
+sokobanitron-gameplay = { path = "../sokobanitron-gameplay" }

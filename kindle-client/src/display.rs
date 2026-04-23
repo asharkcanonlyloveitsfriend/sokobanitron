@@ -3,7 +3,8 @@ use crate::{
     platform::{Display, Region},
 };
 use sokobanitron_app::app::{
-    AppFrameRenderer, FrameDamage, FrameRequest, FrameSink, GameplayAnimationPolicy, ScreenRect,
+    AppFramePresenter, AppFrameRenderer, AppPointerInput, FrameDamage, GameplayAnimationPolicy,
+    RenderWorkResult, ScreenRect,
 };
 use std::io::Result;
 
@@ -13,18 +14,54 @@ impl KindleApp {
     }
 
     pub(crate) fn render(&mut self) -> Result<()> {
-        let request = self.runtime.current_frame_request();
-        self.render_request(&request)
-    }
-
-    fn render_request(&mut self, request: &FrameRequest) -> Result<()> {
-        let damage = self.runtime.draw_frame_request(request);
-        present_frame_damage(&mut self.display, damage, self.runtime.gray_frame())
+        let mut presenter = KindleFramePresenter {
+            display: &mut self.display,
+        };
+        self.runtime.render_current_frame(&mut presenter)
     }
 
     pub(crate) fn render_sleep_screen(&mut self) -> Result<()> {
-        let request = self.runtime.sleep_gameplay_frame_request();
-        self.render_request(&request)
+        let mut presenter = KindleFramePresenter {
+            display: &mut self.display,
+        };
+        self.runtime.render_sleep_gameplay_frame(&mut presenter)
+    }
+
+    pub(crate) fn handle_pointer_input_and_render(
+        &mut self,
+        input: AppPointerInput,
+    ) -> Result<RenderWorkResult> {
+        let mut presenter = KindleFramePresenter {
+            display: &mut self.display,
+        };
+        self.runtime
+            .handle_pointer_input_and_render(input, &mut presenter)
+    }
+
+    pub(crate) fn continue_pending_render_work_and_render(&mut self) -> Result<RenderWorkResult> {
+        let mut presenter = KindleFramePresenter {
+            display: &mut self.display,
+        };
+        self.runtime
+            .continue_pending_render_work_and_render(&mut presenter)
+    }
+}
+
+struct KindleFramePresenter<'a> {
+    display: &'a mut Display,
+}
+
+impl AppFramePresenter for KindleFramePresenter<'_> {
+    type Error = std::io::Error;
+
+    fn present_frame(
+        &mut self,
+        damage: FrameDamage,
+        gray_frame: &[u8],
+        _width: u32,
+        _height: u32,
+    ) -> Result<()> {
+        present_frame_damage(self.display, damage, gray_frame)
     }
 }
 
@@ -48,14 +85,6 @@ fn region_from_screen_rect(rect: ScreenRect) -> Region {
         top: rect.y as usize,
         width: rect.w as usize,
         height: rect.h as usize,
-    }
-}
-
-impl FrameSink for KindleApp {
-    type Error = std::io::Error;
-
-    fn render_frame(&mut self, request: &FrameRequest) -> std::result::Result<(), Self::Error> {
-        self.render_request(request)
     }
 }
 

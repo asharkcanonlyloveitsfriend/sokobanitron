@@ -1,10 +1,8 @@
 use crate::native_window::NativeWindow;
 use sokobanitron_app::{
     app::{
-        AppDriverContext, AppFrameRenderer, AppPointerInput, AppRuntimeMut, AppState,
-        EditorAppRuntimeMut, FrameDamage, FrameRequest, FrameSink, GameplayAnimationPolicy,
-        RendererOverrides, SharedAppRuntime, continue_pending_render_work_and_render_in_context,
-        handle_pointer_input_and_render_in_context, has_pending_render_work_in_context,
+        AppFramePresenter, AppFrameRenderer, AppPointerInput, AppState, FrameDamage,
+        GameplayAnimationPolicy, RendererOverrides, SharedAppRuntime,
     },
     editor::{set_editor_double_tap_window, set_editor_touch_slop},
     gameplay::set_gameplay_touch_slop,
@@ -71,10 +69,7 @@ impl AndroidApp {
     }
 
     pub fn handle_pointer_event(&mut self, id: u64, phase: PointerPhase, x: f64, y: f64) -> bool {
-        let _ = handle_pointer_input_and_render_in_context(
-            self,
-            AppPointerInput::Pointer { id, phase, x, y },
-        );
+        let _ = self.handle_pointer_input_and_render(AppPointerInput::Pointer { id, phase, x, y });
         self.has_pending_render_work()
     }
 
@@ -88,9 +83,9 @@ impl AndroidApp {
 
     pub fn present_frame(&mut self) -> bool {
         if matches!(self.pending_present_damage, FrameDamage::Noop)
-            && has_pending_render_work_in_context(self)
+            && self.runtime.has_pending_render_work()
         {
-            let _ = continue_pending_render_work_and_render_in_context(self);
+            let _ = self.continue_pending_render_work_and_render();
         }
 
         if !self.has_pending_render_work() {
@@ -123,26 +118,14 @@ impl AndroidApp {
 
     pub fn has_pending_render_work(&mut self) -> bool {
         !matches!(self.pending_present_damage, FrameDamage::Noop)
-            || has_pending_render_work_in_context(self)
-    }
-
-    fn build_current_request(&self) -> FrameRequest {
-        self.runtime.current_frame_request()
+            || self.runtime.has_pending_render_work()
     }
 
     fn render_full_current_request(&mut self) {
-        let request = self.build_current_request();
-        self.render_full_request(request);
-    }
-
-    fn render_presentation_request(&mut self, request: FrameRequest) {
-        let damage = self.runtime.draw_frame_request(&request);
-        self.mark_frame_damage(damage);
-    }
-
-    fn render_full_request(&mut self, request: FrameRequest) {
-        self.runtime.draw_full_frame_request(&request);
-        self.mark_frame_damage(FrameDamage::Full);
+        let mut presenter = AndroidFramePresenter {
+            pending_present_damage: &mut self.pending_present_damage,
+        };
+        let _ = self.runtime.render_full_current_frame(&mut presenter);
     }
 
     fn mark_frame_damage(&mut self, damage: FrameDamage) {
@@ -162,8 +145,41 @@ impl AndroidApp {
         }
     }
 
-    fn render_pending_visible_presentation_into_frame(&mut self) -> FrameDamage {
-        self.runtime.draw_pending_visible_presentation()
+    fn handle_pointer_input_and_render(&mut self, input: AppPointerInput) -> Result<(), ()> {
+        let mut presenter = AndroidFramePresenter {
+            pending_present_damage: &mut self.pending_present_damage,
+        };
+        self.runtime
+            .handle_pointer_input_and_render(input, &mut presenter)
+            .map(|_| ())
+    }
+
+    fn continue_pending_render_work_and_render(&mut self) -> Result<(), ()> {
+        let mut presenter = AndroidFramePresenter {
+            pending_present_damage: &mut self.pending_present_damage,
+        };
+        self.runtime
+            .continue_pending_render_work_and_render(&mut presenter)
+            .map(|_| ())
+    }
+}
+
+struct AndroidFramePresenter<'a> {
+    pending_present_damage: &'a mut FrameDamage,
+}
+
+impl AppFramePresenter for AndroidFramePresenter<'_> {
+    type Error = ();
+
+    fn present_frame(
+        &mut self,
+        damage: FrameDamage,
+        _gray_frame: &[u8],
+        _width: u32,
+        _height: u32,
+    ) -> Result<(), Self::Error> {
+        *self.pending_present_damage = (*self.pending_present_damage).merge(damage);
+        Ok(())
     }
 }
 
@@ -183,40 +199,5 @@ fn android_renderer_overrides() -> RendererOverrides {
         gray_12: Some(112),
         gray_13: Some(102),
         gray_14: Some(90),
-    }
-}
-
-impl AppDriverContext for AndroidApp {
-    type Error = ();
-
-    fn app_runtime_mut(&mut self) -> AppRuntimeMut<'_> {
-        self.runtime.app_runtime_mut()
-    }
-
-    fn editor_runtime_mut(&mut self) -> Option<EditorAppRuntimeMut<'_>> {
-        Some(self.runtime.editor_runtime_mut())
-    }
-
-    fn has_pending_frame_presentation(&mut self) -> bool {
-        self.runtime.has_pending_visible_presentation()
-    }
-
-    fn continue_frame_presentation_and_render(&mut self) -> Result<bool, Self::Error> {
-        if !self.runtime.has_pending_visible_presentation() {
-            return Ok(false);
-        }
-        let damage = self.render_pending_visible_presentation_into_frame();
-        let frame_changed = !matches!(damage, FrameDamage::Noop);
-        self.mark_frame_damage(damage);
-        Ok(frame_changed)
-    }
-}
-
-impl FrameSink for AndroidApp {
-    type Error = ();
-
-    fn render_frame(&mut self, request: &FrameRequest) -> Result<(), Self::Error> {
-        self.render_presentation_request(request.clone());
-        Ok(())
     }
 }

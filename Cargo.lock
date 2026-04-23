@@ -581,8 +581,6 @@ version = "0.1.0"
 dependencies = [
  "pixels",
  "sokobanitron-app",
- "sokobanitron-gameplay",
- "sokobanitron-level-editor",
  "winit",
 ]
 
@@ -1050,7 +1048,6 @@ name = "kindle-client"
 version = "0.1.0"
 dependencies = [
  "sokobanitron-app",
- "sokobanitron-core",
  "sokobanitron-gameplay",
  "sokobanitron-presentation",
 ]
@@ -2173,8 +2170,6 @@ version = "0.1.0"
 dependencies = [
  "jni",
  "sokobanitron-app",
- "sokobanitron-gameplay",
- "sokobanitron-level-editor",
 ]
 
 [[package]]

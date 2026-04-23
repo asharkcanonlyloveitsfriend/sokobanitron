@@ -44,7 +44,7 @@ pub struct AppliedUpdate {
     pub render_work: RenderWorkResult,
 }
 
-pub trait AppDriverContext {
+trait AppDriverContext {
     type Error;
 
     fn app_runtime_mut(&mut self) -> AppRuntimeMut<'_>;
@@ -85,16 +85,32 @@ pub enum AppPointerInput {
     },
 }
 
-pub struct AppRuntimeMut<'a> {
+struct AppRuntimeMut<'a> {
     pub controller: &'a mut GameplayController,
     pub app_state: &'a mut AppState,
     pub level_persistence: &'a mut LevelPersistence,
     pub preview_boards: &'a mut Vec<BoardView>,
 }
 
-pub struct EditorAppRuntimeMut<'a> {
+struct EditorAppRuntimeMut<'a> {
     pub app: AppRuntimeMut<'a>,
     pub editor: &'a mut LevelEditor,
+}
+
+/// Platform-owned frame output for app-rendered frames.
+///
+/// The shared runtime draws into its gray frame, then calls this boundary so clients can copy,
+/// accumulate damage, or present to a platform surface.
+pub trait AppFramePresenter {
+    type Error;
+
+    fn present_frame(
+        &mut self,
+        damage: FrameDamage,
+        gray_frame: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<(), Self::Error>;
 }
 
 /// Shared app runtime state that clients can embed next to platform-specific handles.
@@ -115,7 +131,7 @@ pub struct SharedAppRuntime {
 }
 
 impl<'a> AppRuntimeMut<'a> {
-    pub fn with_editor(self, editor: &'a mut LevelEditor) -> EditorAppRuntimeMut<'a> {
+    fn with_editor(self, editor: &'a mut LevelEditor) -> EditorAppRuntimeMut<'a> {
         EditorAppRuntimeMut { app: self, editor }
     }
 }
@@ -189,7 +205,7 @@ impl SharedAppRuntime {
         self.frame_renderer.clear_gameplay_presentation_state();
     }
 
-    pub fn app_runtime_mut(&mut self) -> AppRuntimeMut<'_> {
+    fn app_runtime_mut(&mut self) -> AppRuntimeMut<'_> {
         AppRuntimeMut {
             controller: &mut self.controller,
             app_state: &mut self.app_state,
@@ -198,7 +214,7 @@ impl SharedAppRuntime {
         }
     }
 
-    pub fn editor_runtime_mut(&mut self) -> EditorAppRuntimeMut<'_> {
+    fn editor_runtime_mut(&mut self) -> EditorAppRuntimeMut<'_> {
         AppRuntimeMut {
             controller: &mut self.controller,
             app_state: &mut self.app_state,
@@ -208,15 +224,15 @@ impl SharedAppRuntime {
         .with_editor(&mut self.editor)
     }
 
-    pub fn current_frame_request(&self) -> FrameRequest {
+    fn current_frame_request(&self) -> FrameRequest {
         build_current_app_screen_frame_request(&self.controller, &self.app_state, &self.editor)
     }
 
-    pub fn sleep_gameplay_frame_request(&self) -> FrameRequest {
+    fn sleep_gameplay_frame_request(&self) -> FrameRequest {
         build_sleep_gameplay_frame_request(&self.controller, &self.app_state)
     }
 
-    pub fn draw_frame_request(&mut self, request: &FrameRequest) -> FrameDamage {
+    fn draw_frame_request(&mut self, request: &FrameRequest) -> FrameDamage {
         self.frame_renderer.draw_frame_request(
             &mut self.gray_frame,
             self.surface_width,
@@ -226,7 +242,7 @@ impl SharedAppRuntime {
         )
     }
 
-    pub fn draw_full_frame_request(&mut self, request: &FrameRequest) -> FrameDamage {
+    fn draw_full_frame_request(&mut self, request: &FrameRequest) -> FrameDamage {
         self.frame_renderer.draw_full_frame_request(
             &mut self.gray_frame,
             self.surface_width,
@@ -236,18 +252,163 @@ impl SharedAppRuntime {
         )
     }
 
-    pub fn has_pending_visible_presentation(&self) -> bool {
+    fn has_pending_visible_presentation(&self) -> bool {
         self.frame_renderer
             .has_pending_visible_presentation(&self.app_state)
     }
 
-    pub fn draw_pending_visible_presentation(&mut self) -> FrameDamage {
+    fn draw_pending_visible_presentation(&mut self) -> FrameDamage {
         self.frame_renderer.draw_pending_visible_presentation(
             &self.app_state,
             &mut self.gray_frame,
             self.surface_width,
             self.surface_height,
         )
+    }
+
+    fn render_frame_request<P: AppFramePresenter>(
+        &mut self,
+        request: &FrameRequest,
+        presenter: &mut P,
+    ) -> Result<(), P::Error> {
+        let damage = self.draw_frame_request(request);
+        self.output_drawn_frame(damage, presenter)
+    }
+
+    fn render_full_frame_request<P: AppFramePresenter>(
+        &mut self,
+        request: &FrameRequest,
+        presenter: &mut P,
+    ) -> Result<(), P::Error> {
+        self.draw_full_frame_request(request);
+        self.output_drawn_frame(FrameDamage::Full, presenter)
+    }
+
+    pub fn render_current_frame<P: AppFramePresenter>(
+        &mut self,
+        presenter: &mut P,
+    ) -> Result<(), P::Error> {
+        let request = self.current_frame_request();
+        self.render_frame_request(&request, presenter)
+    }
+
+    pub fn render_full_current_frame<P: AppFramePresenter>(
+        &mut self,
+        presenter: &mut P,
+    ) -> Result<(), P::Error> {
+        let request = self.current_frame_request();
+        self.render_full_frame_request(&request, presenter)
+    }
+
+    pub fn render_sleep_gameplay_frame<P: AppFramePresenter>(
+        &mut self,
+        presenter: &mut P,
+    ) -> Result<(), P::Error> {
+        let request = self.sleep_gameplay_frame_request();
+        self.render_frame_request(&request, presenter)
+    }
+
+    fn render_pending_visible_presentation<P: AppFramePresenter>(
+        &mut self,
+        presenter: &mut P,
+    ) -> Result<FrameDamage, P::Error> {
+        let damage = self.draw_pending_visible_presentation();
+        self.output_drawn_frame(damage, presenter)?;
+        Ok(damage)
+    }
+
+    pub fn apply_input_and_render<P: AppFramePresenter>(
+        &mut self,
+        input: AppInput,
+        presenter: &mut P,
+    ) -> Result<AppliedUpdate, P::Error> {
+        let mut context = SharedAppRuntimeContext {
+            runtime: self,
+            presenter,
+        };
+        apply_input_and_render_in_context(&mut context, input)
+    }
+
+    pub fn handle_pointer_input_and_render<P: AppFramePresenter>(
+        &mut self,
+        input: AppPointerInput,
+        presenter: &mut P,
+    ) -> Result<RenderWorkResult, P::Error> {
+        let mut context = SharedAppRuntimeContext {
+            runtime: self,
+            presenter,
+        };
+        handle_pointer_input_and_render_in_context(&mut context, input)
+    }
+
+    pub fn continue_pending_render_work_and_render<P: AppFramePresenter>(
+        &mut self,
+        presenter: &mut P,
+    ) -> Result<RenderWorkResult, P::Error> {
+        let mut context = SharedAppRuntimeContext {
+            runtime: self,
+            presenter,
+        };
+        continue_pending_render_work_and_render_in_context(&mut context)
+    }
+
+    pub fn has_pending_render_work(&self) -> bool {
+        self.has_pending_visible_presentation() || self.has_pending_editor_hint_job()
+    }
+
+    fn has_pending_editor_hint_job(&self) -> bool {
+        self.app_state.is_editor_screen() && self.editor.has_active_pull_hint_job()
+    }
+
+    fn output_drawn_frame<P: AppFramePresenter>(
+        &self,
+        damage: FrameDamage,
+        presenter: &mut P,
+    ) -> Result<(), P::Error> {
+        presenter.present_frame(
+            damage,
+            &self.gray_frame,
+            self.surface_width,
+            self.surface_height,
+        )
+    }
+}
+
+struct SharedAppRuntimeContext<'a, 'p, P> {
+    runtime: &'a mut SharedAppRuntime,
+    presenter: &'p mut P,
+}
+
+impl<P: AppFramePresenter> AppDriverContext for SharedAppRuntimeContext<'_, '_, P> {
+    type Error = P::Error;
+
+    fn app_runtime_mut(&mut self) -> AppRuntimeMut<'_> {
+        self.runtime.app_runtime_mut()
+    }
+
+    fn editor_runtime_mut(&mut self) -> Option<EditorAppRuntimeMut<'_>> {
+        Some(self.runtime.editor_runtime_mut())
+    }
+
+    fn has_pending_frame_presentation(&mut self) -> bool {
+        self.runtime.has_pending_visible_presentation()
+    }
+
+    fn continue_frame_presentation_and_render(&mut self) -> Result<bool, Self::Error> {
+        if !self.runtime.has_pending_visible_presentation() {
+            return Ok(false);
+        }
+        self.runtime
+            .render_pending_visible_presentation(self.presenter)?;
+        Ok(true)
+    }
+}
+
+impl<P: AppFramePresenter> FrameSink for SharedAppRuntimeContext<'_, '_, P> {
+    type Error = P::Error;
+
+    fn render_frame(&mut self, request: &FrameRequest) -> Result<(), Self::Error> {
+        self.runtime.render_frame_request(request, self.presenter)
     }
 }
 
@@ -261,7 +422,7 @@ fn frame_len(surface_width: u32, surface_height: u32) -> usize {
         .saturating_mul(usize::try_from(surface_height).expect("surface height should fit usize"))
 }
 
-pub fn apply_action_in_context<C: AppDriverContext>(
+fn apply_action_in_context<C: AppDriverContext>(
     context: &mut C,
     action: AppAction,
 ) -> Result<AppliedUpdate, C::Error> {
@@ -280,7 +441,7 @@ pub fn apply_action_in_context<C: AppDriverContext>(
     })
 }
 
-pub fn build_current_app_screen_frame_request(
+fn build_current_app_screen_frame_request(
     controller: &GameplayController,
     app_state: &AppState,
     editor: &LevelEditor,
@@ -291,7 +452,7 @@ pub fn build_current_app_screen_frame_request(
     }
 }
 
-pub fn apply_action_and_render_in_context<C>(
+fn apply_action_and_render_in_context<C>(
     context: &mut C,
     action: AppAction,
 ) -> Result<AppliedUpdate, <C as AppDriverContext>::Error>
@@ -340,7 +501,7 @@ where
     Ok(applied)
 }
 
-pub fn apply_editor_ui_action(action: Option<EditorUiAction>, runtime: EditorAppRuntimeMut<'_>) {
+fn apply_editor_ui_action(action: Option<EditorUiAction>, runtime: EditorAppRuntimeMut<'_>) {
     if let Some(EditorUiAction::SavePuzzle) = action {
         let saved =
             persist_editor_puzzle_to_default_set(runtime.app.level_persistence, runtime.editor)
@@ -362,7 +523,7 @@ pub fn apply_editor_ui_action(action: Option<EditorUiAction>, runtime: EditorApp
     }
 }
 
-pub fn apply_input_and_render_in_context<C>(
+fn apply_input_and_render_in_context<C>(
     context: &mut C,
     input: AppInput,
 ) -> Result<AppliedUpdate, <C as AppDriverContext>::Error>
@@ -376,7 +537,7 @@ where
     apply_action_and_render_in_context(context, action)
 }
 
-pub fn continue_pending_render_work_and_render_in_context<C>(
+fn continue_pending_render_work_and_render_in_context<C>(
     context: &mut C,
 ) -> Result<RenderWorkResult, <C as AppDriverContext>::Error>
 where
@@ -408,11 +569,11 @@ where
     Ok(current_render_work_result(context, frame_changed))
 }
 
-pub fn has_pending_render_work_in_context<C: AppDriverContext>(context: &mut C) -> bool {
+fn has_pending_render_work_in_context<C: AppDriverContext>(context: &mut C) -> bool {
     context.has_pending_frame_presentation() || has_pending_editor_hint_job_in_context(context)
 }
 
-pub fn handle_pointer_input_and_render_in_context<C>(
+fn handle_pointer_input_and_render_in_context<C>(
     context: &mut C,
     input: AppPointerInput,
 ) -> Result<RenderWorkResult, <C as AppDriverContext>::Error>
@@ -612,7 +773,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        AppDriverContext, AppPointerInput, AppRuntimeMut, SharedAppRuntime,
+        AppDriverContext, AppFramePresenter, AppPointerInput, AppRuntimeMut, SharedAppRuntime,
         apply_action_and_render_in_context, apply_action_in_context, apply_editor_ui_action,
         apply_input_and_render_in_context, continue_pending_render_work_and_render_in_context,
         handle_pointer_input_and_render_in_context, has_pending_render_work_in_context,
@@ -640,6 +801,26 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     static NEXT_TEMP_DIR_ID: AtomicU64 = AtomicU64::new(0);
+
+    #[derive(Default)]
+    struct RecordingPresenter {
+        frames: Vec<(FrameDamage, usize, u32, u32)>,
+    }
+
+    impl AppFramePresenter for RecordingPresenter {
+        type Error = std::convert::Infallible;
+
+        fn present_frame(
+            &mut self,
+            damage: FrameDamage,
+            gray_frame: &[u8],
+            width: u32,
+            height: u32,
+        ) -> Result<(), Self::Error> {
+            self.frames.push((damage, gray_frame.len(), width, height));
+            Ok(())
+        }
+    }
 
     struct TestContext {
         controller: GameplayController,
@@ -927,6 +1108,29 @@ mod tests {
         assert_eq!(runtime.surface_width(), 64);
         assert_eq!(runtime.surface_height(), 32);
         assert_eq!(runtime.gray_frame().len(), 64 * 32);
+    }
+
+    #[test]
+    fn shared_app_runtime_applies_input_and_outputs_rendered_frames() {
+        let level = "    ###   \n $$     #@\n $ #...   \n   #######".to_string();
+        let mut runtime = SharedAppRuntime::new(
+            runtime_initial_levels(vec![level.clone(), level]),
+            AppState::default(),
+            128,
+            96,
+            AppFrameRenderer::new(),
+        );
+        let mut presenter = RecordingPresenter::default();
+
+        let applied = runtime
+            .apply_input_and_render(AppInput::BoardTap(BoardCell::new(1, 1)), &mut presenter)
+            .unwrap();
+
+        assert!(applied.rendered_frame);
+        assert!(!presenter.frames.is_empty());
+        assert_eq!(presenter.frames[0].1, 128 * 96);
+        assert_eq!(presenter.frames[0].2, 128);
+        assert_eq!(presenter.frames[0].3, 96);
     }
 
     #[test]

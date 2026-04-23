@@ -1,11 +1,7 @@
 use crate::{config, platform};
 use sokobanitron_app::{
     AppPreferences,
-    app::{
-        AppDriverContext, AppPointerInput, AppRuntimeMut, AppState, SharedAppRuntime,
-        continue_pending_render_work_and_render_in_context,
-        handle_pointer_input_and_render_in_context, has_pending_render_work_in_context,
-    },
+    app::{AppPointerInput, AppState, SharedAppRuntime},
     gameplay::{set_gameplay_max_cell_size, set_gameplay_touch_slop},
     level_bootstrap::load_initial_levels_for_app,
     shared::PointerPhase,
@@ -76,7 +72,7 @@ impl KindleApp {
 
         let mut touch = platform::TouchReader::new()?;
         loop {
-            let timeout_ms = if has_pending_render_work_in_context(self) {
+            let timeout_ms = if self.runtime.has_pending_render_work() {
                 Some(50)
             } else {
                 self.preferences
@@ -89,8 +85,8 @@ impl KindleApp {
 
             match event {
                 platform::AppInputEvent::IdleTick => {
-                    if has_pending_render_work_in_context(self) {
-                        let _ = continue_pending_render_work_and_render_in_context(self)?;
+                    if self.runtime.has_pending_render_work() {
+                        let _ = self.continue_pending_render_work_and_render()?;
                     }
                 }
                 platform::AppInputEvent::Pointer {
@@ -108,12 +104,6 @@ impl KindleApp {
                 }
             }
         }
-    }
-
-    fn render_pending_visible_presentation(&mut self) -> Result<()> {
-        let damage = self.runtime.draw_pending_visible_presentation();
-        crate::display::present_frame_damage(&mut self.display, damage, self.runtime.gray_frame())?;
-        Ok(())
     }
 
     fn sync_sleep_state(&mut self) -> Result<SleepSyncOutcome> {
@@ -208,35 +198,12 @@ impl KindleApp {
         screen_x: usize,
         screen_y: usize,
     ) -> Result<()> {
-        let _ = handle_pointer_input_and_render_in_context(
-            self,
-            AppPointerInput::Pointer {
-                id,
-                phase,
-                x: screen_x as f64,
-                y: screen_y as f64,
-            },
-        )?;
+        let _ = self.handle_pointer_input_and_render(AppPointerInput::Pointer {
+            id,
+            phase,
+            x: screen_x as f64,
+            y: screen_y as f64,
+        })?;
         Ok(())
-    }
-}
-
-impl AppDriverContext for KindleApp {
-    type Error = std::io::Error;
-
-    fn app_runtime_mut(&mut self) -> AppRuntimeMut<'_> {
-        self.runtime.app_runtime_mut()
-    }
-
-    fn has_pending_frame_presentation(&mut self) -> bool {
-        self.runtime.has_pending_visible_presentation()
-    }
-
-    fn continue_frame_presentation_and_render(&mut self) -> Result<bool> {
-        let had_pending = self.runtime.has_pending_visible_presentation();
-        if had_pending {
-            self.render_pending_visible_presentation()?;
-        }
-        Ok(had_pending)
     }
 }

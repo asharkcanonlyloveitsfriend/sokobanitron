@@ -1,24 +1,62 @@
 use crate::app_driver::App;
-use sokobanitron_app::app::{FrameRequest, FrameSink};
+use pixels::Pixels;
+use sokobanitron_app::app::{
+    AppFramePresenter, AppInput, AppPointerInput, AppliedUpdate, FrameDamage, RenderWorkResult,
+};
 
 impl App {
+    pub(crate) fn apply_input_and_render(&mut self, input: AppInput) -> Result<AppliedUpdate, ()> {
+        let mut presenter = DesktopFramePresenter {
+            pixels: &mut self.pixels,
+        };
+        self.runtime.apply_input_and_render(input, &mut presenter)
+    }
+
+    pub(crate) fn handle_pointer_input_and_render(
+        &mut self,
+        input: AppPointerInput,
+    ) -> Result<RenderWorkResult, ()> {
+        let mut presenter = DesktopFramePresenter {
+            pixels: &mut self.pixels,
+        };
+        self.runtime
+            .handle_pointer_input_and_render(input, &mut presenter)
+    }
+
+    pub(crate) fn continue_pending_render_work_and_render(
+        &mut self,
+    ) -> Result<RenderWorkResult, ()> {
+        let mut presenter = DesktopFramePresenter {
+            pixels: &mut self.pixels,
+        };
+        self.runtime
+            .continue_pending_render_work_and_render(&mut presenter)
+    }
+
     pub(crate) fn render_current(&mut self) {
-        let request = self.runtime.current_frame_request();
-        let _ = self.render_request(&request);
+        let mut presenter = DesktopFramePresenter {
+            pixels: &mut self.pixels,
+        };
+        let _ = self.runtime.render_current_frame(&mut presenter);
     }
+}
 
-    pub(crate) fn render_pending_visible_presentation(&mut self) {
-        if let Some(pixels) = &mut self.pixels {
-            self.runtime.draw_pending_visible_presentation();
-            copy_gray_to_sepia_rgba(self.runtime.gray_frame(), pixels.frame_mut());
-            pixels.render().expect("render");
-        }
-    }
+struct DesktopFramePresenter<'a> {
+    pixels: &'a mut Option<Pixels<'static>>,
+}
 
-    fn render_request(&mut self, request: &FrameRequest) -> Result<(), ()> {
-        if let Some(pixels) = &mut self.pixels {
-            self.runtime.draw_frame_request(request);
-            copy_gray_to_sepia_rgba(self.runtime.gray_frame(), pixels.frame_mut());
+impl AppFramePresenter for DesktopFramePresenter<'_> {
+    type Error = ();
+
+    fn present_frame(
+        &mut self,
+        _damage: FrameDamage,
+        gray_frame: &[u8],
+        _width: u32,
+        _height: u32,
+    ) -> Result<(), Self::Error> {
+        if let Some(pixels) = self.pixels.as_mut() {
+            copy_gray_to_sepia_rgba(gray_frame, pixels.frame_mut());
             pixels.render().expect("render");
         }
         Ok(())
@@ -45,14 +83,6 @@ fn sepia_from_gray(gray: u8) -> [u8; 3] {
 
 fn scale_sepia_channel(gray: u8, scale_per_thousand: u16) -> u8 {
     ((u32::from(gray) * u32::from(scale_per_thousand)) / 1000).min(255) as u8
-}
-
-impl FrameSink for App {
-    type Error = ();
-
-    fn render_frame(&mut self, request: &FrameRequest) -> Result<(), Self::Error> {
-        self.render_request(request)
-    }
 }
 
 #[cfg(test)]

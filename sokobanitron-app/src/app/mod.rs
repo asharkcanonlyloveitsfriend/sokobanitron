@@ -17,17 +17,12 @@ pub mod state;
 
 pub use action::AppAction;
 pub use driver::{
-    AppDriverContext, AppPointerInput, AppRuntimeMut, AppliedUpdate, EditorAppRuntimeMut,
-    RenderWorkResult, SharedAppRuntime, apply_action_and_render_in_context,
-    apply_action_in_context, apply_editor_ui_action, apply_input_and_render_in_context,
-    build_current_app_screen_frame_request, continue_pending_render_work_and_render_in_context,
-    handle_pointer_input_and_render_in_context, has_pending_render_work_in_context,
+    AppFramePresenter, AppPointerInput, AppliedUpdate, RenderWorkResult, SharedAppRuntime,
 };
 pub use input::{AppInput, interpret_input};
 pub use presentation::{
-    AppFrameRenderer, FrameDamage, FrameRequest, FrameSink, GameplayAnimationPolicy,
-    PresentationPlan, RendererOverrides, ScreenRect, build_presentation_plan,
-    render_presentation_plan,
+    AppFrameRenderer, FrameDamage, FrameRequest, GameplayAnimationPolicy, PresentationPlan,
+    RendererOverrides, ScreenRect, build_presentation_plan,
 };
 pub use reducer::{AppUpdate, PersistenceUpdate, apply_action};
 pub use state::{AppInteractionMode, AppOverlay, AppScreen, AppState, UiState};

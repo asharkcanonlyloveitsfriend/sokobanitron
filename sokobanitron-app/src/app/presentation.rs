@@ -8,9 +8,10 @@
 //! - `sokobanitron-presentation` renders those requests.
 //! - clients own final present-to-screen behavior.
 //!
-//! Presentation plans are currently render-only. The app builds them and clients execute them
-//! immediately through `FrameSink`. `AppFrameRenderer` centralizes request drawing and pending
-//! presentation state, while clients still own scheduling wakeups and final presentation to screen.
+//! Presentation plans are currently render-only. The app builds them and the shared runtime
+//! executes them through an internal `FrameSink`. `AppFrameRenderer` centralizes request drawing
+//! and pending presentation state, while clients still own scheduling wakeups and final
+//! presentation to screen.
 
 use super::state::AppState;
 use crate::gameplay::build_gameplay_frame_request_with_cause;
@@ -166,13 +167,13 @@ pub struct PresentationPlan {
     pub steps: Vec<PresentationStep>,
 }
 
-pub trait FrameSink {
+pub(crate) trait FrameSink {
     type Error;
 
     fn render_frame(&mut self, request: &FrameRequest) -> Result<(), Self::Error>;
 }
 
-pub fn render_presentation_plan<S: FrameSink>(
+pub(crate) fn render_presentation_plan<S: FrameSink>(
     sink: &mut S,
     plan: &PresentationPlan,
 ) -> Result<(), S::Error> {
