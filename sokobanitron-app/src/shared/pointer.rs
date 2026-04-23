@@ -235,6 +235,7 @@ pub struct TwoFingerPinchState {
     active_touches: Vec<TrackedTouch>,
     active_pinch: Option<ActivePinch>,
     suppress_single_pointer_until_release: bool,
+    pinch_disabled_until_release: bool,
     min_delta_px: i32,
 }
 
@@ -259,6 +260,7 @@ impl TwoFingerPinchState {
             active_touches: Vec::new(),
             active_pinch: None,
             suppress_single_pointer_until_release: false,
+            pinch_disabled_until_release: false,
             min_delta_px: min_delta_px.max(0),
         }
     }
@@ -269,7 +271,8 @@ impl TwoFingerPinchState {
         match event.phase {
             PointerPhase::Started => {
                 self.upsert_touch(event.id, event.position);
-                if self.active_touches.len() >= 2
+                if !self.pinch_disabled_until_release
+                    && self.active_touches.len() >= 2
                     && self.active_pinch.is_none()
                     && let Some(pinch) = self.start_pinch_from_active_touches()
                 {
@@ -289,11 +292,16 @@ impl TwoFingerPinchState {
                     touch.position = event.position;
                     self.refresh_active_pinch();
                 }
-                update.gesture = self.complete_pinch_if_needed(event.id);
+                if !self.pinch_disabled_until_release {
+                    update.gesture = self.complete_pinch_if_needed(event.id);
+                } else {
+                    self.active_pinch = None;
+                }
                 self.remove_touch(event.id);
                 if self.active_touches.is_empty() {
                     self.active_pinch = None;
                     self.suppress_single_pointer_until_release = false;
+                    self.pinch_disabled_until_release = false;
                 }
             }
         }
@@ -306,6 +314,21 @@ impl TwoFingerPinchState {
         self.active_touches.clear();
         self.active_pinch = None;
         self.suppress_single_pointer_until_release = false;
+        self.pinch_disabled_until_release = false;
+    }
+
+    fn disable_pinch_until_release(&mut self) {
+        self.active_pinch = None;
+        self.suppress_single_pointer_until_release = false;
+        self.pinch_disabled_until_release = true;
+    }
+
+    fn pinch_is_disabled_until_release(&self) -> bool {
+        self.pinch_disabled_until_release
+    }
+
+    fn has_active_touches(&self) -> bool {
+        !self.active_touches.is_empty()
     }
 
     fn start_pinch_from_active_touches(&self) -> Option<ActivePinch> {
@@ -409,6 +432,7 @@ pub struct TouchPointerState {
     pinch: TwoFingerPinchState,
     pending_touch_start: Option<PointerContact>,
     touch_start_policy: TouchStartPolicy,
+    exclusive_pointer_id: Option<PointerId>,
 }
 
 impl TouchPointerState {
@@ -418,6 +442,7 @@ impl TouchPointerState {
             pinch: TwoFingerPinchState::default(),
             pending_touch_start: None,
             touch_start_policy,
+            exclusive_pointer_id: None,
         }
     }
 
@@ -428,9 +453,13 @@ impl TouchPointerState {
     pub fn handle_touch_event(&mut self, event: PointerEvent) -> TouchGestureUpdate {
         let mut update = TouchGestureUpdate::default();
         let pinch_update = self.pinch.handle_event(event);
+        if self.exclusive_pointer_id.is_some() && !self.pinch.pinch_is_disabled_until_release() {
+            self.exclusive_pointer_id = None;
+        }
         if pinch_update.reset_single_pointer {
             self.pointer.reset();
             self.pending_touch_start = None;
+            self.exclusive_pointer_id = None;
             update.reset_screen_state = true;
         }
         if let Some(pinch) = pinch_update.gesture {
@@ -440,6 +469,12 @@ impl TouchPointerState {
         }
         if pinch_update.suppress_single_pointer {
             update.suppress_screen_gestures = true;
+            return update;
+        }
+        if self
+            .exclusive_pointer_id
+            .is_some_and(|exclusive_id| exclusive_id != event.id)
+        {
             return update;
         }
 
@@ -477,10 +512,22 @@ impl TouchPointerState {
         self.pointer.active_start_position()
     }
 
+    pub fn has_active_contacts(&self) -> bool {
+        self.pointer.active_position().is_some()
+            || self.pending_touch_start.is_some()
+            || self.pinch.has_active_touches()
+    }
+
     pub fn reset(&mut self) {
         self.pointer.reset();
         self.pinch.reset();
         self.pending_touch_start = None;
+        self.exclusive_pointer_id = None;
+    }
+
+    pub fn lock_single_pointer_until_release(&mut self, pointer_id: PointerId) {
+        self.exclusive_pointer_id = Some(pointer_id);
+        self.pinch.disable_pinch_until_release();
     }
 
     fn apply_deferred_touch_policy(
@@ -560,11 +607,14 @@ impl<T> DoubleTapTracker<T>
 where
     T: Copy + Eq,
 {
-    pub fn register_tap(&mut self, target: T, at: Instant, window: Duration) -> bool {
-        let is_double_tap = self
-            .last_tap
+    pub fn has_pending_tap(&self, target: T, at: Instant, window: Duration) -> bool {
+        self.last_tap
             .as_ref()
-            .is_some_and(|last| last.target == target && at.duration_since(last.at) <= window);
+            .is_some_and(|last| last.target == target && at.duration_since(last.at) <= window)
+    }
+
+    pub fn register_tap(&mut self, target: T, at: Instant, window: Duration) -> bool {
+        let is_double_tap = self.has_pending_tap(target, at, window);
         if is_double_tap {
             self.last_tap = None;
             true
@@ -824,5 +874,54 @@ mod tests {
             state.handle_touch_event(PointerEvent::new(1, PointerPhase::Ended, 10.0, 10.0, at));
         assert_eq!(ended.deferred_start, None);
         assert_eq!(ended.gesture, None);
+    }
+
+    #[test]
+    fn touch_state_can_disable_pinch_for_one_touch_sequence() {
+        let at = Instant::now();
+        let mut state = TouchPointerState::with_touch_start_policy(TouchStartPolicy::Deferred);
+
+        let started =
+            state.handle_touch_event(PointerEvent::new(1, PointerPhase::Started, 10.0, 10.0, at));
+        assert_eq!(started.gesture, None);
+
+        state.lock_single_pointer_until_release(1);
+
+        let second_started =
+            state.handle_touch_event(PointerEvent::new(2, PointerPhase::Started, 40.0, 40.0, at));
+        assert_eq!(second_started.gesture, None);
+        assert_eq!(second_started.pinch, None);
+        assert!(!second_started.suppress_screen_gestures);
+
+        let _ = state.handle_touch_event(PointerEvent::new(2, PointerPhase::Moved, 90.0, 40.0, at));
+
+        let first_ended =
+            state.handle_touch_event(PointerEvent::new(1, PointerPhase::Ended, 10.0, 10.0, at));
+        assert!(matches!(first_ended.gesture, Some(PointerGesture::Tap(_))));
+        assert_eq!(first_ended.pinch, None);
+
+        let second_ended =
+            state.handle_touch_event(PointerEvent::new(2, PointerPhase::Ended, 90.0, 40.0, at));
+        assert_eq!(second_ended.gesture, None);
+        assert_eq!(second_ended.pinch, None);
+
+        let next_started =
+            state.handle_touch_event(PointerEvent::new(3, PointerPhase::Started, 12.0, 12.0, at));
+        assert_eq!(next_started.gesture, None);
+    }
+
+    #[test]
+    fn touch_state_reports_active_contacts_when_pinch_keeps_one_touch_down() {
+        let at = Instant::now();
+        let mut state = TouchPointerState::with_touch_start_policy(TouchStartPolicy::Deferred);
+
+        let _ =
+            state.handle_touch_event(PointerEvent::new(1, PointerPhase::Started, 10.0, 10.0, at));
+        let _ =
+            state.handle_touch_event(PointerEvent::new(2, PointerPhase::Started, 40.0, 40.0, at));
+        let _ = state.handle_touch_event(PointerEvent::new(1, PointerPhase::Ended, 10.0, 10.0, at));
+
+        assert_eq!(state.active_position(), None);
+        assert!(state.has_active_contacts());
     }
 }

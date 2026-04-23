@@ -120,7 +120,26 @@ pub fn editor_touch(
     y: f64,
 ) -> Option<EditorUiAction> {
     let event = PointerEvent::new(id, phase, x, y, Instant::now());
+    let immediate_draw_double_tap = immediate_draw_mode_double_tap_target(app_state, editor, event);
     let touch_update = app_state.editor.interaction.touch.handle_touch_event(event);
+    if let Some((world_x, world_y)) = immediate_draw_double_tap {
+        app_state
+            .editor
+            .interaction
+            .touch
+            .lock_single_pointer_until_release(event.id);
+        begin_editor_board_interaction(
+            app_state,
+            editor,
+            PointerContact {
+                id: event.id,
+                position: event.position,
+                at: event.at,
+            },
+            world_x,
+            world_y,
+        );
+    }
     if touch_update.reset_screen_state {
         reset_editor_screen_touch_state(&mut app_state.editor);
     }
@@ -241,6 +260,16 @@ fn handle_editor_touch_tap(
     deferred_start: Option<PointerContact>,
     contact: PointerContact,
 ) -> Option<EditorUiAction> {
+    if app_state
+        .editor
+        .interaction
+        .active_stroke
+        .is_some_and(|active| active.pointer_id == contact.id)
+    {
+        clear_active_stroke(app_state, contact.id);
+        return None;
+    }
+
     let Some(start) = deferred_start else {
         clear_active_stroke(app_state, contact.id);
         return None;
@@ -273,6 +302,14 @@ fn begin_touch_drag_if_needed(
     let Some(start) = deferred_start else {
         return;
     };
+    if app_state
+        .editor
+        .interaction
+        .active_stroke
+        .is_some_and(|active| active.pointer_id == start.id)
+    {
+        return;
+    }
     if !matches!(editor.mode(), EditorMode::Draw) || app_state.is_editor_menu_open() {
         return;
     }
@@ -448,6 +485,42 @@ fn reset_editor_screen_touch_state(ui: &mut EditorUiState) {
     ui.interaction.double_tap.clear();
 }
 
+fn immediate_draw_mode_double_tap_target(
+    app_state: &AppState,
+    editor: &LevelEditor,
+    event: PointerEvent,
+) -> Option<(i32, i32)> {
+    if !matches!(event.phase, PointerPhase::Started)
+        || !matches!(editor.mode(), EditorMode::Draw)
+        || app_state.is_editor_menu_open()
+        || app_state.editor.interaction.touch.has_active_contacts()
+    {
+        return None;
+    }
+
+    let surface = build_editor_surface_model(app_state, editor);
+    let (screen_x, screen_y) = event.position.as_f64();
+    let Some(EditorSurfaceTarget::BoardCell { world_x, world_y }) =
+        editor_surface_target_at(&surface, screen_x, screen_y)
+    else {
+        return None;
+    };
+    if editor.world().has_box(world_x, world_y) {
+        return None;
+    }
+
+    app_state
+        .editor
+        .interaction
+        .double_tap
+        .has_pending_tap(
+            EditorDoubleTapTarget::DrawCell(world_x, world_y),
+            event.at,
+            app_state.editor.interaction.double_tap_window,
+        )
+        .then_some((world_x, world_y))
+}
+
 fn resolve_paint_mode(
     ui: &mut EditorUiState,
     editor: &LevelEditor,
@@ -526,8 +599,8 @@ fn move_mode_double_tap_target(
 #[cfg(test)]
 mod tests {
     use super::{
-        EditorUiAction, build_editor_surface_model, editor_mouse_pressed, editor_mouse_released,
-        editor_touch,
+        EditorSurfaceTarget, EditorUiAction, build_editor_surface_model, editor_mouse_pressed,
+        editor_mouse_released, editor_surface_target_at, editor_touch,
     };
     use crate::app::state::{AppOverlay, AppScreen, AppState};
     use crate::shared::PointerPhase;
@@ -535,7 +608,7 @@ mod tests {
         editor_bottom_right_button_rect, overlay_secondary_action_button_rect,
     };
     use sokobanitron_gameplay::BoardCell;
-    use sokobanitron_level_editor::{DrawTool, EditorCommand, EditorMode, LevelEditor};
+    use sokobanitron_level_editor::{DrawTool, EditorCommand, EditorMode, LevelEditor, Tile};
 
     fn screen_center_for_world_cell(
         app_state: &AppState,
@@ -554,6 +627,21 @@ mod tests {
             (screen_x + (width / 2) as i32) as f64,
             (screen_y + (height / 2) as i32) as f64,
         )
+    }
+
+    fn world_cell_at_screen_position(
+        app_state: &AppState,
+        editor: &LevelEditor,
+        screen_x: f64,
+        screen_y: f64,
+    ) -> (i32, i32) {
+        let surface = build_editor_surface_model(app_state, editor);
+        let Some(EditorSurfaceTarget::BoardCell { world_x, world_y }) =
+            editor_surface_target_at(&surface, screen_x, screen_y)
+        else {
+            panic!("expected screen position to hit an editor board cell");
+        };
+        (world_x, world_y)
     }
 
     fn move_mode_editor_with_history() -> (AppState, LevelEditor) {
@@ -785,6 +873,209 @@ mod tests {
         );
 
         assert_ne!(editor.snapshot(), before);
+    }
+
+    #[test]
+    fn same_cell_draw_mode_double_tap_commits_on_second_press() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        let mut editor = LevelEditor::new();
+        let screen_x = (app_state.editor.viewport.surface_width / 2) as f64;
+        let screen_y = (app_state.editor.viewport.surface_height / 2) as f64;
+
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Started,
+            screen_x,
+            screen_y,
+        );
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Ended,
+            screen_x,
+            screen_y,
+        );
+
+        let (world_x, world_y) =
+            world_cell_at_screen_position(&app_state, &editor, screen_x, screen_y);
+        let (screen_x, screen_y) =
+            screen_center_for_world_cell(&app_state, &editor, world_x, world_y);
+        assert_eq!(editor.world().tile(world_x, world_y), Tile::Void);
+        assert!(!editor.world().has_box(world_x, world_y));
+
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Started,
+            screen_x,
+            screen_y,
+        );
+
+        assert_eq!(editor.world().tile(world_x, world_y), Tile::Goal);
+        assert!(editor.world().has_box(world_x, world_y));
+
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Ended,
+            screen_x,
+            screen_y,
+        );
+
+        assert_eq!(editor.world().tile(world_x, world_y), Tile::Goal);
+        assert!(editor.world().has_box(world_x, world_y));
+    }
+
+    #[test]
+    fn same_cell_draw_mode_second_tap_does_not_pinch_zoom() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        let mut editor = LevelEditor::new();
+        let screen_x = (app_state.editor.viewport.surface_width / 2) as f64;
+        let screen_y = (app_state.editor.viewport.surface_height / 2) as f64;
+
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Started,
+            screen_x,
+            screen_y,
+        );
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Ended,
+            screen_x,
+            screen_y,
+        );
+
+        let (world_x, world_y) =
+            world_cell_at_screen_position(&app_state, &editor, screen_x, screen_y);
+        let (screen_x, screen_y) =
+            screen_center_for_world_cell(&app_state, &editor, world_x, world_y);
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Started,
+            screen_x,
+            screen_y,
+        );
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            2,
+            PointerPhase::Started,
+            screen_x + 80.0,
+            screen_y,
+        );
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            2,
+            PointerPhase::Moved,
+            screen_x + 160.0,
+            screen_y,
+        );
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Ended,
+            screen_x,
+            screen_y,
+        );
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            2,
+            PointerPhase::Ended,
+            screen_x + 160.0,
+            screen_y,
+        );
+
+        assert_eq!(app_state.editor.viewport.zoom_steps, 0);
+        assert_eq!(editor.world().tile(world_x, world_y), Tile::Goal);
+        assert!(editor.world().has_box(world_x, world_y));
+    }
+
+    #[test]
+    fn lingering_pinch_touch_blocks_immediate_draw_double_tap_commit() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        let mut editor = LevelEditor::new();
+        let screen_x = (app_state.editor.viewport.surface_width / 2) as f64;
+        let screen_y = (app_state.editor.viewport.surface_height / 2) as f64;
+
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Started,
+            screen_x,
+            screen_y,
+        );
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Ended,
+            screen_x,
+            screen_y,
+        );
+
+        let (world_x, world_y) =
+            world_cell_at_screen_position(&app_state, &editor, screen_x, screen_y);
+        let (screen_x, screen_y) =
+            screen_center_for_world_cell(&app_state, &editor, world_x, world_y);
+
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            10,
+            PointerPhase::Started,
+            100.0,
+            100.0,
+        );
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            11,
+            PointerPhase::Started,
+            200.0,
+            100.0,
+        );
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            10,
+            PointerPhase::Ended,
+            100.0,
+            100.0,
+        );
+
+        assert_eq!(app_state.editor.interaction.touch.active_position(), None);
+        assert!(app_state.editor.interaction.touch.has_active_contacts());
+
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            12,
+            PointerPhase::Started,
+            screen_x,
+            screen_y,
+        );
+
+        assert_eq!(editor.world().tile(world_x, world_y), Tile::Void);
+        assert!(!editor.world().has_box(world_x, world_y));
     }
 
     #[test]
