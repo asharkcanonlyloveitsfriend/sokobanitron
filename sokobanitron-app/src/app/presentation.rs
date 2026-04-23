@@ -9,16 +9,152 @@
 //! - clients own final present-to-screen behavior.
 //!
 //! Presentation plans are currently render-only. The app builds them and clients execute them
-//! immediately through `FrameSink`; there is no shared timed or pending execution lifecycle.
+//! immediately through `FrameSink`. `AppFrameRenderer` centralizes request drawing and pending
+//! presentation state, while clients still own scheduling wakeups and final presentation to screen.
 
 use super::state::AppState;
 use crate::gameplay::build_gameplay_frame_request_with_cause;
 use presentation::screen_requests::GameplayPresentationCause;
+use presentation::{GameplayPresentationState, Renderer};
 use sokobanitron_gameplay::{
-    GameplayController, GameplayTapEffect, GameplayTapEvent, GameplayTapOutcome,
+    BoardView, GameplayController, GameplayTapEffect, GameplayTapEvent, GameplayTapOutcome,
 };
 
 pub use presentation::screen_requests::FrameRequest;
+pub use presentation::{FrameDamage, GameplayAnimationPolicy, RendererOverrides, ScreenRect};
+
+/// Shared frame renderer used by clients to turn app frame requests into pixels.
+///
+/// It owns the device-agnostic renderer plus persistent gameplay presentation state. Clients use
+/// it to draw full frame requests and continue pending visible presentation work; clients still own
+/// wakeups, scheduling, and final present-to-screen behavior.
+pub struct AppFrameRenderer {
+    renderer: Renderer,
+    gameplay_presentation: GameplayPresentationState,
+}
+
+impl Default for AppFrameRenderer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AppFrameRenderer {
+    pub fn new() -> Self {
+        Self::with_renderer_overrides_and_gameplay_animation_policy(
+            RendererOverrides::default(),
+            GameplayAnimationPolicy::default(),
+        )
+    }
+
+    pub fn with_gameplay_animation_policy(animation_policy: GameplayAnimationPolicy) -> Self {
+        Self::with_renderer_overrides_and_gameplay_animation_policy(
+            RendererOverrides::default(),
+            animation_policy,
+        )
+    }
+
+    /// Builds with renderer overrides and the default gameplay animation policy.
+    ///
+    /// Use [`Self::with_renderer_overrides_and_gameplay_animation_policy`] when the animation
+    /// policy should be explicit.
+    pub fn with_renderer_overrides(overrides: RendererOverrides) -> Self {
+        Self::with_renderer_overrides_and_gameplay_animation_policy(
+            overrides,
+            GameplayAnimationPolicy::default(),
+        )
+    }
+
+    /// Builds with independently supplied renderer overrides and gameplay animation policy.
+    pub fn with_renderer_overrides_and_gameplay_animation_policy(
+        overrides: RendererOverrides,
+        animation_policy: GameplayAnimationPolicy,
+    ) -> Self {
+        Self::with_renderer_and_gameplay_animation_policy(
+            Renderer::with_overrides(overrides),
+            animation_policy,
+        )
+    }
+
+    fn with_renderer_and_gameplay_animation_policy(
+        renderer: Renderer,
+        animation_policy: GameplayAnimationPolicy,
+    ) -> Self {
+        Self {
+            renderer,
+            gameplay_presentation: GameplayPresentationState::with_animation_policy(
+                animation_policy,
+            ),
+        }
+    }
+
+    /// Clears the persistent gameplay presentation state after the visible surface is invalidated.
+    pub fn clear_gameplay_presentation_state(&mut self) {
+        self.gameplay_presentation.clear();
+    }
+
+    /// Returns whether gameplay presentation has pending work for the currently visible screen.
+    ///
+    /// Pending gameplay presentation is considered visible only while the gameplay screen is active.
+    pub fn has_pending_visible_presentation(&self, app_state: &AppState) -> bool {
+        app_state.is_gameplay_screen() && self.gameplay_presentation.has_pending_presentation()
+    }
+
+    pub fn draw_frame_request(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        request: &FrameRequest,
+        preview_boards: &[BoardView],
+    ) -> FrameDamage {
+        self.renderer.draw_frame_request(
+            frame,
+            width,
+            height,
+            request,
+            &mut self.gameplay_presentation,
+            preview_boards,
+        )
+    }
+
+    pub fn draw_full_frame_request(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        request: &FrameRequest,
+        preview_boards: &[BoardView],
+    ) -> FrameDamage {
+        self.renderer.draw_full_frame_request(
+            frame,
+            width,
+            height,
+            request,
+            &mut self.gameplay_presentation,
+            preview_boards,
+        )
+    }
+
+    /// Draws pending gameplay presentation work only when it is visible on the active screen.
+    pub fn draw_pending_visible_presentation(
+        &mut self,
+        app_state: &AppState,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+    ) -> FrameDamage {
+        if !self.has_pending_visible_presentation(app_state) {
+            return FrameDamage::Noop;
+        }
+        self.renderer.draw_active_gameplay_presentation(
+            frame,
+            width,
+            height,
+            &mut self.gameplay_presentation,
+        )
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PresentationStep {
@@ -130,8 +266,9 @@ fn gameplay_presentation_cause_for_effect(
 #[cfg(test)]
 mod tests {
     use super::{
-        FrameSink, PresentationPlan, PresentationStep, build_presentation_plan,
-        gameplay_presentation_plan, render_presentation_plan,
+        AppFrameRenderer, FrameSink, GameplayAnimationPolicy, PresentationPlan, PresentationStep,
+        RendererOverrides, build_presentation_plan, gameplay_presentation_plan,
+        render_presentation_plan,
     };
     use crate::app::{AppState, FrameRequest};
     use presentation::screen_requests::{
@@ -181,6 +318,20 @@ mod tests {
             panic!("expected one gameplay render step");
         };
         update
+    }
+
+    #[test]
+    fn app_frame_renderer_accepts_overrides_and_animation_policy_together() {
+        let renderer = AppFrameRenderer::with_renderer_overrides_and_gameplay_animation_policy(
+            RendererOverrides {
+                gray_1: Some(12),
+                ..RendererOverrides::default()
+            },
+            GameplayAnimationPolicy::Limited,
+        );
+
+        assert_eq!(renderer.renderer.theme().gray_1, 12);
+        assert!(!renderer.has_pending_visible_presentation(&AppState::default()));
     }
 
     #[test]

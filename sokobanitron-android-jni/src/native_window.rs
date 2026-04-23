@@ -1,6 +1,6 @@
 use jni::JNIEnv;
 use jni::objects::JObject;
-use presentation::ScreenRect;
+use sokobanitron_app::app::ScreenRect;
 
 #[cfg(target_os = "android")]
 mod imp {

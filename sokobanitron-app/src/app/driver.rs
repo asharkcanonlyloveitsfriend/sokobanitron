@@ -55,11 +55,11 @@ pub trait AppDriverContext {
         eprintln!("warning: {message}");
     }
 
-    fn has_pending_gameplay_presentation(&mut self) -> bool {
+    fn has_pending_frame_presentation(&mut self) -> bool {
         false
     }
 
-    fn continue_gameplay_presentation_and_render(&mut self) -> Result<bool, Self::Error> {
+    fn continue_frame_presentation_and_render(&mut self) -> Result<bool, Self::Error> {
         Ok(false)
     }
 }
@@ -222,8 +222,8 @@ pub fn continue_pending_render_work_and_render_in_context<C>(
 where
     C: AppDriverContext + FrameSink<Error = <C as AppDriverContext>::Error>,
 {
-    if context.has_pending_gameplay_presentation() {
-        let frame_changed = context.continue_gameplay_presentation_and_render()?;
+    if context.has_pending_frame_presentation() {
+        let frame_changed = context.continue_frame_presentation_and_render()?;
         return Ok(current_render_work_result(context, frame_changed));
     }
 
@@ -249,7 +249,7 @@ where
 }
 
 pub fn has_pending_render_work_in_context<C: AppDriverContext>(context: &mut C) -> bool {
-    context.has_pending_gameplay_presentation() || has_pending_editor_hint_job_in_context(context)
+    context.has_pending_frame_presentation() || has_pending_editor_hint_job_in_context(context)
 }
 
 pub fn handle_pointer_input_and_render_in_context<C>(
@@ -485,9 +485,9 @@ mod tests {
         level_persistence: LevelPersistence,
         preview_boards: Vec<sokobanitron_gameplay::BoardView>,
         editor: LevelEditor,
-        pending_gameplay_presentation: bool,
-        gameplay_followup_request: Option<FrameRequest>,
-        simulate_gameplay_followup_on_render: bool,
+        pending_frame_presentation: bool,
+        frame_followup_request: Option<FrameRequest>,
+        simulate_frame_followup_on_render: bool,
         rendered_frames: Vec<FrameRequest>,
         temp_root: Option<PathBuf>,
     }
@@ -502,17 +502,17 @@ mod tests {
                 level_persistence: LevelPersistence::default(),
                 preview_boards: build_preview_boards(&levels),
                 editor: LevelEditor::new(),
-                pending_gameplay_presentation: false,
-                gameplay_followup_request: None,
-                simulate_gameplay_followup_on_render: false,
+                pending_frame_presentation: false,
+                frame_followup_request: None,
+                simulate_frame_followup_on_render: false,
                 rendered_frames: Vec::new(),
                 temp_root: None,
             }
         }
 
-        fn with_pending_gameplay_followup() -> Self {
+        fn with_pending_frame_followup() -> Self {
             let mut context = Self::new();
-            context.simulate_gameplay_followup_on_render = true;
+            context.simulate_frame_followup_on_render = true;
             context
         }
 
@@ -530,9 +530,9 @@ mod tests {
                 .persistence,
                 preview_boards: build_preview_boards(&[level]),
                 editor: saveable_editor(),
-                pending_gameplay_presentation: false,
-                gameplay_followup_request: None,
-                simulate_gameplay_followup_on_render: false,
+                pending_frame_presentation: false,
+                frame_followup_request: None,
+                simulate_frame_followup_on_render: false,
                 rendered_frames: Vec::new(),
                 temp_root: Some(root),
             }
@@ -599,9 +599,9 @@ mod tests {
                 level_persistence: initial_levels.persistence,
                 preview_boards: initial_levels.preview_boards,
                 editor: LevelEditor::new(),
-                pending_gameplay_presentation: false,
-                gameplay_followup_request: None,
-                simulate_gameplay_followup_on_render: false,
+                pending_frame_presentation: false,
+                frame_followup_request: None,
+                simulate_frame_followup_on_render: false,
                 rendered_frames: Vec::new(),
                 temp_root: Some(root),
             }
@@ -643,9 +643,9 @@ mod tests {
                 level_persistence,
                 preview_boards,
                 editor: saveable_editor(),
-                pending_gameplay_presentation: false,
-                gameplay_followup_request: None,
-                simulate_gameplay_followup_on_render: false,
+                pending_frame_presentation: false,
+                frame_followup_request: None,
+                simulate_frame_followup_on_render: false,
                 rendered_frames: Vec::new(),
                 temp_root: Some(root),
             }
@@ -694,16 +694,16 @@ mod tests {
             )
         }
 
-        fn has_pending_gameplay_presentation(&mut self) -> bool {
-            self.pending_gameplay_presentation
+        fn has_pending_frame_presentation(&mut self) -> bool {
+            self.pending_frame_presentation
         }
 
-        fn continue_gameplay_presentation_and_render(&mut self) -> Result<bool, Self::Error> {
-            if !self.pending_gameplay_presentation {
+        fn continue_frame_presentation_and_render(&mut self) -> Result<bool, Self::Error> {
+            if !self.pending_frame_presentation {
                 return Ok(false);
             }
-            self.pending_gameplay_presentation = false;
-            if let Some(request) = self.gameplay_followup_request.take() {
+            self.pending_frame_presentation = false;
+            if let Some(request) = self.frame_followup_request.take() {
                 self.rendered_frames.push(request);
                 Ok(true)
             } else {
@@ -717,12 +717,12 @@ mod tests {
 
         fn render_frame(&mut self, request: &FrameRequest) -> Result<(), Self::Error> {
             self.rendered_frames.push(request.clone());
-            if self.simulate_gameplay_followup_on_render
+            if self.simulate_frame_followup_on_render
                 && matches!(request, FrameRequest::Gameplay { .. })
             {
-                self.pending_gameplay_presentation = true;
-                self.gameplay_followup_request = Some(request.clone());
-                self.simulate_gameplay_followup_on_render = false;
+                self.pending_frame_presentation = true;
+                self.frame_followup_request = Some(request.clone());
+                self.simulate_frame_followup_on_render = false;
             }
             Ok(())
         }
@@ -849,8 +849,8 @@ mod tests {
     }
 
     #[test]
-    fn apply_action_and_render_reports_pending_gameplay_followup_work() {
-        let mut context = TestContext::with_pending_gameplay_followup();
+    fn apply_action_and_render_reports_pending_frame_followup_work() {
+        let mut context = TestContext::with_pending_frame_followup();
 
         let applied = apply_action_and_render_in_context(
             &mut context,
@@ -864,8 +864,8 @@ mod tests {
     }
 
     #[test]
-    fn continue_pending_render_work_advances_gameplay_followup_from_shared_driver() {
-        let mut context = TestContext::with_pending_gameplay_followup();
+    fn continue_pending_render_work_advances_frame_followup_from_shared_driver() {
+        let mut context = TestContext::with_pending_frame_followup();
         let _ = apply_action_and_render_in_context(
             &mut context,
             AppAction::TapBoardCell(BoardCell::new(1, 1)),

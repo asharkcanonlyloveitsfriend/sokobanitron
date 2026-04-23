@@ -8,14 +8,14 @@ impl App {
         let _ = self.render_request(&request);
     }
 
-    pub(crate) fn render_active_gameplay_presentation(&mut self) {
+    pub(crate) fn render_pending_visible_presentation(&mut self) {
         if let Some(pixels) = &mut self.pixels {
             let gray_frame = &mut self.gray_frame;
-            self.renderer.draw_active_gameplay_presentation(
+            self.frame_renderer.draw_pending_visible_presentation(
+                &self.app_state,
                 gray_frame,
                 self.surface_width,
                 self.surface_height,
-                &mut self.gameplay_presentation,
             );
             copy_gray_to_sepia_rgba(gray_frame, pixels.frame_mut());
             pixels.render().expect("render");
@@ -25,12 +25,11 @@ impl App {
     fn render_request(&mut self, request: &FrameRequest) -> Result<(), ()> {
         if let Some(pixels) = &mut self.pixels {
             let gray_frame = &mut self.gray_frame;
-            self.renderer.draw_frame_request(
+            self.frame_renderer.draw_frame_request(
                 gray_frame,
                 self.surface_width,
                 self.surface_height,
                 request,
-                &mut self.gameplay_presentation,
                 &self.preview_boards,
             );
             copy_gray_to_sepia_rgba(gray_frame, pixels.frame_mut());

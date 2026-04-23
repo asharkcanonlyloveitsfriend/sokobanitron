@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 pixels = "0.15"
-presentation = { package = "sokobanitron-presentation", path = "../sokobanitron-presentation" }
 sokobanitron-level-editor = { path = "../sokobanitron-level-editor" }
 sokobanitron-gameplay = { path = "../sokobanitron-gameplay" }
 sokobanitron-app = { path = "../sokobanitron-app" }

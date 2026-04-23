@@ -1,9 +1,8 @@
 use pixels::{Pixels, SurfaceTexture};
-use presentation::{GameplayPresentationState, Renderer};
 use sokobanitron_app::{
     app::{
-        AppDriverContext, AppInput, AppPointerInput, AppRuntimeMut, AppState, AppliedUpdate,
-        EditorAppRuntimeMut, apply_input_and_render_in_context,
+        AppDriverContext, AppFrameRenderer, AppInput, AppPointerInput, AppRuntimeMut, AppState,
+        AppliedUpdate, EditorAppRuntimeMut, apply_input_and_render_in_context,
         continue_pending_render_work_and_render_in_context,
         handle_pointer_input_and_render_in_context,
     },
@@ -34,8 +33,7 @@ pub struct App {
     window: Option<Arc<Window>>,
     pub(crate) pixels: Option<Pixels<'static>>,
     pub(crate) gray_frame: Vec<u8>,
-    pub(crate) renderer: Renderer,
-    pub(crate) gameplay_presentation: GameplayPresentationState,
+    pub(crate) frame_renderer: AppFrameRenderer,
     pub(crate) preview_boards: Vec<BoardView>,
     pub(crate) controller: GameplayController,
     pub(crate) app_state: AppState,
@@ -71,8 +69,7 @@ impl App {
             window: None,
             pixels: None,
             gray_frame: vec![0; (INITIAL_WIDTH * INITIAL_HEIGHT) as usize],
-            renderer: Renderer::new(),
-            gameplay_presentation: GameplayPresentationState::new(),
+            frame_renderer: AppFrameRenderer::new(),
             preview_boards,
             controller,
             app_state,
@@ -135,15 +132,17 @@ impl AppDriverContext for App {
         )
     }
 
-    fn has_pending_gameplay_presentation(&mut self) -> bool {
-        self.app_state.is_gameplay_screen() && self.gameplay_presentation.has_pending_presentation()
+    fn has_pending_frame_presentation(&mut self) -> bool {
+        self.frame_renderer
+            .has_pending_visible_presentation(&self.app_state)
     }
 
-    fn continue_gameplay_presentation_and_render(&mut self) -> Result<bool, Self::Error> {
-        let had_pending = self.app_state.is_gameplay_screen()
-            && self.gameplay_presentation.has_pending_presentation();
+    fn continue_frame_presentation_and_render(&mut self) -> Result<bool, Self::Error> {
+        let had_pending = self
+            .frame_renderer
+            .has_pending_visible_presentation(&self.app_state);
         if had_pending {
-            self.render_active_gameplay_presentation();
+            self.render_pending_visible_presentation();
         }
         Ok(had_pending)
     }
@@ -160,7 +159,7 @@ impl ApplicationHandler for App {
         self.surface_width = size.width.max(1);
         self.surface_height = size.height.max(1);
         self.gray_frame = vec![0; (self.surface_width as usize) * (self.surface_height as usize)];
-        self.gameplay_presentation.clear();
+        self.frame_renderer.clear_gameplay_presentation_state();
         resize_gameplay_surface(
             &mut self.app_state.gameplay,
             self.surface_width,
@@ -204,7 +203,7 @@ impl ApplicationHandler for App {
                 );
                 self.gray_frame =
                     vec![0; (self.surface_width as usize) * (self.surface_height as usize)];
-                self.gameplay_presentation.clear();
+                self.frame_renderer.clear_gameplay_presentation_state();
                 resize_editor_surface(&mut self.app_state, self.surface_width, self.surface_height);
                 self.render_current();
             }
@@ -226,7 +225,7 @@ impl ApplicationHandler for App {
                     );
                     self.gray_frame =
                         vec![0; (self.surface_width as usize) * (self.surface_height as usize)];
-                    self.gameplay_presentation.clear();
+                    self.frame_renderer.clear_gameplay_presentation_state();
                     resize_editor_surface(
                         &mut self.app_state,
                         self.surface_width,

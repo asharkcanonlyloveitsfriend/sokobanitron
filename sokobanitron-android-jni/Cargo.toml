@@ -9,7 +9,6 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 jni = "0.21"
-presentation = { package = "sokobanitron-presentation", path = "../sokobanitron-presentation" }
 sokobanitron-app = { path = "../sokobanitron-app" }
 sokobanitron-gameplay = { path = "../sokobanitron-gameplay" }
 sokobanitron-level-editor = { path = "../sokobanitron-level-editor" }

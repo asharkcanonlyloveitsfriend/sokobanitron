@@ -583,7 +583,6 @@ dependencies = [
  "sokobanitron-app",
  "sokobanitron-gameplay",
  "sokobanitron-level-editor",
- "sokobanitron-presentation",
  "winit",
 ]
 
@@ -2176,7 +2175,6 @@ dependencies = [
  "sokobanitron-app",
  "sokobanitron-gameplay",
  "sokobanitron-level-editor",
- "sokobanitron-presentation",
 ]
 
 [[package]]

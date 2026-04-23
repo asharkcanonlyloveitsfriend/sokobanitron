@@ -1,9 +1,8 @@
 use crate::{config, platform};
-use presentation::{GameplayAnimationPolicy, GameplayPresentationState, Renderer};
 use sokobanitron_app::{
     AppPreferences,
     app::{
-        AppDriverContext, AppPointerInput, AppRuntimeMut, AppState,
+        AppDriverContext, AppFrameRenderer, AppPointerInput, AppRuntimeMut, AppState,
         continue_pending_render_work_and_render_in_context,
         handle_pointer_input_and_render_in_context, has_pending_render_work_in_context,
     },
@@ -35,8 +34,7 @@ enum SleepSyncOutcome {
 }
 
 pub struct KindleApp {
-    pub(crate) renderer: Renderer,
-    pub(crate) gameplay_presentation: GameplayPresentationState,
+    pub(crate) frame_renderer: AppFrameRenderer,
     pub(crate) gray_frame: Vec<u8>,
     sleep_state: AppSleepState,
     pub(crate) preview_boards: Vec<BoardView>,
@@ -80,10 +78,7 @@ impl KindleApp {
             Some(initial_levels.active_level_set_index),
         );
         Ok(Self {
-            renderer: Self::build_renderer(),
-            gameplay_presentation: GameplayPresentationState::with_animation_policy(
-                GameplayAnimationPolicy::Limited,
-            ),
+            frame_renderer: Self::build_frame_renderer(),
             gray_frame: vec![0; config::WIDTH * config::HEIGHT],
             sleep_state: AppSleepState::Awake,
             preview_boards,
@@ -134,14 +129,17 @@ impl KindleApp {
         }
     }
 
-    fn render_active_gameplay_presentation(&mut self) -> Result<()> {
-        let (renderer, gray, display) =
-            (&mut self.renderer, &mut self.gray_frame, &mut self.display);
-        let damage = renderer.draw_active_gameplay_presentation(
+    fn render_pending_visible_presentation(&mut self) -> Result<()> {
+        let (frame_renderer, gray, display) = (
+            &mut self.frame_renderer,
+            &mut self.gray_frame,
+            &mut self.display,
+        );
+        let damage = frame_renderer.draw_pending_visible_presentation(
+            &self.app_state,
             gray,
             config::WIDTH as u32,
             config::HEIGHT as u32,
-            &mut self.gameplay_presentation,
         );
         crate::display::present_frame_damage(display, damage, gray)?;
         Ok(())
@@ -264,15 +262,17 @@ impl AppDriverContext for KindleApp {
         }
     }
 
-    fn has_pending_gameplay_presentation(&mut self) -> bool {
-        self.app_state.is_gameplay_screen() && self.gameplay_presentation.has_pending_presentation()
+    fn has_pending_frame_presentation(&mut self) -> bool {
+        self.frame_renderer
+            .has_pending_visible_presentation(&self.app_state)
     }
 
-    fn continue_gameplay_presentation_and_render(&mut self) -> Result<bool> {
-        let had_pending = self.app_state.is_gameplay_screen()
-            && self.gameplay_presentation.has_pending_presentation();
+    fn continue_frame_presentation_and_render(&mut self) -> Result<bool> {
+        let had_pending = self
+            .frame_renderer
+            .has_pending_visible_presentation(&self.app_state);
         if had_pending {
-            self.render_active_gameplay_presentation()?;
+            self.render_pending_visible_presentation()?;
         }
         Ok(had_pending)
     }

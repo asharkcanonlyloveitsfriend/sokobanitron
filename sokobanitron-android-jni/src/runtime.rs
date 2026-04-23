@@ -1,11 +1,9 @@
 use crate::native_window::NativeWindow;
-use presentation::{
-    FrameDamage, GameplayPresentationState, Renderer as GameplayRenderer, RendererOverrides,
-};
 use sokobanitron_app::{
     app::{
-        AppDriverContext, AppPointerInput, AppRuntimeMut, AppState, EditorAppRuntimeMut,
-        FrameRequest, FrameSink, build_current_app_screen_frame_request,
+        AppDriverContext, AppFrameRenderer, AppPointerInput, AppRuntimeMut, AppState,
+        EditorAppRuntimeMut, FrameDamage, FrameRequest, FrameSink, GameplayAnimationPolicy,
+        RendererOverrides, build_current_app_screen_frame_request,
         continue_pending_render_work_and_render_in_context,
         handle_pointer_input_and_render_in_context, has_pending_render_work_in_context,
     },
@@ -26,8 +24,7 @@ const ANDROID_EDITOR_TAP_SLOP_PX: i32 = 24;
 const ANDROID_EDITOR_DOUBLE_TAP_WINDOW: Duration = Duration::from_millis(750);
 
 pub struct AndroidApp {
-    renderer: GameplayRenderer,
-    gameplay_presentation: GameplayPresentationState,
+    frame_renderer: AppFrameRenderer,
     gray_frame: Vec<u8>,
     current_request: FrameRequest,
     pending_present_damage: FrameDamage,
@@ -77,8 +74,10 @@ impl AndroidApp {
             build_current_app_screen_frame_request(&controller, &app_state, &editor);
 
         let mut app = Self {
-            renderer: GameplayRenderer::with_overrides(android_renderer_overrides()),
-            gameplay_presentation: GameplayPresentationState::new(),
+            frame_renderer: AppFrameRenderer::with_renderer_overrides_and_gameplay_animation_policy(
+                android_renderer_overrides(),
+                GameplayAnimationPolicy::Full,
+            ),
             gray_frame: allocate_gray_frame(surface_width, surface_height),
             current_request,
             pending_present_damage: FrameDamage::Noop,
@@ -200,32 +199,30 @@ impl AndroidApp {
     }
 
     fn render_request_into_frame(&mut self, request: &FrameRequest) -> FrameDamage {
-        self.renderer.draw_frame_request(
+        self.frame_renderer.draw_frame_request(
             &mut self.gray_frame,
             self.surface_width,
             self.surface_height,
             request,
-            &mut self.gameplay_presentation,
             &self.preview_boards,
         )
     }
 
-    fn render_active_gameplay_presentation_into_frame(&mut self) -> FrameDamage {
-        self.renderer.draw_active_gameplay_presentation(
+    fn render_pending_visible_presentation_into_frame(&mut self) -> FrameDamage {
+        self.frame_renderer.draw_pending_visible_presentation(
+            &self.app_state,
             &mut self.gray_frame,
             self.surface_width,
             self.surface_height,
-            &mut self.gameplay_presentation,
         )
     }
 
     fn draw_full_request_into_frame(&mut self, request: &FrameRequest) {
-        self.renderer.draw_full_frame_request(
+        self.frame_renderer.draw_full_frame_request(
             &mut self.gray_frame,
             self.surface_width,
             self.surface_height,
             request,
-            &mut self.gameplay_presentation,
             &self.preview_boards,
         );
     }
@@ -274,17 +271,19 @@ impl AppDriverContext for AndroidApp {
         )
     }
 
-    fn has_pending_gameplay_presentation(&mut self) -> bool {
-        self.app_state.is_gameplay_screen() && self.gameplay_presentation.has_pending_presentation()
+    fn has_pending_frame_presentation(&mut self) -> bool {
+        self.frame_renderer
+            .has_pending_visible_presentation(&self.app_state)
     }
 
-    fn continue_gameplay_presentation_and_render(&mut self) -> Result<bool, Self::Error> {
-        if !self.app_state.is_gameplay_screen()
-            || !self.gameplay_presentation.has_pending_presentation()
+    fn continue_frame_presentation_and_render(&mut self) -> Result<bool, Self::Error> {
+        if !self
+            .frame_renderer
+            .has_pending_visible_presentation(&self.app_state)
         {
             return Ok(false);
         }
-        let damage = self.render_active_gameplay_presentation_into_frame();
+        let damage = self.render_pending_visible_presentation_into_frame();
         let frame_changed = !matches!(damage, FrameDamage::Noop);
         self.mark_frame_damage(damage);
         Ok(frame_changed)
