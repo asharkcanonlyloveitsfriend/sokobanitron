@@ -414,7 +414,9 @@ mod tests {
 
     fn cell_center(surface: &GameplaySurfaceModel, cell: BoardCell) -> (f64, f64) {
         let (x, y, w, h) = surface.board_viewport.cell_to_screen_rect(cell);
-        ((x + (w / 2) as i32) as f64, (y + (h / 2) as i32) as f64)
+        let w = w as i32;
+        let h = h as i32;
+        ((x + w / 2) as f64, (y + h / 2) as f64)
     }
 
     #[test]
@@ -424,16 +426,8 @@ mod tests {
         let mut gameplay = app_state.gameplay.clone();
         let surface = test_surface(&controller, &app_state);
         let policy = test_policy(&app_state);
-        let (x, y, w, h) = surface
-            .board_viewport
-            .cell_to_screen_rect(BoardCell::new(1, 1));
-        let input = gameplay_pointer_tap(
-            &mut gameplay,
-            &surface,
-            policy,
-            (x + (w / 2) as i32) as f64,
-            (y + (h / 2) as i32) as f64,
-        );
+        let (tap_x, tap_y) = cell_center(&surface, BoardCell::new(1, 1));
+        let input = gameplay_pointer_tap(&mut gameplay, &surface, policy, tap_x, tap_y);
 
         assert!(matches!(input, AppInput::BoardTap(_)));
     }
@@ -718,11 +712,7 @@ mod tests {
         set_gameplay_touch_slop(&mut gameplay, 24);
         let surface = test_surface(&controller, &app_state);
         let policy = test_policy(&app_state);
-        let (x, y, w, h) = surface
-            .board_viewport
-            .cell_to_screen_rect(BoardCell::new(1, 1));
-        let tap_x = (x + (w / 2) as i32) as f64;
-        let tap_y = (y + (h / 2) as i32) as f64;
+        let (tap_x, tap_y) = cell_center(&surface, BoardCell::new(1, 1));
 
         assert_eq!(
             gameplay_pointer_event(
@@ -793,11 +783,7 @@ mod tests {
         let mut gameplay = app_state.gameplay.clone();
         let surface = test_surface(&controller, &app_state);
         let policy = test_policy(&app_state);
-        let (x, y, w, h) = surface
-            .board_viewport
-            .cell_to_screen_rect(BoardCell::new(2, 1));
-        let tap_x = (x + (w / 2) as i32) as f64;
-        let tap_y = (y + (h / 2) as i32) as f64;
+        let (tap_x, tap_y) = cell_center(&surface, BoardCell::new(2, 1));
 
         assert_eq!(
             gameplay_pointer_tap(&mut gameplay, &surface, policy, tap_x, tap_y),
@@ -819,11 +805,7 @@ mod tests {
         let mut gameplay = app_state.gameplay.clone();
         let surface = test_surface(&controller, &app_state);
         let policy = test_policy(&app_state);
-        let (x, y, w, h) = surface
-            .board_viewport
-            .cell_to_screen_rect(BoardCell::new(4, 1));
-        let tap_x = (x + (w / 2) as i32) as f64;
-        let tap_y = (y + (h / 2) as i32) as f64;
+        let (tap_x, tap_y) = cell_center(&surface, BoardCell::new(4, 1));
 
         assert_eq!(
             gameplay_pointer_tap(&mut gameplay, &surface, policy, tap_x, tap_y),
@@ -845,16 +827,8 @@ mod tests {
         let mut gameplay = app_state.gameplay.clone();
         let surface = test_surface(&controller, &app_state);
         let policy = test_policy(&app_state);
-        let (x1, y1, w1, h1) = surface
-            .board_viewport
-            .cell_to_screen_rect(BoardCell::new(3, 2));
-        let tap_x1 = (x1 + (w1 / 2) as i32) as f64;
-        let tap_y1 = (y1 + (h1 / 2) as i32) as f64;
-        let (x2, y2, w2, h2) = surface
-            .board_viewport
-            .cell_to_screen_rect(BoardCell::new(4, 1));
-        let tap_x2 = (x2 + (w2 / 2) as i32) as f64;
-        let tap_y2 = (y2 + (h2 / 2) as i32) as f64;
+        let (tap_x1, tap_y1) = cell_center(&surface, BoardCell::new(3, 2));
+        let (tap_x2, tap_y2) = cell_center(&surface, BoardCell::new(4, 1));
 
         assert_eq!(
             gameplay_pointer_tap(&mut gameplay, &surface, policy, tap_x1, tap_y1),
@@ -874,11 +848,7 @@ mod tests {
         set_gameplay_double_tap_window(&mut gameplay, Duration::ZERO);
         let surface = test_surface(&controller, &app_state);
         let policy = test_policy(&app_state);
-        let (x, y, w, h) = surface
-            .board_viewport
-            .cell_to_screen_rect(BoardCell::new(1, 1));
-        let tap_x = (x + (w / 2) as i32) as f64;
-        let tap_y = (y + (h / 2) as i32) as f64;
+        let (tap_x, tap_y) = cell_center(&surface, BoardCell::new(1, 1));
 
         assert_eq!(
             gameplay_pointer_tap(&mut gameplay, &surface, policy, tap_x, tap_y),
@@ -898,11 +868,7 @@ mod tests {
         let mut gameplay = app_state.gameplay.clone();
         let surface = test_surface(&controller, &app_state);
         let policy = test_policy(&app_state);
-        let (x, y, w, h) = surface
-            .board_viewport
-            .cell_to_screen_rect(BoardCell::new(1, 1));
-        let tap_x = (x + (w / 2) as i32) as f64;
-        let tap_y = (y + (h / 2) as i32) as f64;
+        let (tap_x, tap_y) = cell_center(&surface, BoardCell::new(1, 1));
 
         assert_eq!(
             gameplay_pointer_tap(&mut gameplay, &surface, policy, tap_x, tap_y),

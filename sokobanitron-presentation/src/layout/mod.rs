@@ -13,8 +13,8 @@ use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
 pub use controls::{
     BOARD_HORIZONTAL_MARGIN, BOARD_VERTICAL_MARGIN, ScreenRect, UI_BUTTON_MARGIN, UI_BUTTON_SIZE,
     UI_MENU_BUTTON_HEIGHT, board_viewport_margins, bottom_left_corner_button_rect,
-    bottom_right_corner_button_rect, top_left_level_button_rect, top_menu_toggle_button_hit_rect,
-    top_menu_toggle_button_rect,
+    bottom_right_corner_button_rect, top_left_level_button_rect,
+    top_menu_toggle_button_expanded_hit_rect, top_menu_toggle_button_visible_rect,
 };
 pub use editor::{
     editor_bottom_left_button_rect, editor_bottom_right_button_rect, editor_viewport_size,

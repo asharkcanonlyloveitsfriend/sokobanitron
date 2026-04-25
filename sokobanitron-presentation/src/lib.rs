@@ -31,7 +31,7 @@ pub use hit_test::{
     level_select_menu_nav_action_for_swipe, level_select_menu_start_for_nav,
     level_select_menu_target_at, level_set_select_nav_action_at, level_set_select_start_for_nav,
     level_set_select_target_at, overlay_primary_action_button_contains,
-    overlay_secondary_action_button_contains, top_menu_toggle_button_contains,
+    overlay_secondary_action_button_contains, top_menu_toggle_button_expanded_hit_contains,
 };
 pub use layout::{
     BOARD_HORIZONTAL_MARGIN, BOARD_VERTICAL_MARGIN, BoardViewport, BoardViewportOptions,
@@ -44,7 +44,7 @@ pub use layout::{
     level_set_select_clamp_start, level_set_select_indices, level_set_select_row_rects,
     level_set_select_start_index, level_set_select_step_start, overlay_primary_action_button_rect,
     overlay_secondary_action_button_rect, top_left_level_button_rect,
-    top_menu_toggle_button_hit_rect, top_menu_toggle_button_rect,
+    top_menu_toggle_button_expanded_hit_rect, top_menu_toggle_button_visible_rect,
 };
 pub use renderer::{
     EntityVisualStyle, FrameDamage, Gray, PIXEL_FONT_HEIGHT, Renderer, RendererOverrides,

@@ -1,6 +1,6 @@
 use crate::layout::{
     ScreenRect, gameplay_menu_level_set_button_rect, overlay_primary_action_button_rect,
-    top_left_level_button_rect, top_menu_toggle_button_rect,
+    top_left_level_button_rect, top_menu_toggle_button_visible_rect,
 };
 
 use super::RendererTheme;
@@ -52,7 +52,7 @@ pub fn draw_top_menu_toggle(
         frame,
         width,
         height,
-        top_menu_toggle_button_rect(width),
+        top_menu_toggle_button_visible_rect(width),
         glyph,
         UI_MENU_TEXT_SCALE,
         theme,

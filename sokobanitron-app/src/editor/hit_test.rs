@@ -9,7 +9,7 @@
 use crate::app::state::AppState;
 use presentation::hit_test::{
     overlay_primary_action_button_contains, overlay_secondary_action_button_contains,
-    top_menu_toggle_button_contains,
+    top_menu_toggle_button_expanded_hit_contains,
 };
 use presentation::layout::{
     editor_bottom_left_button_rect, editor_bottom_right_button_rect, top_left_level_button_rect,
@@ -74,7 +74,7 @@ pub(super) fn editor_surface_target_at(
     if top_left_level_button_rect().contains(screen_x, screen_y) {
         return Some(EditorSurfaceTarget::ModeToggle);
     }
-    if top_menu_toggle_button_contains(screen_x, screen_y, surface.surface_width) {
+    if top_menu_toggle_button_expanded_hit_contains(screen_x, screen_y, surface.surface_width) {
         return Some(EditorSurfaceTarget::TopMenuToggle);
     }
     if overlay_primary_action_button_contains(

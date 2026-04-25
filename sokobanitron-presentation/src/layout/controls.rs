@@ -30,7 +30,7 @@ pub fn board_viewport_margins() -> (u32, u32) {
     (BOARD_HORIZONTAL_MARGIN, BOARD_VERTICAL_MARGIN)
 }
 
-pub fn top_menu_toggle_button_rect(width: u32) -> ScreenRect {
+pub fn top_menu_toggle_button_visible_rect(width: u32) -> ScreenRect {
     ScreenRect {
         x: width.saturating_sub(UI_BUTTON_SIZE) / 2,
         y: UI_BUTTON_MARGIN,
@@ -39,8 +39,8 @@ pub fn top_menu_toggle_button_rect(width: u32) -> ScreenRect {
     }
 }
 
-pub fn top_menu_toggle_button_hit_rect(width: u32) -> ScreenRect {
-    let base = top_menu_toggle_button_rect(width);
+pub fn top_menu_toggle_button_expanded_hit_rect(width: u32) -> ScreenRect {
+    let base = top_menu_toggle_button_visible_rect(width);
     let extra_w = base.w / 2;
     let extra_h = base.h;
     ScreenRect {
