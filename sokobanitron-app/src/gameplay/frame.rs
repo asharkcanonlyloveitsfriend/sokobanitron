@@ -8,7 +8,7 @@
 //! request that includes the board scene and viewport, and clients hand that request to the shared
 //! presentation layer.
 
-use super::view::{GameplayVisibleBoardWindow, build_gameplay_visible_window};
+use super::view::build_gameplay_board_viewport;
 use crate::app::presentation::FrameRequest;
 use crate::app::state::AppState;
 use presentation::screen_requests::{
@@ -16,7 +16,7 @@ use presentation::screen_requests::{
     GameplayScreenMode, GameplayScreenRequest, LevelSelectScreenRequest, LevelSetListEntry,
     LevelSetSelectScreenRequest,
 };
-use sokobanitron_gameplay::{BoardView, GameplayController};
+use sokobanitron_gameplay::GameplayController;
 
 pub fn build_gameplay_frame_request(
     controller: &GameplayController,
@@ -126,70 +126,15 @@ fn build_gameplay_presentation_update(
     cause: GameplayPresentationCause,
 ) -> GameplayPresentationUpdate {
     let board = controller.board();
-    let visible_window = build_gameplay_visible_window(&app_state.gameplay, board);
-    let cause = if gameplay_window_is_cropped(board, &visible_window) {
-        localize_gameplay_presentation_cause(cause, &visible_window)
-    } else {
-        cause
-    };
+    let viewport = build_gameplay_board_viewport(&app_state.gameplay, board);
     GameplayPresentationUpdate {
         scene: GameplayScreenRequest {
-            board: visible_window.board,
-            viewport: visible_window.viewport,
+            board: board.clone(),
+            viewport,
             level_number: controller.current_level() + 1,
             mode,
         },
         cause,
-    }
-}
-
-fn gameplay_window_is_cropped(
-    board: &BoardView,
-    visible_window: &GameplayVisibleBoardWindow,
-) -> bool {
-    visible_window.board_origin_x != 0
-        || visible_window.board_origin_y != 0
-        || visible_window.board.width() != board.width()
-        || visible_window.board.height() != board.height()
-}
-
-fn localize_gameplay_presentation_cause(
-    cause: GameplayPresentationCause,
-    visible_window: &GameplayVisibleBoardWindow,
-) -> GameplayPresentationCause {
-    match cause {
-        GameplayPresentationCause::CurrentState
-        | GameplayPresentationCause::BoxMoveRejected
-        | GameplayPresentationCause::PuzzleSolved { .. }
-        | GameplayPresentationCause::UndoApplied
-        | GameplayPresentationCause::Restarted => cause,
-        GameplayPresentationCause::SelectionChanged { selected_box } => {
-            GameplayPresentationCause::SelectionChanged {
-                selected_box: selected_box
-                    .and_then(|cell| visible_window.world_to_local_cell(cell)),
-            }
-        }
-        GameplayPresentationCause::PlayerMoved { to } => visible_window
-            .world_to_local_cell(to)
-            .map(|to| GameplayPresentationCause::PlayerMoved { to })
-            .unwrap_or(GameplayPresentationCause::CurrentState),
-        GameplayPresentationCause::BoxMoved { path } => {
-            let localized_path: Vec<_> = path
-                .into_iter()
-                .filter_map(|cell| visible_window.world_to_local_cell(cell))
-                .collect();
-            if localized_path.len() >= 2 {
-                GameplayPresentationCause::BoxMoved {
-                    path: localized_path,
-                }
-            } else {
-                GameplayPresentationCause::CurrentState
-            }
-        }
-        GameplayPresentationCause::BoxRemoved { to } => visible_window
-            .world_to_local_cell(to)
-            .map(|to| GameplayPresentationCause::BoxRemoved { to })
-            .unwrap_or(GameplayPresentationCause::CurrentState),
     }
 }
 

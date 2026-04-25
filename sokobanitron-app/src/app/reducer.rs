@@ -1,9 +1,6 @@
 use super::action::AppAction;
 use super::presentation::{PresentationPlan, build_presentation_plan, gameplay_presentation_plan};
 use super::state::{AppOverlay, AppScreen, AppState};
-use crate::gameplay::{
-    pan_gameplay_zoom_by_swipe, set_gameplay_zoomed_in, set_gameplay_zoomed_out,
-};
 use presentation::layout::{level_select_menu_start_index, level_set_select_start_index};
 use presentation::screen_requests::GameplayPresentationCause;
 use sokobanitron_gameplay::{
@@ -43,21 +40,6 @@ pub fn apply_action(
             if matches!(app_state.ui.screen, AppScreen::Gameplay) {
                 apply_undo_command(controller, app_state, &mut update);
             }
-        }
-        AppAction::ZoomGameplayIn {
-            zoom_origin_x,
-            zoom_origin_y,
-        } => {
-            apply_zoom_in(
-                controller,
-                app_state,
-                &mut update,
-                zoom_origin_x,
-                zoom_origin_y,
-            );
-        }
-        AppAction::ZoomGameplayOut => {
-            apply_zoom_out(controller, app_state, &mut update);
         }
         AppAction::ToggleOverlay => {
             if app_state.ui.overlay.is_some() {
@@ -118,12 +100,15 @@ pub fn apply_action(
         }
         AppAction::SelectLevel(level) => {
             if matches!(app_state.ui.screen, AppScreen::Gameplay) {
-                let current_level = controller.current_level();
                 update.changes = controller.jump_to_level(level);
-                if controller.current_level() != current_level {
-                    set_gameplay_zoomed_out(&mut app_state.gameplay);
-                }
                 app_state.ui.overlay = None;
+                if update.changes.level_changed.is_some() {
+                    update.presentation_plan = Some(gameplay_presentation_plan(
+                        controller,
+                        app_state,
+                        GameplayPresentationCause::CurrentState,
+                    ));
+                }
             }
         }
         AppAction::SelectLevelSet(level_set) => {
@@ -146,9 +131,6 @@ pub fn apply_action(
         }
         AppAction::DoubleTapBoardCell(cell) => {
             apply_board_double_tap(controller, app_state, &mut update, cell);
-        }
-        AppAction::PanZoomedGameplay { delta_x, delta_y } => {
-            apply_zoom_pan(controller, app_state, &mut update, delta_x, delta_y);
         }
         AppAction::NoOp => {}
     }
@@ -188,15 +170,11 @@ fn apply_undo_command(
 
 fn apply_advance_after_solved(
     controller: &mut GameplayController,
-    app_state: &mut AppState,
+    app_state: &AppState,
     update: &mut AppUpdate,
     next_level: usize,
 ) {
-    let current_level = controller.current_level();
     update.changes = controller.advance_after_win(next_level);
-    if controller.current_level() != current_level {
-        set_gameplay_zoomed_out(&mut app_state.gameplay);
-    }
     update.presentation_plan = Some(gameplay_presentation_plan(
         controller,
         app_state,
@@ -255,33 +233,6 @@ fn apply_board_double_tap(
     apply_board_tap(controller, app_state, update, cell);
 }
 
-fn apply_zoom_pan(
-    controller: &mut GameplayController,
-    app_state: &mut AppState,
-    update: &mut AppUpdate,
-    delta_x: i32,
-    delta_y: i32,
-) {
-    if !matches!(app_state.ui.screen, AppScreen::Gameplay) || app_state.ui.overlay.is_some() {
-        return;
-    }
-    if !app_state.gameplay.viewport.zoomed_in {
-        return;
-    }
-
-    let previous_viewport = app_state.gameplay.viewport.clone();
-    pan_gameplay_zoom_by_swipe(
-        &mut app_state.gameplay,
-        controller.board(),
-        delta_x,
-        delta_y,
-    );
-
-    if app_state.gameplay.viewport != previous_viewport {
-        schedule_current_gameplay_presentation(update, controller, app_state);
-    }
-}
-
 fn apply_gameplay_outcome(
     update: &mut AppUpdate,
     controller: &GameplayController,
@@ -297,85 +248,19 @@ fn apply_gameplay_outcome(
     update.presentation_plan = Some(build_presentation_plan(&outcome, controller, app_state));
 }
 
-fn apply_zoom_in(
-    controller: &GameplayController,
-    app_state: &mut AppState,
-    update: &mut AppUpdate,
-    zoom_origin_x: u32,
-    zoom_origin_y: u32,
-) {
-    if !matches!(app_state.ui.screen, AppScreen::Gameplay) || app_state.ui.overlay.is_some() {
-        return;
-    }
-
-    let previous_viewport = app_state.gameplay.viewport.clone();
-    set_gameplay_zoomed_in(
-        &mut app_state.gameplay,
-        controller.board(),
-        zoom_origin_x,
-        zoom_origin_y,
-    );
-    if app_state.gameplay.viewport != previous_viewport {
-        schedule_current_gameplay_presentation(update, controller, app_state);
-    }
-}
-
-fn apply_zoom_out(
-    controller: &GameplayController,
-    app_state: &mut AppState,
-    update: &mut AppUpdate,
-) {
-    if !matches!(app_state.ui.screen, AppScreen::Gameplay) || app_state.ui.overlay.is_some() {
-        return;
-    }
-
-    let previous_viewport = app_state.gameplay.viewport.clone();
-    set_gameplay_zoomed_out(&mut app_state.gameplay);
-    if app_state.gameplay.viewport != previous_viewport {
-        schedule_current_gameplay_presentation(update, controller, app_state);
-    }
-}
-
-fn schedule_current_gameplay_presentation(
-    update: &mut AppUpdate,
-    controller: &GameplayController,
-    app_state: &AppState,
-) {
-    update.presentation_plan = Some(gameplay_presentation_plan(
-        controller,
-        app_state,
-        GameplayPresentationCause::CurrentState,
-    ));
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{AppUpdate, apply_action};
+    use super::apply_action;
     use crate::app::action::AppAction;
-    use crate::app::presentation::{FrameRequest, PresentationStep};
+    use crate::app::presentation::{FrameRequest, PresentationPlan, PresentationStep};
     use crate::app::state::{AppOverlay, AppScreen, AppState};
-    use crate::gameplay::set_gameplay_zoomed_in;
-    use presentation::screen_requests::GameplayPresentationCause;
+    use presentation::screen_requests::{
+        GameplayPresentationCause, GameplayPresentationUpdate, GameplayScreenMode,
+    };
     use sokobanitron_gameplay::{BoardCell, GameplayController};
 
     fn cell(x: u32, y: u32) -> BoardCell {
         BoardCell::new(x, y)
-    }
-
-    fn gameplay_render_cause(update: &AppUpdate) -> GameplayPresentationCause {
-        let Some(plan) = &update.presentation_plan else {
-            panic!("expected gameplay render");
-        };
-        let [
-            PresentationStep::Render(FrameRequest::Gameplay {
-                update: render_update,
-                ..
-            }),
-        ] = plan.steps.as_slice()
-        else {
-            panic!("expected one gameplay render step");
-        };
-        render_update.cause.clone()
     }
 
     fn test_controller() -> GameplayController {
@@ -383,21 +268,12 @@ mod tests {
         GameplayController::new(vec![level], None)
     }
 
-    fn large_swipe_test_controller() -> GameplayController {
-        let level = [
-            "############",
-            "#@         #",
-            "#          #",
-            "#    $     #",
-            "#          #",
-            "#          #",
-            "#       .  #",
-            "#          #",
-            "#          #",
-            "############",
-        ]
-        .join("\n");
-        GameplayController::new(vec![level], Some(0))
+    fn single_gameplay_render_update(plan: &PresentationPlan) -> &GameplayPresentationUpdate {
+        let [PresentationStep::Render(FrameRequest::Gameplay { update })] = plan.steps.as_slice()
+        else {
+            panic!("expected exactly one gameplay render step");
+        };
+        update
     }
 
     #[test]
@@ -441,150 +317,6 @@ mod tests {
         apply_action(&mut controller, &mut app_state, AppAction::ToggleOverlay);
 
         assert_eq!(app_state.ui.overlay, Some(AppOverlay::GameplayMenu));
-    }
-
-    #[test]
-    fn zoom_pan_moves_zoomed_view_diagonally_without_moving_player() {
-        let mut controller = large_swipe_test_controller();
-        let mut app_state = AppState::default();
-        app_state.gameplay.surface_width = 320;
-        app_state.gameplay.surface_height = 480;
-        set_gameplay_zoomed_in(&mut app_state.gameplay, controller.board(), 3, 3);
-
-        let update = apply_action(
-            &mut controller,
-            &mut app_state,
-            AppAction::PanZoomedGameplay {
-                delta_x: 100,
-                delta_y: 100,
-            },
-        );
-
-        assert_eq!(controller.board().player(), Some(cell(1, 1)));
-        assert!(app_state.gameplay.viewport.zoom_origin_x < 3);
-        assert!(app_state.gameplay.viewport.zoom_origin_y < 3);
-        assert_eq!(update.changes, Default::default());
-        assert_eq!(update.gameplay_effect, None);
-        assert_eq!(update.persistence.resume_level_to_persist, None);
-        assert_eq!(
-            gameplay_render_cause(&update),
-            GameplayPresentationCause::CurrentState
-        );
-    }
-
-    #[test]
-    fn zoom_gameplay_in_schedules_presentation_when_viewport_changes() {
-        let mut controller = large_swipe_test_controller();
-        let mut app_state = AppState::default();
-        app_state.gameplay.surface_width = 320;
-        app_state.gameplay.surface_height = 480;
-
-        let update = apply_action(
-            &mut controller,
-            &mut app_state,
-            AppAction::ZoomGameplayIn {
-                zoom_origin_x: 4,
-                zoom_origin_y: 4,
-            },
-        );
-
-        assert!(app_state.gameplay.viewport.zoomed_in);
-        assert_eq!(
-            gameplay_render_cause(&update),
-            GameplayPresentationCause::CurrentState
-        );
-    }
-
-    #[test]
-    fn zoom_gameplay_in_ignored_by_overlay_has_no_presentation_work() {
-        let mut controller = large_swipe_test_controller();
-        let mut app_state = AppState::default();
-        app_state.ui.overlay = Some(AppOverlay::GameplayMenu);
-
-        let update = apply_action(
-            &mut controller,
-            &mut app_state,
-            AppAction::ZoomGameplayIn {
-                zoom_origin_x: 4,
-                zoom_origin_y: 4,
-            },
-        );
-
-        assert!(!app_state.gameplay.viewport.zoomed_in);
-        assert!(update.presentation_plan.is_none());
-    }
-
-    #[test]
-    fn zoom_gameplay_out_schedules_presentation_when_viewport_changes() {
-        let mut controller = large_swipe_test_controller();
-        let mut app_state = AppState::default();
-        app_state.gameplay.surface_width = 320;
-        app_state.gameplay.surface_height = 480;
-        set_gameplay_zoomed_in(&mut app_state.gameplay, controller.board(), 4, 4);
-
-        let update = apply_action(&mut controller, &mut app_state, AppAction::ZoomGameplayOut);
-
-        assert!(!app_state.gameplay.viewport.zoomed_in);
-        assert_eq!(
-            gameplay_render_cause(&update),
-            GameplayPresentationCause::CurrentState
-        );
-    }
-
-    #[test]
-    fn zoom_gameplay_out_without_zoom_has_no_presentation_work() {
-        let mut controller = large_swipe_test_controller();
-        let mut app_state = AppState::default();
-
-        let update = apply_action(&mut controller, &mut app_state, AppAction::ZoomGameplayOut);
-
-        assert!(!app_state.gameplay.viewport.zoomed_in);
-        assert!(update.presentation_plan.is_none());
-    }
-
-    #[test]
-    fn zoom_pan_schedules_presentation_when_viewport_changes() {
-        let mut controller = large_swipe_test_controller();
-        let mut app_state = AppState::default();
-        app_state.gameplay.surface_width = 320;
-        app_state.gameplay.surface_height = 480;
-        set_gameplay_zoomed_in(&mut app_state.gameplay, controller.board(), 3, 3);
-
-        let update = apply_action(
-            &mut controller,
-            &mut app_state,
-            AppAction::PanZoomedGameplay {
-                delta_x: 100,
-                delta_y: 100,
-            },
-        );
-
-        assert!(app_state.gameplay.viewport.zoom_origin_x < 3);
-        assert!(app_state.gameplay.viewport.zoom_origin_y < 3);
-        assert_eq!(
-            gameplay_render_cause(&update),
-            GameplayPresentationCause::CurrentState
-        );
-    }
-
-    #[test]
-    fn zoom_pan_ignored_when_not_zoomed_has_no_presentation_work() {
-        let mut controller = large_swipe_test_controller();
-        let mut app_state = AppState::default();
-        app_state.gameplay.surface_width = 320;
-        app_state.gameplay.surface_height = 480;
-
-        let update = apply_action(
-            &mut controller,
-            &mut app_state,
-            AppAction::PanZoomedGameplay {
-                delta_x: 100,
-                delta_y: 100,
-            },
-        );
-
-        assert!(!app_state.gameplay.viewport.zoomed_in);
-        assert!(update.presentation_plan.is_none());
     }
 
     #[test]
@@ -748,30 +480,35 @@ mod tests {
     }
 
     #[test]
-    fn selecting_level_resets_zoom() {
+    fn selecting_level_closes_overlay_and_renders_selected_level() {
         let levels = vec![
             "######\n#@ $.#\n######".to_string(),
             "#######\n#@ $. #\n#######".to_string(),
         ];
         let mut controller = GameplayController::new(levels, Some(0));
         let mut app_state = AppState::default();
-        set_gameplay_zoomed_in(&mut app_state.gameplay, controller.board(), 2, 1);
+        app_state.ui.overlay = Some(AppOverlay::LevelSelect { page_start: 0 });
 
         let update = apply_action(&mut controller, &mut app_state, AppAction::SelectLevel(1));
 
         assert_eq!(controller.current_level(), 1);
-        assert!(!app_state.gameplay.viewport.zoomed_in);
         assert_eq!(app_state.ui.overlay, None);
-        assert_eq!(update.presentation_plan, None);
+        let Some(plan) = update.presentation_plan else {
+            panic!("selected level should render");
+        };
+        let render_update = single_gameplay_render_update(&plan);
+        assert_eq!(render_update.cause, GameplayPresentationCause::CurrentState);
+        assert_eq!(render_update.scene.board, *controller.board());
+        assert_eq!(render_update.scene.level_number, 2);
+        assert_eq!(render_update.scene.mode, GameplayScreenMode::Normal);
     }
 
     #[test]
-    fn advancing_after_solved_resets_zoom() {
+    fn advancing_after_solved_renders_next_level() {
         let solved_level = "#####\n#@  #\n#   #\n#####".to_string();
         let mut controller =
             GameplayController::new(vec![solved_level.clone(), solved_level], None);
         let mut app_state = AppState::default();
-        set_gameplay_zoomed_in(&mut app_state.gameplay, controller.board(), 1, 1);
 
         let update = apply_action(
             &mut controller,
@@ -780,7 +517,6 @@ mod tests {
         );
 
         assert_eq!(controller.current_level(), 1);
-        assert!(!app_state.gameplay.viewport.zoomed_in);
         assert!(update.presentation_plan.is_some());
     }
 

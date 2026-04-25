@@ -9,8 +9,7 @@ pub use frame::{
 };
 pub use input::{interpret_gameplay_pointer_event, interpret_gameplay_pointer_tap};
 pub use view::{
-    GameplayUiState, build_gameplay_visible_window, gameplay_zoom_origin_for_focus,
-    pan_gameplay_zoom_by_swipe, resize_gameplay_surface, set_gameplay_double_tap_window,
-    set_gameplay_level_sets, set_gameplay_max_cell_size, set_gameplay_touch_slop,
-    set_gameplay_zoomed_in, set_gameplay_zoomed_out,
+    GameplayUiState, build_gameplay_board_viewport, resize_gameplay_surface,
+    set_gameplay_double_tap_window, set_gameplay_level_sets, set_gameplay_max_cell_size,
+    set_gameplay_touch_slop,
 };

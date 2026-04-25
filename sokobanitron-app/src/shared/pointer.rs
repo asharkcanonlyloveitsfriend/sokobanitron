@@ -877,6 +877,32 @@ mod tests {
     }
 
     #[test]
+    fn touch_state_suppresses_screen_gestures_for_completed_pinch() {
+        let at = Instant::now();
+        let mut state = TouchPointerState::default();
+
+        let _ =
+            state.handle_touch_event(PointerEvent::new(1, PointerPhase::Started, 10.0, 10.0, at));
+        let started =
+            state.handle_touch_event(PointerEvent::new(2, PointerPhase::Started, 90.0, 10.0, at));
+        assert!(started.reset_screen_state);
+        assert!(started.suppress_screen_gestures);
+
+        let _ = state.handle_touch_event(PointerEvent::new(1, PointerPhase::Moved, 35.0, 10.0, at));
+        let _ = state.handle_touch_event(PointerEvent::new(2, PointerPhase::Moved, 65.0, 10.0, at));
+
+        let completed =
+            state.handle_touch_event(PointerEvent::new(2, PointerPhase::Ended, 65.0, 10.0, at));
+
+        assert_eq!(
+            completed.pinch.map(|gesture| gesture.direction),
+            Some(PinchDirection::In)
+        );
+        assert!(completed.suppress_screen_gestures);
+        assert_eq!(completed.gesture, None);
+    }
+
+    #[test]
     fn touch_state_can_disable_pinch_for_one_touch_sequence() {
         let at = Instant::now();
         let mut state = TouchPointerState::with_touch_start_policy(TouchStartPolicy::Deferred);

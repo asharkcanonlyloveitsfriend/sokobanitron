@@ -577,10 +577,7 @@ fn apply_input_and_render_in_context<C>(
 where
     C: AppDriverContext + FrameSink<Error = <C as AppDriverContext>::Error>,
 {
-    let action = {
-        let runtime = context.app_runtime_mut();
-        interpret_input(runtime.app_state, input)
-    };
+    let action = interpret_input(input);
     apply_action_and_render_in_context(context, action)
 }
 

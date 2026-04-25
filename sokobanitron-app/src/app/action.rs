@@ -4,11 +4,6 @@ use sokobanitron_gameplay::BoardCell;
 pub enum AppAction {
     Restart,
     Undo,
-    ZoomGameplayIn {
-        zoom_origin_x: u32,
-        zoom_origin_y: u32,
-    },
-    ZoomGameplayOut,
     ToggleOverlay,
     OpenOverlay,
     CloseOverlay,
@@ -23,9 +18,5 @@ pub enum AppAction {
     AdvanceAfterSolved,
     TapBoardCell(BoardCell),
     DoubleTapBoardCell(BoardCell),
-    PanZoomedGameplay {
-        delta_x: i32,
-        delta_y: i32,
-    },
     NoOp,
 }
