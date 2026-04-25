@@ -4,6 +4,7 @@ pub mod error;
 pub mod normalize;
 pub mod optimizer;
 pub mod pathfinder;
+pub mod solution;
 
 mod grid;
 

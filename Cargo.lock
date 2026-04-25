@@ -2193,6 +2193,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "rusqlite",
+ "serde_json",
  "sha2",
 ]
 
