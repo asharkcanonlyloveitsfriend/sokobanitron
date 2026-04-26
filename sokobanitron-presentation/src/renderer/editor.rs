@@ -48,13 +48,18 @@ impl Renderer {
         height: u32,
         request: &EditorScreenRequest,
     ) {
+        let composition = if request.puzzle_solved {
+            BoardSceneComposition::editor_solved_play_scene()
+        } else {
+            BoardSceneComposition::static_scene()
+        };
         self.draw_board_scene_on_frame(
             frame,
             width,
             height,
             &request.board,
             &request.viewport,
-            BoardSceneComposition::static_scene(),
+            composition,
         );
         self.draw_editor_overlays_on_frame(frame, width, height, request);
         self.draw_editor_chrome_on_frame(frame, width, height, request);
@@ -111,12 +116,21 @@ impl Renderer {
 
     pub fn draw_editor_overlays_on_frame(
         &mut self,
-        _frame: &mut [u8],
-        _width: u32,
-        _height: u32,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
         request: &EditorScreenRequest,
     ) {
-        let _ = request;
+        for count in &request.move_counts {
+            draw_count_label(
+                frame,
+                width,
+                height,
+                count.rect,
+                &count.count.to_string(),
+                button_text_color(self.theme),
+            );
+        }
     }
 
     pub fn draw_editor_chrome_on_frame(
@@ -382,6 +396,22 @@ fn mode_label(mode: EditorModeIndicator) -> &'static str {
     }
 }
 
+fn draw_count_label(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    rect: ScreenRect,
+    text: &str,
+    color: u8,
+) {
+    let max_text_width = measure_text_width("99", 1, 0).max(1);
+    let scale_x = (rect.w as usize / max_text_width).max(1);
+    let scale_y = (rect.h as usize / PIXEL_FONT_HEIGHT).max(1);
+    let max_fit_scale = scale_x.min(scale_y).max(1);
+    let scale = ((max_fit_scale * 3) / 5).max(1);
+    draw_centered_text_in_rect(frame, width, height, rect, text, scale, 0, color);
+}
+
 fn button_text_color(theme: RendererTheme) -> u8 {
     theme.gray_2
 }
@@ -425,7 +455,9 @@ mod tests {
         let request = EditorScreenRequest {
             viewport: fit_board_viewport_for_controls(64, 64, &board),
             board,
+            move_counts: Vec::new(),
             mode_indicator: EditorModeIndicator::Move,
+            puzzle_solved: false,
             can_zoom_out: false,
             can_zoom_in: false,
         };
@@ -439,12 +471,35 @@ mod tests {
     }
 
     #[test]
+    fn solved_editor_render_only_opts_player_into_solved_visuals() {
+        let board = solved_board();
+        let request = EditorScreenRequest {
+            viewport: fit_board_viewport_for_controls(64, 64, &board),
+            board,
+            move_counts: Vec::new(),
+            mode_indicator: EditorModeIndicator::Play,
+            puzzle_solved: true,
+            can_zoom_out: false,
+            can_zoom_in: false,
+        };
+        let mut renderer = Renderer::new();
+        let mut frame = vec![0; 64 * 64];
+
+        renderer.draw_editor_screen(&mut frame, 64, 64, &request);
+
+        assert!(renderer.solved_box_bitmap_cache.is_empty());
+        assert!(!renderer.squint_player_bitmap_cache.is_empty());
+    }
+
+    #[test]
     fn editor_mode_menu_restores_space_background_under_menu_rect() {
         let board = solved_board();
         let editor = EditorScreenRequest {
             viewport: fit_board_viewport_for_controls(256, 256, &board),
             board,
+            move_counts: Vec::new(),
             mode_indicator: EditorModeIndicator::Draw,
+            puzzle_solved: false,
             can_zoom_out: false,
             can_zoom_in: false,
         };

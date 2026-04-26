@@ -1,4 +1,4 @@
-use crate::layout::BoardViewport;
+use crate::layout::{BoardViewport, ScreenRect};
 use sokobanitron_gameplay::{BoardCell, BoardView};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -90,7 +90,9 @@ pub struct LevelSetListEntry {
 pub struct EditorScreenRequest {
     pub board: BoardView,
     pub viewport: BoardViewport,
+    pub move_counts: Vec<EditorCountOverlay>,
     pub mode_indicator: EditorModeIndicator,
+    pub puzzle_solved: bool,
     pub can_zoom_out: bool,
     pub can_zoom_in: bool,
 }
@@ -105,6 +107,12 @@ pub struct EditorMenuScreenRequest {
 pub struct EditorModeMenuScreenRequest {
     pub editor: EditorScreenRequest,
     pub can_enter_play: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditorCountOverlay {
+    pub rect: ScreenRect,
+    pub count: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

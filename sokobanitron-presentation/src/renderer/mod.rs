@@ -39,6 +39,7 @@ pub type Gray = u8;
 pub(crate) struct PlayerSceneComposition {
     pub visible: bool,
     pub sleeping: bool,
+    pub entity_visual_style: EntityVisualStyle,
 }
 
 impl Default for PlayerSceneComposition {
@@ -46,6 +47,7 @@ impl Default for PlayerSceneComposition {
         Self {
             visible: true,
             sleeping: false,
+            entity_visual_style: EntityVisualStyle::Standard,
         }
     }
 }
@@ -92,11 +94,24 @@ impl BoardSceneComposition {
             player: PlayerSceneComposition {
                 visible: true,
                 sleeping: sleeping_player,
+                entity_visual_style,
             },
             under_entities: UnderEntitySceneComposition,
             over_entities: OverEntitySceneComposition {
                 entity_visual_style,
             },
+        }
+    }
+
+    pub(crate) fn editor_solved_play_scene() -> Self {
+        Self {
+            player: PlayerSceneComposition {
+                visible: true,
+                sleeping: false,
+                entity_visual_style: EntityVisualStyle::SolvedClean,
+            },
+            under_entities: UnderEntitySceneComposition,
+            over_entities: OverEntitySceneComposition::default(),
         }
     }
 }
@@ -502,7 +517,7 @@ impl Renderer {
                 height,
                 board,
                 viewport,
-                over_entities.entity_visual_style,
+                player.entity_visual_style,
                 player.sleeping,
             );
         }

@@ -6,6 +6,7 @@ use sokobanitron_gameplay::{BoardCell, BoardView, GameplayController, GameplayTa
 struct EditorPlaySession {
     origin_x: i32,
     origin_y: i32,
+    initial_boxes: Vec<(usize, usize)>,
     controller: GameplayController,
 }
 
@@ -163,6 +164,43 @@ impl LevelEditor {
                 .map(|cell| (play.origin_x + cell.x as i32, play.origin_y + cell.y as i32));
         }
         self.selected_box
+    }
+
+    pub fn view_is_solved(&self) -> bool {
+        matches!(&self.state, EditorState::Play(play) if play.controller.board().is_solved())
+    }
+
+    pub fn box_move_counts(&self) -> Vec<BoxMoveCount> {
+        let Some(solution) = &self.validated_solution else {
+            return Vec::new();
+        };
+
+        if let EditorState::Play(play) = &self.state {
+            if !play.controller.board().is_solved() {
+                return Vec::new();
+            }
+            return solution_box_move_counts(&play.initial_boxes, solution)
+                .into_iter()
+                .map(|count| BoxMoveCount {
+                    world_x: play.origin_x + count.current_cell_x as i32,
+                    world_y: play.origin_y + count.current_cell_y as i32,
+                    count: count.count,
+                })
+                .collect();
+        }
+
+        let Some(bounds) = self.world.non_void_bounds() else {
+            return Vec::new();
+        };
+        let initial_boxes = self.initial_box_positions_in_bounds(bounds);
+        solution_box_move_counts(&initial_boxes, solution)
+            .into_iter()
+            .map(|count| BoxMoveCount {
+                world_x: bounds.min_x + count.initial_cell_x as i32,
+                world_y: bounds.min_y + count.initial_cell_y as i32,
+                count: count.count,
+            })
+            .collect()
     }
 
     pub fn snapshot(&self) -> EditorSnapshot {
@@ -333,11 +371,21 @@ impl LevelEditor {
         let bounds = self.world.non_void_bounds()?;
         self.world.player()?;
         let level_ascii = self.level_ascii_in_bounds(bounds);
+        let initial_boxes = self.initial_box_positions_in_bounds(bounds);
         Some(EditorPlaySession {
             origin_x: bounds.min_x,
             origin_y: bounds.min_y,
+            initial_boxes,
             controller: GameplayController::new(vec![level_ascii], None),
         })
+    }
+
+    fn initial_box_positions_in_bounds(&self, bounds: NonVoidBounds) -> Vec<(usize, usize)> {
+        self.world
+            .box_positions()
+            .into_iter()
+            .map(|(x, y)| ((y - bounds.min_y) as usize, (x - bounds.min_x) as usize))
+            .collect()
     }
 
     fn invalidate_solution(&mut self) {
@@ -707,6 +755,57 @@ impl LevelEditor {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BoxMoveCount {
+    pub world_x: i32,
+    pub world_y: i32,
+    pub count: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LocalBoxMoveCount {
+    initial_cell_x: usize,
+    initial_cell_y: usize,
+    current_cell_x: usize,
+    current_cell_y: usize,
+    count: u32,
+}
+
+fn solution_box_move_counts(
+    initial_boxes: &[(usize, usize)],
+    solution: &[Vec<(usize, usize)>],
+) -> Vec<LocalBoxMoveCount> {
+    let mut tracked = initial_boxes
+        .iter()
+        .copied()
+        .map(|(row, col)| LocalBoxMoveCount {
+            initial_cell_x: col,
+            initial_cell_y: row,
+            current_cell_x: col,
+            current_cell_y: row,
+            count: 0,
+        })
+        .collect::<Vec<_>>();
+
+    for path in solution {
+        let (Some(&start), Some(&end)) = (path.first(), path.last()) else {
+            continue;
+        };
+        let Some(entry) = tracked
+            .iter_mut()
+            .find(|entry| (entry.current_cell_y, entry.current_cell_x) == start)
+        else {
+            continue;
+        };
+        entry.current_cell_x = end.1;
+        entry.current_cell_y = end.0;
+        entry.count = entry.count.saturating_add(1);
+    }
+
+    tracked.sort_unstable_by_key(|count| (count.current_cell_y, count.current_cell_x));
+    tracked
+}
+
 impl Default for LevelEditor {
     fn default() -> Self {
         Self::new()
@@ -715,7 +814,7 @@ impl Default for LevelEditor {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExportPuzzleError, LevelEditor};
+    use super::{ExportPuzzleError, LevelEditor, solution_box_move_counts};
     use crate::command::{DrawTool, EditorCommand, EditorEffects, EditorMode};
     use crate::world::{NonVoidBounds, Tile};
 
@@ -1269,6 +1368,57 @@ mod tests {
         let exported = editor.export_puzzle().expect("validated export");
         assert_eq!(exported.reference_solution, vec![vec![(0, 1), (0, 2)]]);
         assert_eq!(exported.level_ascii, "@$. ");
+    }
+
+    #[test]
+    fn solution_box_move_counts_chains_moves_by_start_and_previous_end() {
+        let counts = solution_box_move_counts(
+            &[(0, 0), (0, 4)],
+            &[
+                vec![(0, 0), (0, 1)],
+                vec![(0, 4), (0, 5)],
+                vec![(0, 1), (0, 2)],
+            ],
+        );
+
+        assert_eq!(counts.len(), 2);
+        assert!(
+            counts
+                .iter()
+                .any(|count| count.current_cell_x == 2 && count.count == 2)
+        );
+        assert!(
+            counts
+                .iter()
+                .any(|count| count.current_cell_x == 5 && count.count == 1)
+        );
+    }
+
+    #[test]
+    fn solution_box_move_counts_keeps_unmoved_boxes() {
+        let counts = solution_box_move_counts(&[(0, 0), (0, 4)], &[vec![(0, 0), (0, 1)]]);
+
+        assert_eq!(counts.len(), 2);
+        assert!(
+            counts
+                .iter()
+                .any(|count| count.current_cell_x == 1 && count.count == 1)
+        );
+        assert!(
+            counts
+                .iter()
+                .any(|count| count.current_cell_x == 4 && count.count == 0)
+        );
+    }
+
+    #[test]
+    fn solution_box_move_counts_treats_solution_tuples_as_row_col() {
+        let counts = solution_box_move_counts(&[(3, 0)], &[vec![(3, 0), (3, 1)]]);
+
+        assert_eq!(counts.len(), 1);
+        assert_eq!(counts[0].current_cell_x, 1);
+        assert_eq!(counts[0].current_cell_y, 3);
+        assert_eq!(counts[0].count, 1);
     }
 
     #[test]
