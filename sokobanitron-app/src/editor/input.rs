@@ -185,6 +185,9 @@ fn handle_editor_gesture(
             let surface = build_editor_surface_model(app_state, editor);
             let (screen_x, screen_y) = contact.position.as_f64();
             let target = editor_surface_target_at(&surface, screen_x, screen_y);
+            if app_state.is_editor_mode_menu_open() {
+                return handle_editor_mode_menu_target(app_state, editor, target);
+            }
             if app_state.is_editor_menu_open() {
                 return handle_editor_menu_target(app_state, target);
             }
@@ -242,7 +245,7 @@ fn handle_editor_pinch(
     pinch: PinchGesture,
 ) -> Option<EditorUiAction> {
     app_state.editor.interaction.double_tap.clear();
-    if app_state.is_editor_menu_open() {
+    if is_editor_overlay_open(app_state) {
         return None;
     }
 
@@ -283,7 +286,9 @@ fn handle_editor_touch_tap(
         at: start.at,
     };
 
-    let action = if app_state.is_editor_menu_open() {
+    let action = if app_state.is_editor_mode_menu_open() {
+        handle_editor_mode_menu_target(app_state, editor, target)
+    } else if app_state.is_editor_menu_open() {
         handle_editor_menu_target(app_state, target)
     } else {
         handle_editor_started_target(app_state, editor, started_contact, target);
@@ -309,7 +314,7 @@ fn begin_touch_drag_if_needed(
     {
         return;
     }
-    if !matches!(editor.mode(), EditorMode::Draw) || app_state.is_editor_menu_open() {
+    if !matches!(editor.mode(), EditorMode::Draw) || is_editor_overlay_open(app_state) {
         return;
     }
 
@@ -352,6 +357,33 @@ fn handle_editor_menu_target(
     }
 }
 
+fn handle_editor_mode_menu_target(
+    app_state: &mut AppState,
+    editor: &mut LevelEditor,
+    target: Option<EditorSurfaceTarget>,
+) -> Option<EditorUiAction> {
+    match target {
+        Some(EditorSurfaceTarget::ModeMenuOption(EditorMode::Play))
+            if !editor.can_enter_play() && !matches!(editor.mode(), EditorMode::Play) =>
+        {
+            None
+        }
+        Some(EditorSurfaceTarget::ModeMenuOption(mode)) => {
+            editor.apply_command(EditorCommand::SetMode(mode));
+            close_editor_mode_menu(app_state);
+            None
+        }
+        Some(EditorSurfaceTarget::ModeToggle) => {
+            close_editor_mode_menu(app_state);
+            None
+        }
+        _ => {
+            close_editor_mode_menu(app_state);
+            None
+        }
+    }
+}
+
 fn handle_editor_started_target(
     app_state: &mut AppState,
     editor: &mut LevelEditor,
@@ -360,11 +392,8 @@ fn handle_editor_started_target(
 ) {
     match target {
         Some(EditorSurfaceTarget::TopMenuToggle) => open_editor_menu(app_state),
-        Some(EditorSurfaceTarget::ModeToggle) => {
-            editor.apply_command(EditorCommand::ToggleMode);
-            app_state.editor.interaction.double_tap.clear();
-            app_state.editor.interaction.active_stroke = None;
-        }
+        Some(EditorSurfaceTarget::ModeToggle) => open_editor_mode_menu(app_state),
+        Some(EditorSurfaceTarget::ModeMenuOption(_)) => {}
         Some(EditorSurfaceTarget::ControlSlot(slot)) => {
             apply_editor_control_slot(app_state, editor, slot);
         }
@@ -485,7 +514,17 @@ fn open_editor_menu(app_state: &mut AppState) {
     reset_editor_interaction_state(&mut app_state.editor);
 }
 
+fn open_editor_mode_menu(app_state: &mut AppState) {
+    app_state.ui.overlay = Some(AppOverlay::EditorModeMenu);
+    reset_editor_interaction_state(&mut app_state.editor);
+}
+
 fn close_editor_menu(app_state: &mut AppState) {
+    app_state.ui.overlay = None;
+    reset_editor_interaction_state(&mut app_state.editor);
+}
+
+fn close_editor_mode_menu(app_state: &mut AppState) {
     app_state.ui.overlay = None;
     reset_editor_interaction_state(&mut app_state.editor);
 }
@@ -494,6 +533,10 @@ fn leave_editor_for_gameplay(app_state: &mut AppState) {
     app_state.ui.screen = AppScreen::Gameplay;
     app_state.ui.overlay = None;
     reset_editor_interaction_state(&mut app_state.editor);
+}
+
+fn is_editor_overlay_open(app_state: &AppState) -> bool {
+    app_state.is_editor_menu_open() || app_state.is_editor_mode_menu_open()
 }
 
 fn reset_editor_screen_touch_state(ui: &mut EditorUiState) {
@@ -508,7 +551,7 @@ fn immediate_draw_mode_double_tap_target(
 ) -> Option<(i32, i32)> {
     if !matches!(event.phase, PointerPhase::Started)
         || !matches!(editor.mode(), EditorMode::Draw)
-        || app_state.is_editor_menu_open()
+        || is_editor_overlay_open(app_state)
         || app_state.editor.interaction.touch.has_active_contacts()
     {
         return None;
@@ -570,7 +613,8 @@ mod tests {
     use crate::app::state::{AppOverlay, AppScreen, AppState};
     use crate::shared::PointerPhase;
     use presentation::layout::{
-        editor_bottom_right_button_rect, overlay_secondary_action_button_rect,
+        editor_bottom_right_button_rect, editor_mode_button_rect, editor_mode_menu_option_rects,
+        overlay_secondary_action_button_rect,
     };
     use sokobanitron_gameplay::BoardCell;
     use sokobanitron_level_editor::{DrawTool, EditorCommand, EditorMode, LevelEditor, Tile};
@@ -619,6 +663,14 @@ mod tests {
             screen_center_for_world_cell(app_state, editor, world_x, world_y);
         editor_mouse_pressed(app_state, editor, screen_x, screen_y);
         editor_mouse_released(app_state);
+    }
+
+    fn mode_menu_option_center(app_state: &AppState, index: usize) -> (f64, f64) {
+        let rect = editor_mode_menu_option_rects(
+            app_state.editor.viewport.surface_width,
+            app_state.editor.viewport.surface_height,
+        )[index];
+        ((rect.x + rect.w / 2) as f64, (rect.y + rect.h / 2) as f64)
     }
 
     fn move_mode_editor_with_history() -> (AppState, LevelEditor) {
@@ -731,6 +783,104 @@ mod tests {
             cell_y: 0,
         });
         editor
+    }
+
+    #[test]
+    fn mode_button_opens_mode_menu_without_cycling_mode() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        let mut editor = LevelEditor::new();
+        let rect = editor_mode_button_rect(
+            app_state.editor.viewport.surface_width,
+            app_state.editor.viewport.surface_height,
+        );
+
+        let action = editor_mouse_pressed(
+            &mut app_state,
+            &mut editor,
+            (rect.x + rect.w / 2) as f64,
+            (rect.y + rect.h / 2) as f64,
+        );
+
+        assert_eq!(action, None);
+        assert_eq!(app_state.ui.overlay, Some(AppOverlay::EditorModeMenu));
+        assert_eq!(editor.mode(), EditorMode::Draw);
+    }
+
+    #[test]
+    fn mode_menu_selects_move_and_closes() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        app_state.ui.overlay = Some(AppOverlay::EditorModeMenu);
+        let mut editor = LevelEditor::new();
+        let (screen_x, screen_y) = mode_menu_option_center(&app_state, 1);
+
+        editor_mouse_pressed(&mut app_state, &mut editor, screen_x, screen_y);
+
+        assert_eq!(app_state.ui.overlay, None);
+        assert_eq!(editor.mode(), EditorMode::Move);
+    }
+
+    #[test]
+    fn touch_started_on_mode_menu_option_does_not_activate_until_release() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        app_state.ui.overlay = Some(AppOverlay::EditorModeMenu);
+        let mut editor = LevelEditor::new();
+        let (screen_x, screen_y) = mode_menu_option_center(&app_state, 1);
+
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Started,
+            screen_x,
+            screen_y,
+        );
+
+        assert_eq!(app_state.ui.overlay, Some(AppOverlay::EditorModeMenu));
+        assert_eq!(editor.mode(), EditorMode::Draw);
+
+        editor_touch(
+            &mut app_state,
+            &mut editor,
+            1,
+            PointerPhase::Ended,
+            screen_x,
+            screen_y,
+        );
+
+        assert_eq!(app_state.ui.overlay, None);
+        assert_eq!(editor.mode(), EditorMode::Move);
+    }
+
+    #[test]
+    fn disabled_play_mode_menu_option_stays_open_without_changing_mode() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        app_state.ui.overlay = Some(AppOverlay::EditorModeMenu);
+        let mut editor = LevelEditor::new();
+        let (screen_x, screen_y) = mode_menu_option_center(&app_state, 2);
+
+        editor_mouse_pressed(&mut app_state, &mut editor, screen_x, screen_y);
+
+        assert_eq!(app_state.ui.overlay, Some(AppOverlay::EditorModeMenu));
+        assert_eq!(editor.mode(), EditorMode::Draw);
+    }
+
+    #[test]
+    fn mode_menu_can_enter_play_directly_from_draw_when_available() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        app_state.ui.overlay = Some(AppOverlay::EditorModeMenu);
+        let mut editor = validated_editor();
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Draw));
+        let (screen_x, screen_y) = mode_menu_option_center(&app_state, 2);
+
+        editor_mouse_pressed(&mut app_state, &mut editor, screen_x, screen_y);
+
+        assert_eq!(app_state.ui.overlay, None);
+        assert_eq!(editor.mode(), EditorMode::Play);
     }
 
     #[test]

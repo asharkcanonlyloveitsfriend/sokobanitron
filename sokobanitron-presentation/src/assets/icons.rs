@@ -40,15 +40,15 @@ const ICON_SELECT_CURSOR: IconBits = [
 ];
 
 const ICON_PLAY: IconBits = [
-    0b100000000,
-    0b110000000,
-    0b111000000,
-    0b111100000,
-    0b111110000,
-    0b111100000,
-    0b111000000,
-    0b110000000,
-    0b100000000,
+    0b001000000,
+    0b001100000,
+    0b001110000,
+    0b001111000,
+    0b001111100,
+    0b001111000,
+    0b001110000,
+    0b001100000,
+    0b001000000,
 ];
 
 const ICON_UNDO: IconBits = [
@@ -83,6 +83,18 @@ pub fn draw_ui_icon_in_rect(
     icon: UiIcon,
     color: Gray,
 ) {
+    draw_ui_icon_scaled_in_rect(frame, width, height, rect, icon, UI_ICON_SCALE, color);
+}
+
+pub(crate) fn draw_ui_icon_scaled_in_rect(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    rect: ScreenRect,
+    icon: UiIcon,
+    scale: usize,
+    color: Gray,
+) {
     let bits = match icon {
         UiIcon::Draw => ICON_DRAW_PENCIL,
         UiIcon::Select => ICON_SELECT_CURSOR,
@@ -90,6 +102,7 @@ pub fn draw_ui_icon_in_rect(
         UiIcon::Undo => ICON_UNDO,
         UiIcon::Restart => ICON_RESTART,
     };
+    let scale = scale.max(1);
     draw_icon_bits_in_rect(
         frame,
         width,
@@ -97,7 +110,7 @@ pub fn draw_ui_icon_in_rect(
         rect,
         &bits,
         UI_ICON_SIZE,
-        UI_ICON_SCALE,
+        scale,
         color,
     );
 }

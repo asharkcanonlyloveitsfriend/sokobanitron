@@ -76,6 +76,11 @@ impl Renderer {
                 self.draw_editor_screen(frame, width, height, screen);
                 FrameDamage::Full
             }
+            FrameRequest::EditorModeMenu { screen } => {
+                gameplay_presentation.clear();
+                self.draw_editor_mode_menu(frame, width, height, screen);
+                FrameDamage::Full
+            }
             FrameRequest::EditorMenu { screen } => {
                 gameplay_presentation.clear();
                 self.draw_editor_menu(frame, width, height, screen);

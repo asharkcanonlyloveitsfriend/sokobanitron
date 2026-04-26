@@ -6,7 +6,7 @@
 use crate::app::presentation::FrameRequest;
 use crate::app::state::AppState;
 use presentation::screen_requests::{
-    EditorMenuScreenRequest, EditorModeIndicator, EditorScreenRequest,
+    EditorMenuScreenRequest, EditorModeIndicator, EditorModeMenuScreenRequest, EditorScreenRequest,
 };
 use sokobanitron_level_editor::{EditorMode, LevelEditor};
 
@@ -23,26 +23,37 @@ pub fn build_current_editor_frame_request(
                 show_save_button: can_save_editor_puzzle(editor),
             },
         }
-    } else {
-        let snapshot = editor.snapshot();
-        let visible = build_visible_window(&app_state.editor, editor);
-        FrameRequest::Editor {
-            screen: EditorScreenRequest {
-                board: visible.board,
-                viewport: visible.viewport,
-                mode_indicator: match snapshot.mode {
-                    EditorMode::Draw => EditorModeIndicator::Draw,
-                    EditorMode::Move => EditorModeIndicator::Move,
-                    EditorMode::Play => EditorModeIndicator::Play,
-                },
-                can_zoom_out: !app_state.supports_multi_touch
-                    && matches!(snapshot.mode, EditorMode::Draw)
-                    && can_zoom_out(&app_state.editor),
-                can_zoom_in: !app_state.supports_multi_touch
-                    && matches!(snapshot.mode, EditorMode::Draw)
-                    && can_zoom_in(&app_state.editor, editor),
+    } else if app_state.is_editor_mode_menu_open() {
+        FrameRequest::EditorModeMenu {
+            screen: EditorModeMenuScreenRequest {
+                editor: build_editor_screen_request(app_state, editor),
+                can_enter_play: editor.can_enter_play(),
             },
         }
+    } else {
+        FrameRequest::Editor {
+            screen: build_editor_screen_request(app_state, editor),
+        }
+    }
+}
+
+fn build_editor_screen_request(app_state: &AppState, editor: &LevelEditor) -> EditorScreenRequest {
+    let snapshot = editor.snapshot();
+    let visible = build_visible_window(&app_state.editor, editor);
+    EditorScreenRequest {
+        board: visible.board,
+        viewport: visible.viewport,
+        mode_indicator: match snapshot.mode {
+            EditorMode::Draw => EditorModeIndicator::Draw,
+            EditorMode::Move => EditorModeIndicator::Move,
+            EditorMode::Play => EditorModeIndicator::Play,
+        },
+        can_zoom_out: !app_state.supports_multi_touch
+            && matches!(snapshot.mode, EditorMode::Draw)
+            && can_zoom_out(&app_state.editor),
+        can_zoom_in: !app_state.supports_multi_touch
+            && matches!(snapshot.mode, EditorMode::Draw)
+            && can_zoom_in(&app_state.editor, editor),
     }
 }
 
@@ -123,6 +134,23 @@ mod tests {
         };
 
         assert!(screen.show_save_button);
+    }
+
+    #[test]
+    fn editor_mode_menu_wraps_current_editor_frame_state() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        app_state.ui.overlay = Some(AppOverlay::EditorModeMenu);
+        let editor = LevelEditor::new();
+
+        let FrameRequest::EditorModeMenu { screen } =
+            build_current_editor_frame_request(&app_state, &editor)
+        else {
+            panic!("expected editor mode menu frame");
+        };
+
+        assert_eq!(screen.editor.mode_indicator, EditorModeIndicator::Draw);
+        assert!(!screen.can_enter_play);
     }
 
     #[test]

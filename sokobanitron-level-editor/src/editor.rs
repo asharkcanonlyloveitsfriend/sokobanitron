@@ -307,7 +307,7 @@ impl LevelEditor {
                 true
             }
             EditorMode::Play => {
-                if !matches!(&self.state, EditorState::Move) || !self.can_enter_play() {
+                if !self.can_enter_play() {
                     return false;
                 }
                 self.selected_box = None;
@@ -857,6 +857,19 @@ mod tests {
         let mut editor = setup_simple_playable_editor();
 
         let effects = editor.apply_command(EditorCommand::ToggleMode);
+
+        assert!(editor.can_enter_play());
+        assert!(effects.mode_changed);
+        assert_eq!(editor.mode(), EditorMode::Play);
+        assert!(editor.play_board().is_some());
+    }
+
+    #[test]
+    fn set_mode_can_enter_play_directly_from_draw_when_play_can_start() {
+        let mut editor = setup_simple_playable_editor();
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Draw));
+
+        let effects = editor.apply_command(EditorCommand::SetMode(EditorMode::Play));
 
         assert!(editor.can_enter_play());
         assert!(effects.mode_changed);

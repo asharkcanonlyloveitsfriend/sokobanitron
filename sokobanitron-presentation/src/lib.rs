@@ -37,7 +37,8 @@ pub use layout::{
     BOARD_HORIZONTAL_MARGIN, BOARD_VERTICAL_MARGIN, BoardViewport, BoardViewportOptions,
     ScreenRect, UI_BUTTON_MARGIN, UI_BUTTON_SIZE, UI_MENU_BUTTON_HEIGHT, board_viewport_margins,
     bottom_left_corner_button_rect, bottom_right_corner_button_rect,
-    editor_bottom_left_button_rect, editor_bottom_right_button_rect, editor_viewport_size,
+    editor_bottom_left_button_rect, editor_bottom_right_button_rect, editor_mode_button_rect,
+    editor_mode_menu_option_rects, editor_mode_menu_rect, editor_viewport_size,
     fit_board_viewport_for_controls, fit_board_viewport_for_controls_capped,
     gameplay_menu_level_set_button_rect, level_select_menu_clamp_start, level_select_menu_indices,
     level_select_menu_slot_rects, level_select_menu_start_index, level_select_menu_step_start,
@@ -52,8 +53,8 @@ pub use renderer::{
     draw_top_left_level_button, draw_top_menu_toggle, measure_text_width,
 };
 pub use screen_requests::{
-    EditorMenuScreenRequest, EditorModeIndicator, EditorScreenRequest, FrameRequest,
-    GameplayMenuScreenRequest, GameplayPresentationCause, GameplayPresentationUpdate,
+    EditorMenuScreenRequest, EditorModeIndicator, EditorModeMenuScreenRequest, EditorScreenRequest,
+    FrameRequest, GameplayMenuScreenRequest, GameplayPresentationCause, GameplayPresentationUpdate,
     GameplayScreenMode, GameplayScreenRequest, LevelSelectScreenRequest, LevelSetListEntry,
     LevelSetSelectScreenRequest,
 };

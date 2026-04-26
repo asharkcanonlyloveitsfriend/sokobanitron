@@ -17,7 +17,8 @@ pub use controls::{
     top_menu_toggle_button_expanded_hit_rect, top_menu_toggle_button_visible_rect,
 };
 pub use editor::{
-    editor_bottom_left_button_rect, editor_bottom_right_button_rect, editor_viewport_size,
+    editor_bottom_left_button_rect, editor_bottom_right_button_rect, editor_mode_button_rect,
+    editor_mode_menu_option_rects, editor_mode_menu_rect, editor_viewport_size,
 };
 pub(crate) use level_select::menu_slots_per_page;
 pub use level_select::{

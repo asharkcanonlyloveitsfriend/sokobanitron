@@ -56,6 +56,7 @@ pub enum FrameRequest {
     LevelSelect { screen: LevelSelectScreenRequest },
     LevelSetSelect { screen: LevelSetSelectScreenRequest },
     Editor { screen: EditorScreenRequest },
+    EditorModeMenu { screen: EditorModeMenuScreenRequest },
     EditorMenu { screen: EditorMenuScreenRequest },
 }
 
@@ -98,6 +99,12 @@ pub struct EditorScreenRequest {
 pub struct EditorMenuScreenRequest {
     pub primary_action_label: &'static str,
     pub show_save_button: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EditorModeMenuScreenRequest {
+    pub editor: EditorScreenRequest,
+    pub can_enter_play: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

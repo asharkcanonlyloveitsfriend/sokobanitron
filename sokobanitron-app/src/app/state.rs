@@ -21,6 +21,7 @@ pub enum AppOverlay {
     GameplayMenu,
     LevelSelect { page_start: usize },
     LevelSetSelect { page_start: usize },
+    EditorModeMenu,
     EditorMenu,
 }
 
@@ -30,7 +31,7 @@ impl AppOverlay {
             Self::GameplayMenu | Self::LevelSelect { .. } | Self::LevelSetSelect { .. } => {
                 AppScreen::Gameplay
             }
-            Self::EditorMenu => AppScreen::Editor,
+            Self::EditorModeMenu | Self::EditorMenu => AppScreen::Editor,
         }
     }
 }
@@ -110,6 +111,10 @@ impl AppState {
         matches!(self.ui.overlay, Some(AppOverlay::EditorMenu))
     }
 
+    pub fn is_editor_mode_menu_open(&self) -> bool {
+        matches!(self.ui.overlay, Some(AppOverlay::EditorModeMenu))
+    }
+
     pub fn is_level_select_open(&self) -> bool {
         matches!(self.ui.overlay, Some(AppOverlay::LevelSelect { .. }))
     }
@@ -156,6 +161,7 @@ mod tests {
         assert!(app_state.is_overlay_open());
         assert!(!app_state.is_gameplay_menu_open());
         assert!(!app_state.is_editor_menu_open());
+        assert!(!app_state.is_editor_mode_menu_open());
         assert!(app_state.is_level_select_open());
         assert!(!app_state.is_level_set_select_open());
         assert_eq!(app_state.level_select_page_start(), Some(7));
@@ -172,6 +178,7 @@ mod tests {
         assert!(app_state.is_overlay_open());
         assert!(app_state.is_gameplay_menu_open());
         assert!(!app_state.is_editor_menu_open());
+        assert!(!app_state.is_editor_mode_menu_open());
         assert!(!app_state.is_level_select_open());
         assert!(!app_state.is_level_set_select_open());
         assert_eq!(app_state.level_select_page_start(), None);
@@ -189,6 +196,7 @@ mod tests {
         assert!(app_state.is_overlay_open());
         assert!(!app_state.is_gameplay_menu_open());
         assert!(app_state.is_editor_menu_open());
+        assert!(!app_state.is_editor_mode_menu_open());
         assert!(!app_state.is_level_select_open());
         assert!(!app_state.is_level_set_select_open());
         assert!(!app_state.is_gameplay_screen());
@@ -198,6 +206,27 @@ mod tests {
         assert_eq!(
             app_state.interaction_mode(),
             AppInteractionMode::Overlay(AppOverlay::EditorMenu)
+        );
+    }
+
+    #[test]
+    fn overlay_helpers_for_editor_mode_menu() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        app_state.ui.overlay = Some(AppOverlay::EditorModeMenu);
+        assert!(app_state.is_overlay_open());
+        assert!(!app_state.is_gameplay_menu_open());
+        assert!(!app_state.is_editor_menu_open());
+        assert!(app_state.is_editor_mode_menu_open());
+        assert!(!app_state.is_level_select_open());
+        assert!(!app_state.is_level_set_select_open());
+        assert!(!app_state.is_gameplay_screen());
+        assert!(app_state.is_editor_screen());
+        assert_eq!(app_state.level_select_page_start(), None);
+        assert_eq!(app_state.active_screen(), AppScreen::Editor);
+        assert_eq!(
+            app_state.interaction_mode(),
+            AppInteractionMode::Overlay(AppOverlay::EditorModeMenu)
         );
     }
 
@@ -214,6 +243,10 @@ mod tests {
         assert_eq!(
             AppOverlay::LevelSetSelect { page_start: 2 }.owning_screen(),
             AppScreen::Gameplay
+        );
+        assert_eq!(
+            AppOverlay::EditorModeMenu.owning_screen(),
+            AppScreen::Editor
         );
         assert_eq!(AppOverlay::EditorMenu.owning_screen(), AppScreen::Editor);
     }
