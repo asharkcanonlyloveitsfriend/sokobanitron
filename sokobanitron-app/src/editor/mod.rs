@@ -28,3 +28,7 @@ pub fn set_editor_double_tap_window(app_state: &mut AppState, window: Duration) 
 pub fn reset_editor_interaction_state(app_state: &mut AppState) {
     view::reset_editor_interaction_state(&mut app_state.editor);
 }
+
+pub fn reset_editor_view_state(app_state: &mut AppState) {
+    view::reset_editor_view_state(&mut app_state.editor);
+}

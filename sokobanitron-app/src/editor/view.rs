@@ -98,8 +98,17 @@ pub fn set_editor_double_tap_window(editor: &mut EditorUiState, window: Duration
 }
 
 pub fn reset_editor_interaction_state(editor: &mut EditorUiState) {
+    editor.interaction.cursor_position = None;
     editor.interaction.touch.reset();
     editor.interaction.active_stroke = None;
+    editor.interaction.double_tap.clear();
+}
+
+pub fn reset_editor_view_state(editor: &mut EditorUiState) {
+    editor.viewport.view_center_x = 0;
+    editor.viewport.view_center_y = 0;
+    editor.viewport.zoom_steps = 0;
+    reset_editor_interaction_state(editor);
 }
 
 pub(crate) fn can_save_editor_puzzle(editor: &LevelEditor) -> bool {

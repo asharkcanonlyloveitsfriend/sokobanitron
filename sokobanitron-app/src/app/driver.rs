@@ -13,7 +13,7 @@ use super::reducer::apply_action;
 use super::state::{AppInteractionMode, AppScreen, AppState};
 use crate::editor::{
     EditorUiAction, build_current_editor_frame_request, editor_cursor_moved, editor_mouse_pressed,
-    editor_mouse_released, editor_touch, reset_editor_interaction_state, resize_editor_surface,
+    editor_mouse_released, editor_touch, reset_editor_view_state, resize_editor_surface,
     set_editor_double_tap_window, set_editor_touch_slop,
 };
 use crate::gameplay::{
@@ -558,7 +558,7 @@ fn apply_editor_ui_action(action: Option<EditorUiAction>, runtime: EditorAppRunt
             .expect("saved active level set should reload immediately");
         }
         *runtime.editor = LevelEditor::new();
-        reset_editor_interaction_state(runtime.app.app_state);
+        reset_editor_view_state(runtime.app.app_state);
     }
 }
 
@@ -1428,6 +1428,39 @@ mod tests {
             context.editor.export_puzzle(),
             Err(ExportPuzzleError::MissingPlayer)
         );
+    }
+
+    #[test]
+    fn save_editor_action_resets_editor_viewport_after_success() {
+        let mut context = TestContext::with_empty_persistent_store();
+        context.app_state.editor.viewport.view_center_x = 12;
+        context.app_state.editor.viewport.view_center_y = -8;
+        context.app_state.editor.viewport.zoom_steps = 3;
+        let runtime = context.editor_runtime_mut();
+
+        apply_editor_ui_action(Some(EditorUiAction::SavePuzzle), runtime);
+
+        assert_eq!(context.app_state.editor.viewport.view_center_x, 0);
+        assert_eq!(context.app_state.editor.viewport.view_center_y, 0);
+        assert_eq!(context.app_state.editor.viewport.zoom_steps, 0);
+
+        let FrameRequest::Editor { screen } =
+            build_current_editor_frame_request(&context.app_state, &context.editor)
+        else {
+            panic!("expected editor frame");
+        };
+        assert!(screen.board.width() >= 3);
+        assert!(screen.board.height() >= 3);
+        let center_x = screen.board.width() / 2;
+        let center_y = screen.board.height() / 2;
+        for y in (center_y - 1)..=(center_y + 1) {
+            for x in (center_x - 1)..=(center_x + 1) {
+                assert_eq!(
+                    screen.board.tile(BoardCell::new(x, y)),
+                    sokobanitron_gameplay::TileKind::Floor
+                );
+            }
+        }
     }
 
     #[test]
