@@ -11,12 +11,6 @@ use presentation::hit_test::{
 use sokobanitron_gameplay::GameplayController;
 use std::time::Instant;
 
-#[derive(Debug, Clone, Copy)]
-pub struct GameplayPolicyContext {
-    pub allow_enter_editor: bool,
-    pub is_gameplay_screen: bool,
-}
-
 pub fn build_gameplay_surface_model(
     app_state: &AppState,
     controller: &GameplayController,
@@ -50,13 +44,6 @@ fn gameplay_surface_layer_from_app_state(app_state: &AppState) -> GameplaySurfac
     }
 }
 
-pub fn build_gameplay_policy_context(app_state: &AppState) -> GameplayPolicyContext {
-    GameplayPolicyContext {
-        allow_enter_editor: app_state.editor_available,
-        is_gameplay_screen: app_state.is_gameplay_screen(),
-    }
-}
-
 pub fn interpret_gameplay_pointer_tap(
     app_state: &mut AppState,
     controller: &GameplayController,
@@ -64,8 +51,8 @@ pub fn interpret_gameplay_pointer_tap(
     y: f64,
 ) -> AppInput {
     let surface = build_gameplay_surface_model(app_state, controller);
-    let policy = build_gameplay_policy_context(app_state);
-    gameplay_pointer_tap(&mut app_state.gameplay, &surface, policy, x, y)
+    let is_gameplay_screen = app_state.is_gameplay_screen();
+    gameplay_pointer_tap(&mut app_state.gameplay, &surface, is_gameplay_screen, x, y)
 }
 
 pub fn interpret_gameplay_pointer_event(
@@ -77,14 +64,22 @@ pub fn interpret_gameplay_pointer_event(
     y: f64,
 ) -> AppInput {
     let surface = build_gameplay_surface_model(app_state, controller);
-    let policy = build_gameplay_policy_context(app_state);
-    gameplay_pointer_event(&mut app_state.gameplay, &surface, policy, id, phase, x, y)
+    let is_gameplay_screen = app_state.is_gameplay_screen();
+    gameplay_pointer_event(
+        &mut app_state.gameplay,
+        &surface,
+        is_gameplay_screen,
+        id,
+        phase,
+        x,
+        y,
+    )
 }
 
 pub(crate) fn gameplay_pointer_tap(
     gameplay: &mut GameplayUiState,
     surface: &GameplaySurfaceModel,
-    policy: GameplayPolicyContext,
+    is_gameplay_screen: bool,
     x: f64,
     y: f64,
 ) -> AppInput {
@@ -92,13 +87,19 @@ pub(crate) fn gameplay_pointer_tap(
         .interaction
         .touch
         .synthetic_tap(MOUSE_POINTER_ID, x, y, Instant::now());
-    interpret_gameplay_gesture(gameplay, surface, policy, PointerGesture::Tap(tap), None)
+    interpret_gameplay_gesture(
+        gameplay,
+        surface,
+        is_gameplay_screen,
+        PointerGesture::Tap(tap),
+        None,
+    )
 }
 
 pub(crate) fn gameplay_pointer_event(
     gameplay: &mut GameplayUiState,
     surface: &GameplaySurfaceModel,
-    policy: GameplayPolicyContext,
+    is_gameplay_screen: bool,
     id: u64,
     phase: PointerPhase,
     x: f64,
@@ -123,13 +124,13 @@ pub(crate) fn gameplay_pointer_event(
     let Some(gesture) = touch_update.gesture else {
         return AppInput::NoOp;
     };
-    interpret_gameplay_gesture(gameplay, surface, policy, gesture, drag_start)
+    interpret_gameplay_gesture(gameplay, surface, is_gameplay_screen, gesture, drag_start)
 }
 
 fn interpret_gameplay_gesture(
     gameplay: &mut GameplayUiState,
     surface: &GameplaySurfaceModel,
-    policy: GameplayPolicyContext,
+    is_gameplay_screen: bool,
     gesture: PointerGesture,
     drag_start: Option<ScreenPoint>,
 ) -> AppInput {
@@ -137,7 +138,7 @@ fn interpret_gameplay_gesture(
         PointerGesture::Tap(tap) => {
             let (tap_x, tap_y) = tap.position.as_f64();
             let target = gameplay_surface_target_at(surface, tap_x, tap_y);
-            interpret_gameplay_tap(gameplay, surface, policy, target, tap.at)
+            interpret_gameplay_tap(gameplay, surface, is_gameplay_screen, target, tap.at)
         }
         PointerGesture::Ended(contact) => {
             gameplay.interaction.double_tap.clear();
@@ -156,11 +157,11 @@ fn interpret_gameplay_gesture(
 fn interpret_gameplay_tap(
     gameplay: &mut GameplayUiState,
     surface: &GameplaySurfaceModel,
-    policy: GameplayPolicyContext,
+    is_gameplay_screen: bool,
     target: Option<GameplaySurfaceTarget>,
     at: Instant,
 ) -> AppInput {
-    let input = interpret_gameplay_surface_target(surface, policy, target);
+    let input = interpret_gameplay_surface_target(surface, is_gameplay_screen, target);
     let Some(GameplaySurfaceTarget::BoardCell(cell)) = target else {
         gameplay.interaction.double_tap.clear();
         return input;
@@ -220,19 +221,18 @@ fn interpret_swipe(
 
 fn interpret_gameplay_surface_target(
     surface: &GameplaySurfaceModel,
-    policy: GameplayPolicyContext,
+    is_gameplay_screen: bool,
     target: Option<GameplaySurfaceTarget>,
 ) -> AppInput {
     let layer = surface.layer;
 
-    if policy.allow_enter_editor
-        && matches!(layer, GameplaySurfaceLayer::Menu)
+    if matches!(layer, GameplaySurfaceLayer::Menu)
         && matches!(target, Some(GameplaySurfaceTarget::OverlayPrimaryAction))
     {
         return AppInput::EnterEditorMode;
     }
 
-    if !policy.is_gameplay_screen {
+    if !is_gameplay_screen {
         return AppInput::NoOp;
     }
 
@@ -301,10 +301,7 @@ fn interpret_gameplay_surface_target(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        GameplayPolicyContext, build_gameplay_policy_context, build_gameplay_surface_model,
-        gameplay_pointer_event, gameplay_pointer_tap,
-    };
+    use super::{build_gameplay_surface_model, gameplay_pointer_event, gameplay_pointer_tap};
     use crate::app::input::AppInput;
     use crate::app::state::{AppOverlay, AppState};
     use crate::gameplay::{set_gameplay_double_tap_window, set_gameplay_touch_slop};
@@ -326,18 +323,15 @@ mod tests {
     }
 
     fn test_app_state() -> AppState {
-        AppState {
-            editor_available: true,
-            ..AppState::default()
-        }
+        AppState::default()
     }
 
     fn test_surface(controller: &GameplayController, app_state: &AppState) -> GameplaySurfaceModel {
         build_gameplay_surface_model(app_state, controller)
     }
 
-    fn test_policy(app_state: &AppState) -> GameplayPolicyContext {
-        build_gameplay_policy_context(app_state)
+    fn test_is_gameplay_screen(app_state: &AppState) -> bool {
+        app_state.is_gameplay_screen()
     }
 
     fn cell_center(surface: &GameplaySurfaceModel, cell: BoardCell) -> (f64, f64) {
@@ -353,9 +347,9 @@ mod tests {
         let app_state = test_app_state();
         let mut gameplay = app_state.gameplay.clone();
         let surface = test_surface(&controller, &app_state);
-        let policy = test_policy(&app_state);
+        let is_gameplay_screen = test_is_gameplay_screen(&app_state);
         let (tap_x, tap_y) = cell_center(&surface, BoardCell::new(1, 1));
-        let input = gameplay_pointer_tap(&mut gameplay, &surface, policy, tap_x, tap_y);
+        let input = gameplay_pointer_tap(&mut gameplay, &surface, is_gameplay_screen, tap_x, tap_y);
 
         assert!(matches!(input, AppInput::BoardTap(_)));
     }
@@ -367,8 +361,8 @@ mod tests {
         app_state.ui.overlay = Some(AppOverlay::LevelSelect { page_start: 0 });
         let mut gameplay = app_state.gameplay.clone();
         let surface = test_surface(&controller, &app_state);
-        let policy = test_policy(&app_state);
-        let input = gameplay_pointer_tap(&mut gameplay, &surface, policy, 12.0, 120.0);
+        let is_gameplay_screen = test_is_gameplay_screen(&app_state);
+        let input = gameplay_pointer_tap(&mut gameplay, &surface, is_gameplay_screen, 12.0, 120.0);
 
         assert!(matches!(input, AppInput::LevelSelectSelect(_)));
     }
@@ -380,13 +374,13 @@ mod tests {
         app_state.ui.overlay = Some(AppOverlay::LevelSelect { page_start: 4 });
         let mut gameplay = app_state.gameplay.clone();
         let surface = test_surface(&controller, &app_state);
-        let policy = test_policy(&app_state);
+        let is_gameplay_screen = test_is_gameplay_screen(&app_state);
 
         assert_eq!(
             gameplay_pointer_event(
                 &mut gameplay,
                 &surface,
-                policy,
+                is_gameplay_screen,
                 1,
                 PointerPhase::Started,
                 120.0,
@@ -398,7 +392,7 @@ mod tests {
             gameplay_pointer_event(
                 &mut gameplay,
                 &surface,
-                policy,
+                is_gameplay_screen,
                 1,
                 PointerPhase::Moved,
                 124.0,
@@ -411,7 +405,7 @@ mod tests {
             gameplay_pointer_event(
                 &mut gameplay,
                 &surface,
-                policy,
+                is_gameplay_screen,
                 1,
                 PointerPhase::Ended,
                 124.0,
@@ -427,13 +421,13 @@ mod tests {
         let app_state = test_app_state();
         let mut gameplay = app_state.gameplay.clone();
         let surface = test_surface(&controller, &app_state);
-        let policy = test_policy(&app_state);
+        let is_gameplay_screen = test_is_gameplay_screen(&app_state);
 
         assert_eq!(
             gameplay_pointer_event(
                 &mut gameplay,
                 &surface,
-                policy,
+                is_gameplay_screen,
                 1,
                 PointerPhase::Started,
                 140.0,
@@ -445,7 +439,7 @@ mod tests {
             gameplay_pointer_event(
                 &mut gameplay,
                 &surface,
-                policy,
+                is_gameplay_screen,
                 1,
                 PointerPhase::Moved,
                 144.0,
@@ -457,7 +451,7 @@ mod tests {
             gameplay_pointer_event(
                 &mut gameplay,
                 &surface,
-                policy,
+                is_gameplay_screen,
                 1,
                 PointerPhase::Ended,
                 144.0,
@@ -474,14 +468,14 @@ mod tests {
         let mut gameplay = app_state.gameplay.clone();
         set_gameplay_touch_slop(&mut gameplay, 24);
         let surface = test_surface(&controller, &app_state);
-        let policy = test_policy(&app_state);
+        let is_gameplay_screen = test_is_gameplay_screen(&app_state);
         let (tap_x, tap_y) = cell_center(&surface, BoardCell::new(1, 1));
 
         assert_eq!(
             gameplay_pointer_event(
                 &mut gameplay,
                 &surface,
-                policy,
+                is_gameplay_screen,
                 1,
                 PointerPhase::Started,
                 tap_x,
@@ -493,7 +487,7 @@ mod tests {
             gameplay_pointer_event(
                 &mut gameplay,
                 &surface,
-                policy,
+                is_gameplay_screen,
                 1,
                 PointerPhase::Moved,
                 tap_x + 18.0,
@@ -505,7 +499,7 @@ mod tests {
             gameplay_pointer_event(
                 &mut gameplay,
                 &surface,
-                policy,
+                is_gameplay_screen,
                 1,
                 PointerPhase::Ended,
                 tap_x + 18.0,
@@ -545,15 +539,15 @@ mod tests {
         let app_state = test_app_state();
         let mut gameplay = app_state.gameplay.clone();
         let surface = test_surface(&controller, &app_state);
-        let policy = test_policy(&app_state);
+        let is_gameplay_screen = test_is_gameplay_screen(&app_state);
         let (tap_x, tap_y) = cell_center(&surface, BoardCell::new(2, 1));
 
         assert_eq!(
-            gameplay_pointer_tap(&mut gameplay, &surface, policy, tap_x, tap_y),
+            gameplay_pointer_tap(&mut gameplay, &surface, is_gameplay_screen, tap_x, tap_y),
             AppInput::BoardTap(BoardCell::new(2, 1))
         );
         assert_eq!(
-            gameplay_pointer_tap(&mut gameplay, &surface, policy, tap_x, tap_y),
+            gameplay_pointer_tap(&mut gameplay, &surface, is_gameplay_screen, tap_x, tap_y),
             AppInput::BoardDoubleTap(BoardCell::new(2, 1))
         );
     }
@@ -567,15 +561,15 @@ mod tests {
         let app_state = test_app_state();
         let mut gameplay = app_state.gameplay.clone();
         let surface = test_surface(&controller, &app_state);
-        let policy = test_policy(&app_state);
+        let is_gameplay_screen = test_is_gameplay_screen(&app_state);
         let (tap_x, tap_y) = cell_center(&surface, BoardCell::new(4, 1));
 
         assert_eq!(
-            gameplay_pointer_tap(&mut gameplay, &surface, policy, tap_x, tap_y),
+            gameplay_pointer_tap(&mut gameplay, &surface, is_gameplay_screen, tap_x, tap_y),
             AppInput::BoardTap(BoardCell::new(4, 1))
         );
         assert_eq!(
-            gameplay_pointer_tap(&mut gameplay, &surface, policy, tap_x, tap_y),
+            gameplay_pointer_tap(&mut gameplay, &surface, is_gameplay_screen, tap_x, tap_y),
             AppInput::BoardDoubleTap(BoardCell::new(4, 1))
         );
     }
@@ -589,16 +583,16 @@ mod tests {
         let app_state = test_app_state();
         let mut gameplay = app_state.gameplay.clone();
         let surface = test_surface(&controller, &app_state);
-        let policy = test_policy(&app_state);
+        let is_gameplay_screen = test_is_gameplay_screen(&app_state);
         let (tap_x1, tap_y1) = cell_center(&surface, BoardCell::new(3, 2));
         let (tap_x2, tap_y2) = cell_center(&surface, BoardCell::new(4, 1));
 
         assert_eq!(
-            gameplay_pointer_tap(&mut gameplay, &surface, policy, tap_x1, tap_y1),
+            gameplay_pointer_tap(&mut gameplay, &surface, is_gameplay_screen, tap_x1, tap_y1),
             AppInput::BoardTap(BoardCell::new(3, 2))
         );
         assert_eq!(
-            gameplay_pointer_tap(&mut gameplay, &surface, policy, tap_x2, tap_y2),
+            gameplay_pointer_tap(&mut gameplay, &surface, is_gameplay_screen, tap_x2, tap_y2),
             AppInput::BoardTap(BoardCell::new(4, 1))
         );
     }
@@ -610,16 +604,16 @@ mod tests {
         let mut gameplay = app_state.gameplay.clone();
         set_gameplay_double_tap_window(&mut gameplay, Duration::ZERO);
         let surface = test_surface(&controller, &app_state);
-        let policy = test_policy(&app_state);
+        let is_gameplay_screen = test_is_gameplay_screen(&app_state);
         let (tap_x, tap_y) = cell_center(&surface, BoardCell::new(1, 1));
 
         assert_eq!(
-            gameplay_pointer_tap(&mut gameplay, &surface, policy, tap_x, tap_y),
+            gameplay_pointer_tap(&mut gameplay, &surface, is_gameplay_screen, tap_x, tap_y),
             AppInput::BoardTap(BoardCell::new(1, 1))
         );
         thread::sleep(Duration::from_millis(1));
         assert_eq!(
-            gameplay_pointer_tap(&mut gameplay, &surface, policy, tap_x, tap_y),
+            gameplay_pointer_tap(&mut gameplay, &surface, is_gameplay_screen, tap_x, tap_y),
             AppInput::BoardTap(BoardCell::new(1, 1))
         );
     }
@@ -630,19 +624,19 @@ mod tests {
         let app_state = test_app_state();
         let mut gameplay = app_state.gameplay.clone();
         let surface = test_surface(&controller, &app_state);
-        let policy = test_policy(&app_state);
+        let is_gameplay_screen = test_is_gameplay_screen(&app_state);
         let (tap_x, tap_y) = cell_center(&surface, BoardCell::new(1, 1));
 
         assert_eq!(
-            gameplay_pointer_tap(&mut gameplay, &surface, policy, tap_x, tap_y),
+            gameplay_pointer_tap(&mut gameplay, &surface, is_gameplay_screen, tap_x, tap_y),
             AppInput::BoardTap(BoardCell::new(1, 1))
         );
         assert_eq!(
-            gameplay_pointer_tap(&mut gameplay, &surface, policy, 20.0, 20.0),
+            gameplay_pointer_tap(&mut gameplay, &surface, is_gameplay_screen, 20.0, 20.0),
             AppInput::OpenLevelSelect
         );
         assert_eq!(
-            gameplay_pointer_tap(&mut gameplay, &surface, policy, tap_x, tap_y),
+            gameplay_pointer_tap(&mut gameplay, &surface, is_gameplay_screen, tap_x, tap_y),
             AppInput::BoardTap(BoardCell::new(1, 1))
         );
     }
@@ -653,14 +647,14 @@ mod tests {
         let app_state = test_app_state();
         let mut gameplay = app_state.gameplay.clone();
         let surface = test_surface(&controller, &app_state);
-        let policy = test_policy(&app_state);
+        let is_gameplay_screen = test_is_gameplay_screen(&app_state);
         let (center_x, center_y) = cell_center(&surface, BoardCell::new(2, 1));
 
         assert_eq!(
             gameplay_pointer_event(
                 &mut gameplay,
                 &surface,
-                policy,
+                is_gameplay_screen,
                 1,
                 PointerPhase::Started,
                 center_x - 24.0,
@@ -672,7 +666,7 @@ mod tests {
             gameplay_pointer_event(
                 &mut gameplay,
                 &surface,
-                policy,
+                is_gameplay_screen,
                 2,
                 PointerPhase::Started,
                 center_x + 24.0,
@@ -684,7 +678,7 @@ mod tests {
             gameplay_pointer_event(
                 &mut gameplay,
                 &surface,
-                policy,
+                is_gameplay_screen,
                 1,
                 PointerPhase::Moved,
                 center_x - 72.0,
@@ -696,7 +690,7 @@ mod tests {
             gameplay_pointer_event(
                 &mut gameplay,
                 &surface,
-                policy,
+                is_gameplay_screen,
                 2,
                 PointerPhase::Moved,
                 center_x + 72.0,
@@ -708,7 +702,7 @@ mod tests {
             gameplay_pointer_event(
                 &mut gameplay,
                 &surface,
-                policy,
+                is_gameplay_screen,
                 1,
                 PointerPhase::Ended,
                 center_x - 72.0,

@@ -26,10 +26,8 @@ use crate::level_bootstrap::InitialLevels;
 use crate::persistence::LevelPersistence;
 use crate::shared::PointerPhase;
 use sokobanitron_gameplay::{BoardView, GameplayController, GameplayControllerChanges};
-use sokobanitron_level_editor::{EditorCommand, LevelEditor};
+use sokobanitron_level_editor::LevelEditor;
 use std::time::Duration;
-
-const EDITOR_HINT_ADVANCE_STEPS: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RenderWorkResult {
@@ -66,7 +64,6 @@ impl SharedAppRendererConfig {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SharedAppRuntimeConfig {
-    pub editor_available: bool,
     pub supports_multi_touch: bool,
     pub gameplay_touch_slop_px: Option<i32>,
     pub gameplay_max_cell_size: Option<u32>,
@@ -78,7 +75,6 @@ pub struct SharedAppRuntimeConfig {
 impl SharedAppRuntimeConfig {
     fn build_app_state(self) -> AppState {
         let mut app_state = AppState {
-            editor_available: self.editor_available,
             supports_multi_touch: self.supports_multi_touch,
             ..AppState::default()
         };
@@ -400,11 +396,7 @@ impl SharedAppRuntime {
     }
 
     pub fn has_pending_render_work(&self) -> bool {
-        self.has_pending_visible_presentation() || self.has_pending_editor_hint_job()
-    }
-
-    fn has_pending_editor_hint_job(&self) -> bool {
-        self.app_state.is_editor_screen() && self.editor.has_active_pull_hint_job()
+        self.has_pending_visible_presentation()
     }
 
     fn output_drawn_frame<P: AppFramePresenter>(
@@ -592,29 +584,11 @@ where
         return Ok(current_render_work_result(context, frame_changed));
     }
 
-    let before_request = build_current_context_screen_frame_request(context);
-    let advanced = {
-        let Some(runtime) = context.editor_runtime_mut() else {
-            return Ok(RenderWorkResult::default());
-        };
-        if !runtime.app.app_state.is_editor_screen() || !runtime.editor.has_active_pull_hint_job() {
-            false
-        } else {
-            runtime.editor.apply_command(EditorCommand::AdvanceHintJob {
-                steps: EDITOR_HINT_ADVANCE_STEPS,
-            });
-            true
-        }
-    };
-    if !advanced {
-        return Ok(RenderWorkResult::default());
-    }
-    let frame_changed = render_current_screen_frame_if_changed(context, before_request)?;
-    Ok(current_render_work_result(context, frame_changed))
+    Ok(RenderWorkResult::default())
 }
 
 fn has_pending_render_work_in_context<C: AppDriverContext>(context: &mut C) -> bool {
-    context.has_pending_frame_presentation() || has_pending_editor_hint_job_in_context(context)
+    context.has_pending_frame_presentation()
 }
 
 fn handle_pointer_input_and_render_in_context<C>(
@@ -700,13 +674,6 @@ fn current_render_work_result<C: AppDriverContext>(
         frame_changed,
         needs_followup_wake: has_pending_render_work_in_context(context),
     }
-}
-
-fn has_pending_editor_hint_job_in_context<C: AppDriverContext>(context: &mut C) -> bool {
-    let Some(runtime) = context.editor_runtime_mut() else {
-        return false;
-    };
-    runtime.app.app_state.is_editor_screen() && runtime.editor.has_active_pull_hint_job()
 }
 
 fn current_interaction_mode<C: AppDriverContext>(context: &mut C) -> AppInteractionMode {
@@ -1207,7 +1174,6 @@ mod tests {
             128,
             96,
             SharedAppRuntimeConfig {
-                editor_available: true,
                 supports_multi_touch: true,
                 gameplay_touch_slop_px: Some(17),
                 gameplay_max_cell_size: Some(123),
@@ -1218,7 +1184,6 @@ mod tests {
         );
 
         assert!(runtime.app_state.supports_multi_touch);
-        assert!(runtime.app_state.editor_available);
         assert_eq!(runtime.app_state.gameplay.max_cell_size, 123);
         assert_eq!(
             runtime.app_state.editor.interaction.double_tap_window,
@@ -1628,23 +1593,38 @@ mod tests {
 
     fn saveable_editor() -> LevelEditor {
         let mut editor = LevelEditor::new();
+        for x in 0..=3 {
+            editor.apply_command(EditorCommand::PaintCell {
+                cell_x: x,
+                cell_y: 0,
+                tool: DrawTool::Floor,
+            });
+        }
         editor.apply_command(EditorCommand::PaintCell {
             cell_x: 2,
-            cell_y: 0,
-            tool: DrawTool::Floor,
-        });
-        editor.apply_command(EditorCommand::PaintCell {
-            cell_x: 0,
             cell_y: 0,
             tool: DrawTool::GoalWithBox,
         });
         editor.apply_command(EditorCommand::SetMode(EditorMode::Move));
         editor.apply_command(EditorCommand::SelectBox {
-            cell_x: 0,
+            cell_x: 2,
             cell_y: 0,
         });
         editor.apply_command(EditorCommand::MoveSelectedBoxTo {
             cell_x: 1,
+            cell_y: 0,
+        });
+        editor.apply_command(EditorCommand::PositionPlayer {
+            cell_x: 0,
+            cell_y: 0,
+        });
+        editor.apply_command(EditorCommand::ToggleMode);
+        editor.apply_command(EditorCommand::PlayCell {
+            cell_x: 1,
+            cell_y: 0,
+        });
+        editor.apply_command(EditorCommand::PlayCell {
+            cell_x: 2,
             cell_y: 0,
         });
         editor

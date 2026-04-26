@@ -149,7 +149,6 @@ impl AndroidApp {
 
 fn android_runtime_config() -> SharedAppRuntimeConfig {
     SharedAppRuntimeConfig {
-        editor_available: true,
         supports_multi_touch: true,
         gameplay_touch_slop_px: Some(ANDROID_GAMEPLAY_TAP_SLOP_PX),
         editor_touch_slop_px: Some(ANDROID_EDITOR_TAP_SLOP_PX),

@@ -6,7 +6,7 @@
 
 use presentation::layout::BoardViewport;
 use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
-use sokobanitron_level_editor::{EditorMode, LevelEditor, NonVoidBounds, Tile};
+use sokobanitron_level_editor::{EditorMode, LevelEditor, NonVoidBounds};
 
 use crate::shared::{DoubleTapTracker, PointerId, TouchPointerState, TouchStartPolicy};
 use std::time::Duration;
@@ -65,8 +65,7 @@ pub(crate) struct ActiveEditorStroke {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EditorDoubleTapTarget {
     DrawCell(i32, i32),
-    MovePlayer,
-    MoveBox(i32, i32),
+    PlayCell(i32, i32),
 }
 
 impl Default for EditorUiState {
@@ -104,11 +103,7 @@ pub fn reset_editor_interaction_state(editor: &mut EditorUiState) {
 }
 
 pub(crate) fn can_save_editor_puzzle(editor: &LevelEditor) -> bool {
-    editor
-        .world()
-        .box_positions()
-        .into_iter()
-        .any(|(x, y)| editor.world().tile(x, y) == Tile::Floor)
+    editor.can_save()
 }
 
 #[derive(Debug)]
@@ -141,7 +136,6 @@ pub(crate) fn build_visible_window(ui: &EditorUiState, editor: &LevelEditor) -> 
     let cell_size = compute_cell_size(ui.viewport.surface_width, board_cols);
     let world_origin_x = ui.viewport.view_center_x - (board_cols as i32 / 2);
     let world_origin_y = ui.viewport.view_center_y - (board_rows as i32 / 2);
-    let hide_player = editor.selected_box().is_some();
 
     let mut tiles = Vec::with_capacity((board_cols * board_rows) as usize);
     let mut boxes = Vec::with_capacity((board_cols * board_rows) as usize);
@@ -151,9 +145,9 @@ pub(crate) fn build_visible_window(ui: &EditorUiState, editor: &LevelEditor) -> 
         for x in 0..board_cols {
             let world_x = world_origin_x + x as i32;
             let world_y = world_origin_y + y as i32;
-            let tile = editor.world().tile(world_x, world_y);
-            let has_box = editor.world().has_box(world_x, world_y);
-            if !hide_player && editor.world().player() == Some((world_x, world_y)) {
+            let tile = editor.view_tile(world_x, world_y);
+            let has_box = editor.view_has_box(world_x, world_y);
+            if editor.view_player() == Some((world_x, world_y)) {
                 player_local = Some(BoardCell::new(x, y));
             }
             match tile {
@@ -163,8 +157,8 @@ pub(crate) fn build_visible_window(ui: &EditorUiState, editor: &LevelEditor) -> 
             }
             boxes.push(has_box);
             if has_box
-                && editor.selected_box() == Some((world_x, world_y))
-                && matches!(editor.mode(), EditorMode::Move)
+                && editor.view_selected_box() == Some((world_x, world_y))
+                && matches!(editor.mode(), EditorMode::Move | EditorMode::Play)
             {
                 selected_box_local = Some(BoardCell::new(x, y));
             }
@@ -259,24 +253,8 @@ pub(crate) fn can_zoom_in(ui: &EditorUiState, editor: &LevelEditor) -> bool {
         return true;
     };
 
-    if bounds_fit_with_center(
-        bounds,
-        ui.viewport.view_center_x,
-        ui.viewport.view_center_y,
-        target_cols,
-        target_rows,
-    ) {
-        return true;
-    }
-
-    centered_view_for_bounds(
-        bounds,
-        ui.viewport.view_center_x,
-        ui.viewport.view_center_y,
-        target_cols,
-        target_rows,
-    )
-    .is_some()
+    let (center_x, center_y) = center_for_bounds(bounds);
+    bounds_fit_with_center(bounds, center_x, center_y, target_cols, target_rows)
 }
 
 fn bounds_fit_with_center(
@@ -296,32 +274,19 @@ fn bounds_fit_with_center(
         && bounds.max_y <= max_y
 }
 
-fn centered_view_for_bounds(
-    bounds: NonVoidBounds,
-    view_center_x: i32,
-    view_center_y: i32,
-    cols: u32,
-    rows: u32,
-) -> Option<(i32, i32)> {
-    let half_cols = cols as i32 / 2;
-    let half_rows = rows as i32 / 2;
+fn center_for_bounds(bounds: NonVoidBounds) -> (i32, i32) {
+    (
+        (bounds.min_x + bounds.max_x).div_euclid(2),
+        (bounds.min_y + bounds.max_y).div_euclid(2),
+    )
+}
 
-    let min_center_x = bounds.max_x - half_cols;
-    let max_center_x = bounds.min_x + half_cols;
-    if min_center_x > max_center_x {
-        return None;
+fn recenter_on_walkable_tiles(ui: &mut EditorUiState, editor: &LevelEditor) {
+    if let Some(bounds) = editor.world().non_void_bounds() {
+        let (center_x, center_y) = center_for_bounds(bounds);
+        ui.viewport.view_center_x = center_x;
+        ui.viewport.view_center_y = center_y;
     }
-
-    let min_center_y = bounds.max_y - half_rows;
-    let max_center_y = bounds.min_y + half_rows;
-    if min_center_y > max_center_y {
-        return None;
-    }
-
-    Some((
-        view_center_x.clamp(min_center_x, max_center_x),
-        view_center_y.clamp(min_center_y, max_center_y),
-    ))
 }
 
 pub(crate) fn zoom_in(ui: &mut EditorUiState, editor: &LevelEditor) {
@@ -329,39 +294,115 @@ pub(crate) fn zoom_in(ui: &mut EditorUiState, editor: &LevelEditor) {
         return;
     }
 
-    let target_steps = ui.viewport.zoom_steps - 1;
-    let (target_cols, target_rows) = board_dimensions_for_steps(
-        target_steps,
-        ui.viewport.surface_width,
-        ui.viewport.surface_height,
-    );
-    if let Some(bounds) = editor.world().non_void_bounds() {
-        if bounds_fit_with_center(
-            bounds,
-            ui.viewport.view_center_x,
-            ui.viewport.view_center_y,
-            target_cols,
-            target_rows,
-        ) {
-            ui.viewport.zoom_steps = target_steps;
-        } else if let Some((center_x, center_y)) = centered_view_for_bounds(
-            bounds,
-            ui.viewport.view_center_x,
-            ui.viewport.view_center_y,
-            target_cols,
-            target_rows,
-        ) {
-            ui.viewport.view_center_x = center_x;
-            ui.viewport.view_center_y = center_y;
-            ui.viewport.zoom_steps = target_steps;
-        }
-    } else {
-        ui.viewport.zoom_steps = target_steps;
+    ui.viewport.zoom_steps -= 1;
+    recenter_on_walkable_tiles(ui, editor);
+}
+
+pub(crate) fn zoom_out(ui: &mut EditorUiState, editor: &LevelEditor) {
+    if can_zoom_out(ui) {
+        ui.viewport.zoom_steps += 1;
+        recenter_on_walkable_tiles(ui, editor);
     }
 }
 
-pub(crate) fn zoom_out(ui: &mut EditorUiState) {
-    if can_zoom_out(ui) {
-        ui.viewport.zoom_steps += 1;
+#[cfg(test)]
+mod tests {
+    use super::{EditorUiState, build_visible_window, zoom_in, zoom_out};
+    use sokobanitron_gameplay::BoardCell;
+    use sokobanitron_level_editor::{DrawTool, EditorCommand, EditorMode, LevelEditor};
+
+    fn editor_with_asymmetric_non_void_bounds() -> LevelEditor {
+        let mut editor = LevelEditor::new();
+        let existing_cells = editor
+            .snapshot()
+            .board
+            .cells
+            .iter()
+            .map(|cell| (cell.world_x, cell.world_y))
+            .collect::<Vec<_>>();
+
+        for (cell_x, cell_y) in existing_cells {
+            editor.apply_command(EditorCommand::PaintCell {
+                cell_x,
+                cell_y,
+                tool: DrawTool::Void,
+            });
+        }
+
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 10,
+            cell_y: 4,
+            tool: DrawTool::Floor,
+        });
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 12,
+            cell_y: 6,
+            tool: DrawTool::Floor,
+        });
+        editor
+    }
+
+    #[test]
+    fn move_mode_selected_box_does_not_hide_player() {
+        let ui = EditorUiState::default();
+        let mut editor = LevelEditor::new();
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 1,
+            cell_y: 0,
+            tool: DrawTool::GoalWithBox,
+        });
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Move));
+        editor.apply_command(EditorCommand::PositionPlayer {
+            cell_x: 0,
+            cell_y: 0,
+        });
+        editor.apply_command(EditorCommand::SelectBox {
+            cell_x: 1,
+            cell_y: 0,
+        });
+
+        let visible = build_visible_window(&ui, &editor);
+        let player_x = (0 - visible.world_origin_x) as u32;
+        let player_y = (0 - visible.world_origin_y) as u32;
+        let selected_x = (1 - visible.world_origin_x) as u32;
+        let selected_y = (0 - visible.world_origin_y) as u32;
+
+        assert_eq!(
+            visible.board.player(),
+            Some(BoardCell::new(player_x, player_y))
+        );
+        assert_eq!(
+            visible.board.selected_box(),
+            Some(BoardCell::new(selected_x, selected_y))
+        );
+    }
+
+    #[test]
+    fn zoom_in_recenters_on_non_void_bounds() {
+        let mut ui = EditorUiState::default();
+        ui.viewport.view_center_x = -20;
+        ui.viewport.view_center_y = -20;
+        let editor = editor_with_asymmetric_non_void_bounds();
+
+        zoom_in(&mut ui, &editor);
+
+        assert_eq!(ui.viewport.zoom_steps, -1);
+        assert_eq!(ui.viewport.view_center_x, 11);
+        assert_eq!(ui.viewport.view_center_y, 5);
+    }
+
+    #[test]
+    fn zoom_out_recenters_on_non_void_bounds() {
+        let mut ui = EditorUiState::default();
+        ui.viewport.zoom_steps = -1;
+        ui.viewport.view_center_x = -20;
+        ui.viewport.view_center_y = -20;
+        let editor = editor_with_asymmetric_non_void_bounds();
+
+        zoom_out(&mut ui, &editor);
+
+        assert_eq!(ui.viewport.zoom_steps, 0);
+        assert_eq!(ui.viewport.view_center_x, 11);
+        assert_eq!(ui.viewport.view_center_y, 5);
     }
 }

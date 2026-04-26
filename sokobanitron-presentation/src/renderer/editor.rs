@@ -1,20 +1,18 @@
 use crate::assets::{UiIcon, draw_ui_icon_in_rect};
 use crate::layout::{
-    ScreenRect, editor_bottom_left_button_rect, editor_bottom_right_button_rect,
+    editor_bottom_left_button_rect, editor_bottom_right_button_rect,
     overlay_secondary_action_button_rect, top_left_level_button_rect,
 };
-use crate::screen_requests::{
-    EditorHintChange, EditorHintState, EditorMenuScreenRequest, EditorScreenRequest,
-};
+use crate::screen_requests::{EditorMenuScreenRequest, EditorModeIndicator, EditorScreenRequest};
 
 use super::chrome::{draw_overlay_primary_action_button_label, draw_top_menu_toggle};
-use super::pixel_ui::{PIXEL_FONT_HEIGHT, draw_centered_text_in_rect, measure_text_width};
+use super::pixel_ui::draw_centered_text_in_rect;
 use super::{BoardSceneComposition, Renderer, RendererTheme};
 
 const UI_TEXT_SCALE: usize = 4;
 
 struct EditorControlsState {
-    draw_mode_active: bool,
+    mode_indicator: EditorModeIndicator,
     can_zoom_out: bool,
     can_zoom_in: bool,
 }
@@ -35,16 +33,6 @@ impl Renderer {
             &request.viewport,
             BoardSceneComposition::static_scene(),
         );
-        for &cell in &request.disabled_boxes {
-            self.draw_disabled_box_at(
-                frame,
-                width,
-                height,
-                &request.board,
-                &request.viewport,
-                cell,
-            );
-        }
         self.draw_editor_overlays_on_frame(frame, width, height, request);
         self.draw_editor_chrome_on_frame(frame, width, height, request);
     }
@@ -81,32 +69,12 @@ impl Renderer {
 
     pub fn draw_editor_overlays_on_frame(
         &mut self,
-        frame: &mut [u8],
-        width: u32,
-        height: u32,
+        _frame: &mut [u8],
+        _width: u32,
+        _height: u32,
         request: &EditorScreenRequest,
     ) {
-        for count in &request.move_counts {
-            draw_count_label(
-                frame,
-                width,
-                height,
-                count.rect,
-                &count.count.to_string(),
-                button_text_color(self.theme),
-            );
-        }
-        for hint in &request.pull_destination_hints {
-            let label = hint_label(hint.state);
-            draw_count_label(
-                frame,
-                width,
-                height,
-                hint.rect,
-                label,
-                hint_text_color(self.theme),
-            );
-        }
+        let _ = request;
     }
 
     pub fn draw_editor_chrome_on_frame(
@@ -122,7 +90,7 @@ impl Renderer {
             height,
             self.theme,
             EditorControlsState {
-                draw_mode_active: request.draw_mode_active,
+                mode_indicator: request.mode_indicator,
                 can_zoom_out: request.can_zoom_out,
                 can_zoom_in: request.can_zoom_in,
             },
@@ -138,10 +106,10 @@ fn draw_editor_controls(
     theme: RendererTheme,
     controls: EditorControlsState,
 ) {
-    let mode_icon = if controls.draw_mode_active {
-        UiIcon::Draw
-    } else {
-        UiIcon::Select
+    let mode_icon = match controls.mode_indicator {
+        EditorModeIndicator::Draw => UiIcon::Draw,
+        EditorModeIndicator::Move => UiIcon::Select,
+        EditorModeIndicator::Play => UiIcon::Play,
     };
     draw_ui_icon_in_rect(
         frame,
@@ -152,7 +120,7 @@ fn draw_editor_controls(
         button_text_color(theme),
     );
 
-    if controls.draw_mode_active {
+    if matches!(controls.mode_indicator, EditorModeIndicator::Draw) {
         if controls.can_zoom_out {
             draw_centered_text_in_rect(
                 frame,
@@ -180,44 +148,15 @@ fn draw_editor_controls(
     }
 }
 
-fn draw_count_label(
-    frame: &mut [u8],
-    width: u32,
-    height: u32,
-    rect: ScreenRect,
-    text: &str,
-    color: u8,
-) {
-    let max_text_width = measure_text_width("99", 1, 0).max(1);
-    let scale_x = (rect.w as usize / max_text_width).max(1);
-    let scale_y = (rect.h as usize / PIXEL_FONT_HEIGHT).max(1);
-    let max_fit_scale = scale_x.min(scale_y).max(1);
-    let scale = ((max_fit_scale * 3) / 5).max(1);
-    draw_centered_text_in_rect(frame, width, height, rect, text, scale, 0, color);
-}
-
-fn hint_label(state: EditorHintState) -> &'static str {
-    match state {
-        EditorHintState::Pending => "?",
-        EditorHintState::Ready(EditorHintChange::Decrease) => "-",
-        EditorHintState::Ready(EditorHintChange::Equal) => "=",
-        EditorHintState::Ready(EditorHintChange::Increase) => "+",
-    }
-}
-
 fn button_text_color(theme: RendererTheme) -> u8 {
     theme.gray_2
 }
 
-fn hint_text_color(theme: RendererTheme) -> u8 {
-    theme.gray_5
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{Renderer, hint_label};
+    use super::Renderer;
     use crate::layout::fit_board_viewport_for_controls;
-    use crate::screen_requests::{EditorHintChange, EditorHintState, EditorScreenRequest};
+    use crate::screen_requests::{EditorModeIndicator, EditorScreenRequest};
     use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
 
     fn solved_board() -> BoardView {
@@ -248,10 +187,7 @@ mod tests {
         let request = EditorScreenRequest {
             viewport: fit_board_viewport_for_controls(64, 64, &board),
             board,
-            disabled_boxes: Vec::new(),
-            move_counts: Vec::new(),
-            pull_destination_hints: Vec::new(),
-            draw_mode_active: false,
+            mode_indicator: EditorModeIndicator::Move,
             can_zoom_out: false,
             can_zoom_in: false,
         };
@@ -262,22 +198,5 @@ mod tests {
 
         assert!(renderer.solved_box_bitmap_cache.is_empty());
         assert!(renderer.squint_player_bitmap_cache.is_empty());
-    }
-
-    #[test]
-    fn editor_hint_states_map_to_symbols() {
-        assert_eq!(hint_label(EditorHintState::Pending), "?");
-        assert_eq!(
-            hint_label(EditorHintState::Ready(EditorHintChange::Decrease)),
-            "-"
-        );
-        assert_eq!(
-            hint_label(EditorHintState::Ready(EditorHintChange::Equal)),
-            "="
-        );
-        assert_eq!(
-            hint_label(EditorHintState::Ready(EditorHintChange::Increase)),
-            "+"
-        );
     }
 }

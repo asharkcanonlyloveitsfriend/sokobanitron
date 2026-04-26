@@ -203,23 +203,38 @@ mod tests {
     fn secondary_action_hits_when_save_button_is_visible() {
         let app_state = AppState::default();
         let mut editor = LevelEditor::new();
+        for x in 0..=3 {
+            editor.apply_command(EditorCommand::PaintCell {
+                cell_x: x,
+                cell_y: 0,
+                tool: DrawTool::Floor,
+            });
+        }
         editor.apply_command(EditorCommand::PaintCell {
             cell_x: 2,
-            cell_y: 0,
-            tool: DrawTool::Floor,
-        });
-        editor.apply_command(EditorCommand::PaintCell {
-            cell_x: 0,
             cell_y: 0,
             tool: DrawTool::GoalWithBox,
         });
         editor.apply_command(EditorCommand::SetMode(EditorMode::Move));
         editor.apply_command(EditorCommand::SelectBox {
-            cell_x: 0,
+            cell_x: 2,
             cell_y: 0,
         });
         editor.apply_command(EditorCommand::MoveSelectedBoxTo {
             cell_x: 1,
+            cell_y: 0,
+        });
+        editor.apply_command(EditorCommand::PositionPlayer {
+            cell_x: 0,
+            cell_y: 0,
+        });
+        editor.apply_command(EditorCommand::ToggleMode);
+        editor.apply_command(EditorCommand::PlayCell {
+            cell_x: 1,
+            cell_y: 0,
+        });
+        editor.apply_command(EditorCommand::PlayCell {
+            cell_x: 2,
             cell_y: 0,
         });
         let surface = build_editor_surface_model(&app_state, &editor);

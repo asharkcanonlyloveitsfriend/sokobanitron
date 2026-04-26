@@ -72,7 +72,6 @@ pub struct AppState {
     pub ui: UiState,
     pub editor: EditorUiState,
     pub gameplay: GameplayUiState,
-    pub editor_available: bool,
     pub supports_multi_touch: bool,
 }
 

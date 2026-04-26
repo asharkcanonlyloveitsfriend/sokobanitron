@@ -7,7 +7,6 @@ use super::{EntityVisualStyle, Gray, Renderer, blit_premultiplied_gray_alpha};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BoxSpriteVariant {
     Standard,
-    Disabled,
     Selected,
     Solved,
 }
@@ -51,35 +50,6 @@ impl Renderer {
         } else {
             self.box_bitmap(icon_size, BoxSpriteVariant::Standard)
         };
-        blit_premultiplied_gray_alpha(
-            frame,
-            frame_width,
-            frame_height,
-            icon,
-            icon_size,
-            icon_size,
-            box_x,
-            box_y,
-        );
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn draw_disabled_box_at(
-        &mut self,
-        frame: &mut [u8],
-        frame_width: u32,
-        frame_height: u32,
-        board: &BoardView,
-        viewport: &BoardViewport,
-        cell: BoardCell,
-    ) {
-        if !board.has_box(cell) {
-            return;
-        }
-        let Some((box_x, box_y, icon_size)) = self.box_sprite_rect_at(viewport, cell) else {
-            return;
-        };
-        let icon = self.box_bitmap(icon_size, BoxSpriteVariant::Disabled);
         blit_premultiplied_gray_alpha(
             frame,
             frame_width,
@@ -239,17 +209,6 @@ impl Renderer {
                     self.theme.gray_14,
                 )
             }),
-            BoxSpriteVariant::Disabled => self
-                .editor_disabled_box_bitmap_cache
-                .entry(size)
-                .or_insert_with(|| {
-                    Self::rasterize_box_bitmap(
-                        size,
-                        self.theme.gray_8,
-                        self.theme.gray_7,
-                        self.theme.gray_9,
-                    )
-                }),
             BoxSpriteVariant::Selected => self
                 .selected_box_bitmap_cache
                 .entry(size)

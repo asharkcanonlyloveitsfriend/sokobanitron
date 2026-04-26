@@ -2208,7 +2208,7 @@ dependencies = [
 name = "sokobanitron-level-editor"
 version = "0.1.0"
 dependencies = [
- "sokobanitron-core",
+ "sokobanitron-gameplay",
 ]
 
 [[package]]

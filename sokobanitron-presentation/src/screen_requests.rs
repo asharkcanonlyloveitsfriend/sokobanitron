@@ -1,4 +1,4 @@
-use crate::layout::{BoardViewport, ScreenRect};
+use crate::layout::BoardViewport;
 use sokobanitron_gameplay::{BoardCell, BoardView};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -89,10 +89,7 @@ pub struct LevelSetListEntry {
 pub struct EditorScreenRequest {
     pub board: BoardView,
     pub viewport: BoardViewport,
-    pub disabled_boxes: Vec<BoardCell>,
-    pub move_counts: Vec<EditorCountOverlay>,
-    pub pull_destination_hints: Vec<EditorHintOverlay>,
-    pub draw_mode_active: bool,
+    pub mode_indicator: EditorModeIndicator,
     pub can_zoom_out: bool,
     pub can_zoom_in: bool,
 }
@@ -104,26 +101,8 @@ pub struct EditorMenuScreenRequest {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EditorCountOverlay {
-    pub rect: ScreenRect,
-    pub count: u32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EditorHintOverlay {
-    pub rect: ScreenRect,
-    pub state: EditorHintState,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EditorHintState {
-    Pending,
-    Ready(EditorHintChange),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EditorHintChange {
-    Decrease,
-    Equal,
-    Increase,
+pub enum EditorModeIndicator {
+    Draw,
+    Move,
+    Play,
 }

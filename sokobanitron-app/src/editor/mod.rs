@@ -11,7 +11,6 @@ pub use input::{
 pub use view::EditorUiState;
 
 use crate::app::state::AppState;
-use sokobanitron_level_editor::{EditorMode, LevelEditor};
 use std::time::Duration;
 
 pub fn resize_editor_surface(app_state: &mut AppState, width: u32, height: u32) {
@@ -28,14 +27,4 @@ pub fn set_editor_double_tap_window(app_state: &mut AppState, window: Duration) 
 
 pub fn reset_editor_interaction_state(app_state: &mut AppState) {
     view::reset_editor_interaction_state(&mut app_state.editor);
-}
-
-pub(crate) fn is_selectable_move_mode_box(
-    editor: &LevelEditor,
-    world_x: i32,
-    world_y: i32,
-) -> bool {
-    matches!(editor.mode(), EditorMode::Move)
-        && editor.world().has_box(world_x, world_y)
-        && editor.box_has_pull_move(world_x, world_y)
 }

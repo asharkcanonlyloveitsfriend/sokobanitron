@@ -2,7 +2,6 @@ pub mod api;
 pub mod canonical;
 pub mod error;
 pub mod normalize;
-pub mod optimizer;
 pub mod pathfinder;
 pub mod solution;
 

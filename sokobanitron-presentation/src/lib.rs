@@ -52,9 +52,8 @@ pub use renderer::{
     draw_top_left_level_button, draw_top_menu_toggle, measure_text_width,
 };
 pub use screen_requests::{
-    EditorCountOverlay, EditorHintChange, EditorHintOverlay, EditorHintState,
-    EditorMenuScreenRequest, EditorScreenRequest, FrameRequest, GameplayMenuScreenRequest,
-    GameplayPresentationCause, GameplayPresentationUpdate, GameplayScreenMode,
-    GameplayScreenRequest, LevelSelectScreenRequest, LevelSetListEntry,
+    EditorMenuScreenRequest, EditorModeIndicator, EditorScreenRequest, FrameRequest,
+    GameplayMenuScreenRequest, GameplayPresentationCause, GameplayPresentationUpdate,
+    GameplayScreenMode, GameplayScreenRequest, LevelSelectScreenRequest, LevelSetListEntry,
     LevelSetSelectScreenRequest,
 };

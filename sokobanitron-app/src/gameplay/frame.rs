@@ -110,7 +110,7 @@ pub fn build_current_gameplay_screen_frame_request(
     } else if app_state.is_gameplay_menu_open() {
         FrameRequest::GameplayMenu {
             screen: GameplayMenuScreenRequest {
-                primary_action_label: app_state.editor_available.then_some("EDIT"),
+                primary_action_label: Some("EDIT"),
                 show_change_level_set: app_state.gameplay.level_sets.len() > 1,
             },
         }
@@ -191,7 +191,7 @@ mod tests {
             build_current_gameplay_screen_frame_request(&controller, &app_state),
             FrameRequest::GameplayMenu {
                 screen: GameplayMenuScreenRequest {
-                    primary_action_label: None,
+                    primary_action_label: Some("EDIT"),
                     show_change_level_set: false,
                 },
             },

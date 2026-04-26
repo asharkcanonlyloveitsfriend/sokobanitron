@@ -8,6 +8,7 @@ pub const UI_ICON_SCALE: usize = 3;
 pub enum UiIcon {
     Draw,
     Select,
+    Play,
     Undo,
     Restart,
 }
@@ -36,6 +37,18 @@ const ICON_SELECT_CURSOR: IconBits = [
     0b000000111,
     0b000000011,
     0b000000001,
+];
+
+const ICON_PLAY: IconBits = [
+    0b100000000,
+    0b110000000,
+    0b111000000,
+    0b111100000,
+    0b111110000,
+    0b111100000,
+    0b111000000,
+    0b110000000,
+    0b100000000,
 ];
 
 const ICON_UNDO: IconBits = [
@@ -73,6 +86,7 @@ pub fn draw_ui_icon_in_rect(
     let bits = match icon {
         UiIcon::Draw => ICON_DRAW_PENCIL,
         UiIcon::Select => ICON_SELECT_CURSOR,
+        UiIcon::Play => ICON_PLAY,
         UiIcon::Undo => ICON_UNDO,
         UiIcon::Restart => ICON_RESTART,
     };

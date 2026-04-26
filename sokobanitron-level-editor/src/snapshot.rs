@@ -6,10 +6,8 @@ pub struct EditorSnapshot {
     pub board: EditorBoardSnapshot,
     pub mode: EditorMode,
     pub selected_box: Option<(i32, i32)>,
-    pub pull_destination_hints: Vec<PullHintSnapshot>,
-    pub move_counts: Vec<BoxMoveCountSnapshot>,
-    pub can_undo: bool,
-    pub can_restart: bool,
+    pub can_enter_play: bool,
+    pub can_save: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,31 +23,4 @@ pub struct EditorCellSnapshot {
     pub world_y: i32,
     pub tile: Tile,
     pub has_box: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PullHintSnapshot {
-    pub world_x: i32,
-    pub world_y: i32,
-    pub state: PullHintStatus,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PullHintStatus {
-    Pending,
-    Ready(PullHintTotalMoveChange),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PullHintTotalMoveChange {
-    Decrease,
-    Equal,
-    Increase,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BoxMoveCountSnapshot {
-    pub world_x: i32,
-    pub world_y: i32,
-    pub count: u32,
 }

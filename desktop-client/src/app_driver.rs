@@ -72,7 +72,6 @@ impl App {
 
 fn desktop_runtime_config() -> SharedAppRuntimeConfig {
     SharedAppRuntimeConfig {
-        editor_available: true,
         supports_multi_touch: false,
         ..SharedAppRuntimeConfig::default()
     }
