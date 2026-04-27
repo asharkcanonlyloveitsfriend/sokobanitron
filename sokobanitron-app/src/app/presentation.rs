@@ -16,7 +16,7 @@
 use super::state::AppState;
 use crate::gameplay::build_gameplay_frame_request_with_cause;
 use presentation::screen_requests::GameplayPresentationCause;
-use presentation::{GameplayPresentationState, Renderer};
+use presentation::{EditorPresentationState, GameplayPresentationState, Renderer};
 use sokobanitron_gameplay::{
     BoardView, GameplayController, GameplayTapEffect, GameplayTapEvent, GameplayTapOutcome,
 };
@@ -32,6 +32,7 @@ pub use presentation::{FrameDamage, GameplayAnimationPolicy, RendererOverrides, 
 pub struct AppFrameRenderer {
     renderer: Renderer,
     gameplay_presentation: GameplayPresentationState,
+    editor_presentation: EditorPresentationState,
 }
 
 impl Default for AppFrameRenderer {
@@ -86,12 +87,14 @@ impl AppFrameRenderer {
             gameplay_presentation: GameplayPresentationState::with_animation_policy(
                 animation_policy,
             ),
+            editor_presentation: EditorPresentationState::new(),
         }
     }
 
     /// Clears the persistent gameplay presentation state after the visible surface is invalidated.
-    pub fn clear_gameplay_presentation_state(&mut self) {
+    pub fn clear_presentation_state(&mut self) {
         self.gameplay_presentation.clear();
+        self.editor_presentation.clear();
     }
 
     /// Returns whether gameplay presentation has pending work for the currently visible screen.
@@ -119,6 +122,7 @@ impl AppFrameRenderer {
             height,
             request,
             &mut self.gameplay_presentation,
+            &mut self.editor_presentation,
             preview_boards,
         )
     }
@@ -137,6 +141,7 @@ impl AppFrameRenderer {
             height,
             request,
             &mut self.gameplay_presentation,
+            &mut self.editor_presentation,
             preview_boards,
         )
     }

@@ -45,6 +45,16 @@ pub fn editor_mode_menu_rect(width: u32, height: u32) -> ScreenRect {
     }
 }
 
+pub fn editor_mode_menu_damage_rect(width: u32, height: u32) -> ScreenRect {
+    let menu = editor_mode_menu_rect(width, height);
+    ScreenRect {
+        x: 0,
+        y: 0,
+        w: menu.x.saturating_add(menu.w).min(width),
+        h: menu.y.saturating_add(menu.h).min(height),
+    }
+}
+
 pub fn editor_mode_menu_option_rects(width: u32, height: u32) -> [ScreenRect; 3] {
     let menu = editor_mode_menu_rect(width, height);
     let row_h = menu.h / EDITOR_MODE_MENU_OPTIONS as u32;

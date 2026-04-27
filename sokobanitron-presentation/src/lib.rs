@@ -11,6 +11,7 @@
 //! clocks, redraw scheduling, and final presentation to screen.
 
 pub mod assets;
+pub mod editor_presentation;
 mod gameplay_animation;
 pub mod gameplay_presentation;
 pub mod hit_test;
@@ -19,6 +20,7 @@ pub mod renderer;
 pub mod screen_requests;
 
 pub use assets::{UiIcon, draw_ui_icon_in_rect};
+pub use editor_presentation::EditorPresentationState;
 pub use gameplay_animation::GameplayAnimationPolicy;
 pub use gameplay_presentation::{
     GameplayDamage, GameplayPresentationResult, GameplayPresentationState,
@@ -38,8 +40,8 @@ pub use layout::{
     ScreenRect, UI_BUTTON_MARGIN, UI_BUTTON_SIZE, UI_MENU_BUTTON_HEIGHT, board_viewport_margins,
     bottom_left_corner_button_rect, bottom_right_corner_button_rect,
     editor_bottom_left_button_rect, editor_bottom_right_button_rect, editor_mode_button_rect,
-    editor_mode_menu_option_rects, editor_mode_menu_rect, editor_viewport_size,
-    fit_board_viewport_for_controls, fit_board_viewport_for_controls_capped,
+    editor_mode_menu_damage_rect, editor_mode_menu_option_rects, editor_mode_menu_rect,
+    editor_viewport_size, fit_board_viewport_for_controls, fit_board_viewport_for_controls_capped,
     gameplay_menu_level_set_button_rect, level_select_menu_clamp_start, level_select_menu_indices,
     level_select_menu_slot_rects, level_select_menu_start_index, level_select_menu_step_start,
     level_set_select_clamp_start, level_set_select_indices, level_set_select_row_rects,

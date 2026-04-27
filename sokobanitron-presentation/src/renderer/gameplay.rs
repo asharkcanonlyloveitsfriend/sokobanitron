@@ -140,6 +140,7 @@ impl Renderer {
             height,
             &request.board,
             &request.viewport,
+            composition,
             super::BoardBaseLayer::CachedScene,
         );
         self.draw_board_under_entity_layer_on_frame(
@@ -193,6 +194,7 @@ impl Renderer {
             &request.board,
             &request.viewport,
             cell,
+            composition.tile_borders,
         );
         animation_runner.draw_under_entities(self, frame, width, height, request, Some(cell));
         self.draw_box_at(

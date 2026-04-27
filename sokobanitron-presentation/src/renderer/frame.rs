@@ -1,5 +1,6 @@
 use sokobanitron_gameplay::BoardView;
 
+use crate::editor_presentation::EditorPresentationState;
 use crate::gameplay_presentation::{
     GameplayDamage, GameplayPresentationState, gameplay_damage_union_rect,
 };
@@ -30,6 +31,7 @@ impl FrameDamage {
 }
 
 impl Renderer {
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_frame_request(
         &mut self,
         frame: &mut [u8],
@@ -37,20 +39,24 @@ impl Renderer {
         height: u32,
         request: &FrameRequest,
         gameplay_presentation: &mut GameplayPresentationState,
+        editor_presentation: &mut EditorPresentationState,
         preview_boards: &[BoardView],
     ) -> FrameDamage {
         match request {
             FrameRequest::Gameplay { update } => {
+                editor_presentation.clear();
                 let result = gameplay_presentation.replace_update_with_damage(update.clone());
                 gameplay_presentation.draw_damage(self, frame, width, height, &result.damage);
                 frame_damage_from_gameplay(&update.scene, &result.damage, width, height)
             }
             FrameRequest::GameplayMenu { screen } => {
+                editor_presentation.clear();
                 gameplay_presentation.clear_transient_presentation();
                 self.draw_gameplay_menu(frame, width, height, screen);
                 FrameDamage::Full
             }
             FrameRequest::LevelSelect { screen } => {
+                editor_presentation.clear();
                 gameplay_presentation.clear_transient_presentation();
                 self.draw_background_only(frame, width, height);
                 self.draw_level_select_menu_contents(
@@ -65,6 +71,7 @@ impl Renderer {
                 FrameDamage::Full
             }
             FrameRequest::LevelSetSelect { screen } => {
+                editor_presentation.clear();
                 gameplay_presentation.clear_transient_presentation();
                 self.draw_background_only(frame, width, height);
                 self.draw_level_set_select_menu_contents(frame, width, height, screen);
@@ -73,15 +80,14 @@ impl Renderer {
             }
             FrameRequest::Editor { screen } => {
                 gameplay_presentation.clear();
-                self.draw_editor_screen(frame, width, height, screen);
-                FrameDamage::Full
+                editor_presentation.draw_screen(self, frame, width, height, screen)
             }
             FrameRequest::EditorModeMenu { screen } => {
                 gameplay_presentation.clear();
-                self.draw_editor_mode_menu(frame, width, height, screen);
-                FrameDamage::Full
+                editor_presentation.draw_mode_menu(self, frame, width, height, screen)
             }
             FrameRequest::EditorMenu { screen } => {
+                editor_presentation.clear();
                 gameplay_presentation.clear();
                 self.draw_editor_menu(frame, width, height, screen);
                 FrameDamage::Full
@@ -89,6 +95,7 @@ impl Renderer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_full_frame_request(
         &mut self,
         frame: &mut [u8],
@@ -96,13 +103,19 @@ impl Renderer {
         height: u32,
         request: &FrameRequest,
         gameplay_presentation: &mut GameplayPresentationState,
+        editor_presentation: &mut EditorPresentationState,
         preview_boards: &[BoardView],
     ) -> FrameDamage {
         match request {
             FrameRequest::Gameplay { update } => {
+                editor_presentation.clear();
                 gameplay_presentation.replace_update(update.clone());
                 gameplay_presentation.draw(self, frame, width, height);
                 FrameDamage::Full
+            }
+            FrameRequest::Editor { screen } => {
+                gameplay_presentation.clear();
+                editor_presentation.draw_full_screen(self, frame, width, height, screen)
             }
             _ => {
                 self.draw_frame_request(
@@ -111,6 +124,7 @@ impl Renderer {
                     height,
                     request,
                     gameplay_presentation,
+                    editor_presentation,
                     preview_boards,
                 );
                 FrameDamage::Full

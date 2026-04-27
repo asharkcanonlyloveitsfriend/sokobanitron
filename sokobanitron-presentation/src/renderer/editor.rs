@@ -1,8 +1,8 @@
 use crate::assets::{UI_ICON_SIZE, UiIcon, draw_ui_icon_scaled_in_rect};
 use crate::layout::{
     ScreenRect, editor_bottom_left_button_rect, editor_bottom_right_button_rect,
-    editor_mode_button_rect, editor_mode_menu_option_rects, editor_mode_menu_rect,
-    overlay_secondary_action_button_rect,
+    editor_mode_button_rect, editor_mode_menu_damage_rect, editor_mode_menu_option_rects,
+    editor_mode_menu_rect, overlay_secondary_action_button_rect,
 };
 use crate::screen_requests::{
     EditorMenuScreenRequest, EditorModeIndicator, EditorModeMenuScreenRequest, EditorScreenRequest,
@@ -48,11 +48,7 @@ impl Renderer {
         height: u32,
         request: &EditorScreenRequest,
     ) {
-        let composition = if request.puzzle_solved {
-            BoardSceneComposition::editor_solved_play_scene()
-        } else {
-            BoardSceneComposition::static_scene()
-        };
+        let composition = editor_board_scene_composition(request);
         self.draw_board_scene_on_frame(
             frame,
             width,
@@ -65,6 +61,28 @@ impl Renderer {
         self.draw_editor_chrome_on_frame(frame, width, height, request);
     }
 
+    pub(crate) fn draw_editor_screen_cells(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        request: &EditorScreenRequest,
+        cells: &[sokobanitron_gameplay::BoardCell],
+    ) {
+        let composition = editor_board_scene_composition(request);
+        for &cell in cells {
+            self.draw_board_cell_scene_on_frame(
+                frame,
+                width,
+                height,
+                &request.board,
+                &request.viewport,
+                composition,
+                cell,
+            );
+        }
+    }
+
     pub fn draw_editor_mode_menu(
         &mut self,
         frame: &mut [u8],
@@ -73,7 +91,12 @@ impl Renderer {
         request: &EditorModeMenuScreenRequest,
     ) {
         self.draw_editor_screen(frame, width, height, &request.editor);
-        self.restore_background_rect(frame, width, height, editor_mode_menu_rect(width, height));
+        self.restore_background_rect(
+            frame,
+            width,
+            height,
+            editor_mode_menu_damage_rect(width, height),
+        );
         draw_editor_mode_menu_contents(
             frame,
             width,
@@ -152,6 +175,18 @@ impl Renderer {
             },
         );
         draw_top_menu_toggle(frame, width, height, false, self.theme);
+    }
+}
+
+pub(crate) fn editor_board_scene_composition(
+    request: &EditorScreenRequest,
+) -> BoardSceneComposition {
+    if matches!(request.mode_indicator, EditorModeIndicator::Draw) {
+        BoardSceneComposition::editor_draw_scene()
+    } else if request.puzzle_solved {
+        BoardSceneComposition::editor_solved_play_scene()
+    } else {
+        BoardSceneComposition::static_scene()
     }
 }
 

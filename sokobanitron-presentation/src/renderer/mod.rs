@@ -72,6 +72,7 @@ impl Default for OverEntitySceneComposition {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct BoardSceneComposition {
+    pub tile_borders: TileBorderPolicy,
     pub player: PlayerSceneComposition,
     pub under_entities: UnderEntitySceneComposition,
     pub over_entities: OverEntitySceneComposition,
@@ -80,9 +81,17 @@ pub(crate) struct BoardSceneComposition {
 impl BoardSceneComposition {
     pub(crate) fn static_scene() -> Self {
         Self {
+            tile_borders: TileBorderPolicy::Presentation,
             player: PlayerSceneComposition::default(),
             under_entities: UnderEntitySceneComposition,
             over_entities: OverEntitySceneComposition::default(),
+        }
+    }
+
+    pub(crate) fn editor_draw_scene() -> Self {
+        Self {
+            tile_borders: TileBorderPolicy::EditorDraw,
+            ..Self::static_scene()
         }
     }
 
@@ -91,6 +100,7 @@ impl BoardSceneComposition {
         sleeping_player: bool,
     ) -> Self {
         Self {
+            tile_borders: TileBorderPolicy::Presentation,
             player: PlayerSceneComposition {
                 visible: true,
                 sleeping: sleeping_player,
@@ -105,6 +115,7 @@ impl BoardSceneComposition {
 
     pub(crate) fn editor_solved_play_scene() -> Self {
         Self {
+            tile_borders: TileBorderPolicy::Presentation,
             player: PlayerSceneComposition {
                 visible: true,
                 sleeping: false,
@@ -114,6 +125,13 @@ impl BoardSceneComposition {
             over_entities: OverEntitySceneComposition::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum TileBorderPolicy {
+    #[default]
+    Presentation,
+    EditorDraw,
 }
 
 const BG_SPACE_PNG: &[u8] =
@@ -132,6 +150,7 @@ pub(crate) struct BoardSceneCacheKey {
     pub surface_width: u32,
     pub surface_height: u32,
     pub viewport: BoardViewport,
+    pub tile_borders: TileBorderPolicy,
     pub board_width: u32,
     pub board_height: u32,
     pub tile_signature: u64,
@@ -398,11 +417,13 @@ impl Renderer {
         height: u32,
         board: &BoardView,
         viewport: &BoardViewport,
+        composition: BoardSceneComposition,
     ) {
         let key = BoardSceneCacheKey {
             surface_width: width,
             surface_height: height,
             viewport: *viewport,
+            tile_borders: composition.tile_borders,
             board_width: board.width(),
             board_height: board.height(),
             tile_signature: tile_signature(board),
@@ -413,7 +434,14 @@ impl Renderer {
 
         self.ensure_cached_background(width, height);
         let mut cached_board_scene = self.cached_background.clone();
-        self.draw_floor_tiles(&mut cached_board_scene, width, height, board, viewport);
+        self.draw_floor_tiles(
+            &mut cached_board_scene,
+            width,
+            height,
+            board,
+            viewport,
+            composition.tile_borders,
+        );
         self.cached_board_scene = cached_board_scene;
         self.cached_board_scene_key = Some(key);
     }
@@ -432,7 +460,15 @@ impl Renderer {
         if width == 0 || height == 0 {
             return;
         }
-        self.draw_board_base_layer_on_frame(frame, width, height, board, viewport, base_layer);
+        self.draw_board_base_layer_on_frame(
+            frame,
+            width,
+            height,
+            board,
+            viewport,
+            composition,
+            base_layer,
+        );
         self.draw_board_under_entity_layer_on_frame(
             frame,
             width,
@@ -468,15 +504,81 @@ impl Renderer {
         height: u32,
         board: &BoardView,
         viewport: &BoardViewport,
+        composition: BoardSceneComposition,
         base_layer: BoardBaseLayer,
     ) {
         match base_layer {
             BoardBaseLayer::CachedScene => {
-                self.ensure_cached_board_scene(width, height, board, viewport);
+                self.ensure_cached_board_scene(width, height, board, viewport, composition);
                 frame.copy_from_slice(&self.cached_board_scene);
             }
-            BoardBaseLayer::Tiles => self.draw_floor_tiles(frame, width, height, board, viewport),
+            BoardBaseLayer::Tiles => self.draw_floor_tiles(
+                frame,
+                width,
+                height,
+                board,
+                viewport,
+                composition.tile_borders,
+            ),
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn draw_board_cell_scene_on_frame(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        board: &BoardView,
+        viewport: &BoardViewport,
+        composition: BoardSceneComposition,
+        cell: sokobanitron_gameplay::BoardCell,
+    ) {
+        self.draw_floor_tile_cell(
+            frame,
+            width,
+            height,
+            board,
+            viewport,
+            cell,
+            composition.tile_borders,
+        );
+        self.draw_board_under_entity_layer_on_frame(
+            frame,
+            width,
+            height,
+            board,
+            viewport,
+            composition.under_entities,
+        );
+        self.draw_box_at(
+            frame,
+            width,
+            height,
+            board,
+            viewport,
+            composition.over_entities.entity_visual_style,
+            cell,
+        );
+        if composition.player.visible && board.player() == Some(cell) {
+            self.draw_player(
+                frame,
+                width,
+                height,
+                board,
+                viewport,
+                composition.player.entity_visual_style,
+                composition.player.sleeping,
+            );
+        }
+        self.draw_board_over_entity_layer_on_frame(
+            frame,
+            width,
+            height,
+            board,
+            viewport,
+            composition.over_entities,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]

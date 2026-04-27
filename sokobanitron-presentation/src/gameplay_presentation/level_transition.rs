@@ -1,5 +1,5 @@
 use crate::layout::{BoardViewport, ScreenRect};
-use crate::renderer::Renderer;
+use crate::renderer::{Renderer, TileBorderPolicy};
 use crate::screen_requests::{
     GameplayPresentationCause, GameplayPresentationUpdate, GameplayScreenRequest,
 };
@@ -115,6 +115,7 @@ impl TransitionScratch {
                 height,
                 &scene.board,
                 &scene.viewport,
+                TileBorderPolicy::Presentation,
             );
         }
 

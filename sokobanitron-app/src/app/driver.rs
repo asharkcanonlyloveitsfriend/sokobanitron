@@ -255,7 +255,7 @@ impl SharedAppRuntime {
             self.surface_height,
         );
         resize_editor_surface(&mut self.app_state, self.surface_width, self.surface_height);
-        self.frame_renderer.clear_gameplay_presentation_state();
+        self.frame_renderer.clear_presentation_state();
     }
 
     fn app_runtime_mut(&mut self) -> AppRuntimeMut<'_> {

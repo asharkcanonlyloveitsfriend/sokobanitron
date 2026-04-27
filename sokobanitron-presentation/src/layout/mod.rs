@@ -18,7 +18,8 @@ pub use controls::{
 };
 pub use editor::{
     editor_bottom_left_button_rect, editor_bottom_right_button_rect, editor_mode_button_rect,
-    editor_mode_menu_option_rects, editor_mode_menu_rect, editor_viewport_size,
+    editor_mode_menu_damage_rect, editor_mode_menu_option_rects, editor_mode_menu_rect,
+    editor_viewport_size,
 };
 pub(crate) use level_select::menu_slots_per_page;
 pub use level_select::{
@@ -34,6 +35,7 @@ pub use overlay::{
     gameplay_menu_level_set_button_rect, overlay_primary_action_button_rect,
     overlay_secondary_action_button_rect,
 };
+pub(crate) use viewport::board_cells_union_rect;
 pub use viewport::{BoardViewport, BoardViewportOptions};
 
 pub fn fit_board_viewport_for_controls(
