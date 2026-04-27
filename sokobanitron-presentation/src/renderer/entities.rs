@@ -224,8 +224,6 @@ impl Renderer {
                 self.solved_box_bitmap_cache.entry(size).or_insert_with(|| {
                     Self::rasterize_solved_box_bitmap(
                         size,
-                        self.theme.black,
-                        self.theme.white,
                         self.theme.gray_11,
                         self.theme.white,
                         self.theme.gray_13,
@@ -275,31 +273,23 @@ impl Renderer {
 
     fn rasterize_solved_box_bitmap(
         size: u32,
-        outer: Gray,
-        frame: Gray,
         body: Gray,
         sparkle: Gray,
         shadow: Gray,
         black: Gray,
     ) -> Vec<u8> {
-        let outer = gray_hex(outer);
-        let frame = gray_hex(frame);
         let body = gray_hex(body);
         let sparkle = gray_hex(sparkle);
         let shadow = gray_hex(shadow);
         let black = gray_hex(black);
         let svg = format!(
-            "<svg xmlns='http://www.w3.org/2000/svg' width='{s}' height='{s}' viewBox='0 0 100 100' aria-label='Stylized bordered square preview'>\
-             <path d='M25,8L75,8A17,15 0,0 1,92 25L92,75A17,15 0,0 1,75 92L25,92A17,15 0,0 1,8 75L8,25A17,15 0,0 1,25 8z' fill='{outer}'/>\
-             <path d='M24,11L76,11A10,11 0,0 1,89 24L89,76A10,11 0,0 1,76 89L24,89A10,11 0,0 1,11 76L11,24A10,11 0,0 1,24 11z' fill='{frame}'/>\
+            "<svg xmlns='http://www.w3.org/2000/svg' width='{s}' height='{s}' viewBox='0 0 100 100' aria-label='Stylized solved box'>\
              <path d='M29,14L71,14A15,15 0,0 1,86 29L86,71A15,15 0,0 1,71 86L29,86A15,15 0,0 1,14 71L14,29A15,15 0,0 1,29 14z' fill='{body}'/>\
              <path d='M32 19C35.3 25.1 39 26.9 45.2 27.9C39 28.9 35.3 30.7 32 36.8C28.7 30.7 25 28.9 18.8 27.9C25 26.9 28.7 25.1 32 19z' fill='{sparkle}'/>\
              <ellipse cx='69' cy='69' rx='12' ry='4.2' fill='none' stroke='{shadow}' stroke-width='2.2' transform='rotate(-18 69 69)'/>\
              <path d='M67,60L71,60A7,7 0,0 1,78 67L78,71A7,7 0,0 1,71 78L67,78A7,7 0,0 1,60 71L60,67A7,7 0,0 1,67 60z' fill='{black}'/>\
-             </svg>",
+            </svg>",
             s = size,
-            outer = outer,
-            frame = frame,
             body = body,
             sparkle = sparkle,
             shadow = shadow,

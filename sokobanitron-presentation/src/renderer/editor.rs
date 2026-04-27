@@ -409,7 +409,7 @@ fn draw_count_label(
     let scale_y = (rect.h as usize / PIXEL_FONT_HEIGHT).max(1);
     let max_fit_scale = scale_x.min(scale_y).max(1);
     let scale = ((max_fit_scale * 3) / 5).max(1);
-    draw_centered_text_in_rect(frame, width, height, rect, text, scale, 0, color);
+    draw_centered_text_in_rect(frame, width, height, rect, text, scale, 1, color);
 }
 
 fn button_text_color(theme: RendererTheme) -> u8 {
