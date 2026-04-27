@@ -17,7 +17,7 @@ use crate::editor::{
     set_editor_double_tap_window, set_editor_touch_slop,
 };
 use crate::gameplay::{
-    build_current_gameplay_board_frame_request, build_current_gameplay_screen_frame_request,
+    build_current_gameplay_screen_frame_request, build_gameplay_frame_request_with_cause,
     build_sleep_gameplay_frame_request, interpret_gameplay_pointer_event,
     interpret_gameplay_pointer_tap, resize_gameplay_surface, set_gameplay_level_sets,
     set_gameplay_max_cell_size, set_gameplay_touch_slop,
@@ -25,6 +25,7 @@ use crate::gameplay::{
 use crate::level_bootstrap::InitialLevels;
 use crate::persistence::LevelPersistence;
 use crate::shared::PointerPhase;
+use presentation::screen_requests::GameplayPresentationCause;
 use sokobanitron_gameplay::{BoardView, GameplayController, GameplayControllerChanges};
 use sokobanitron_level_editor::LevelEditor;
 use std::time::Duration;
@@ -42,6 +43,7 @@ pub struct AppliedUpdate {
     pub changes: GameplayControllerChanges,
     pub persistence: PersistenceUpdate,
     pub level_set_selected: Option<usize>,
+    pub fallback_gameplay_cause: Option<GameplayPresentationCause>,
     pub presentation_plan: Option<PresentationPlan>,
     pub rendered_frame: bool,
     pub render_work: RenderWorkResult,
@@ -109,6 +111,14 @@ trait AppDriverContext {
 
     fn has_pending_frame_presentation(&mut self) -> bool {
         false
+    }
+
+    fn has_dismissible_level_transition(&mut self) -> bool {
+        false
+    }
+
+    fn dismiss_level_transition_and_render(&mut self) -> Result<bool, Self::Error> {
+        Ok(false)
     }
 
     fn continue_frame_presentation_and_render(&mut self) -> Result<bool, Self::Error> {
@@ -309,6 +319,20 @@ impl SharedAppRuntime {
         )
     }
 
+    fn has_dismissible_level_transition(&self) -> bool {
+        self.frame_renderer
+            .has_dismissible_level_transition(&self.app_state)
+    }
+
+    fn dismiss_level_transition_if_visible(&mut self) -> FrameDamage {
+        self.frame_renderer.dismiss_level_transition_if_visible(
+            &self.app_state,
+            &mut self.gray_frame,
+            self.surface_width,
+            self.surface_height,
+        )
+    }
+
     fn render_frame_request<P: AppFramePresenter>(
         &mut self,
         request: &FrameRequest,
@@ -358,6 +382,18 @@ impl SharedAppRuntime {
         let damage = self.draw_pending_visible_presentation();
         self.output_drawn_frame(damage, presenter)?;
         Ok(damage)
+    }
+
+    fn dismiss_level_transition_if_visible_and_render<P: AppFramePresenter>(
+        &mut self,
+        presenter: &mut P,
+    ) -> Result<bool, P::Error> {
+        let damage = self.dismiss_level_transition_if_visible();
+        if matches!(damage, FrameDamage::Noop) {
+            return Ok(false);
+        }
+        self.output_drawn_frame(damage, presenter)?;
+        Ok(true)
     }
 
     pub fn apply_input_and_render<P: AppFramePresenter>(
@@ -433,6 +469,15 @@ impl<P: AppFramePresenter> AppDriverContext for SharedAppRuntimeContext<'_, '_, 
         self.runtime.has_pending_visible_presentation()
     }
 
+    fn has_dismissible_level_transition(&mut self) -> bool {
+        self.runtime.has_dismissible_level_transition()
+    }
+
+    fn dismiss_level_transition_and_render(&mut self) -> Result<bool, Self::Error> {
+        self.runtime
+            .dismiss_level_transition_if_visible_and_render(self.presenter)
+    }
+
     fn continue_frame_presentation_and_render(&mut self) -> Result<bool, Self::Error> {
         if !self.runtime.has_pending_visible_presentation() {
             return Ok(false);
@@ -474,6 +519,7 @@ fn apply_action_in_context<C: AppDriverContext>(
         changes: update.changes,
         persistence: update.persistence,
         level_set_selected: update.level_set_selected,
+        fallback_gameplay_cause: update.fallback_gameplay_cause,
         presentation_plan: update.presentation_plan,
         rendered_frame: false,
         render_work: RenderWorkResult::default(),
@@ -529,7 +575,11 @@ where
         // before we build this fallback gameplay frame.
         let request = {
             let runtime = context.app_runtime_mut();
-            build_current_gameplay_board_frame_request(runtime.controller, runtime.app_state)
+            let cause = applied
+                .fallback_gameplay_cause
+                .clone()
+                .unwrap_or(GameplayPresentationCause::CurrentState);
+            build_gameplay_frame_request_with_cause(runtime.controller, runtime.app_state, cause)
         };
         context.render_frame(&request)?;
         applied.rendered_frame = true;
@@ -755,6 +805,10 @@ fn handle_gameplay_mouse_pressed_in_context<C>(
 where
     C: AppDriverContext + FrameSink<Error = <C as AppDriverContext>::Error>,
 {
+    if context.has_dismissible_level_transition() {
+        let frame_changed = context.dismiss_level_transition_and_render()?;
+        return Ok(current_render_work_result(context, frame_changed));
+    }
     let input = {
         let runtime = context.app_runtime_mut();
         interpret_gameplay_pointer_tap(runtime.app_state, runtime.controller, x, y)
@@ -773,6 +827,14 @@ fn handle_gameplay_pointer_event_in_context<C>(
 where
     C: AppDriverContext + FrameSink<Error = <C as AppDriverContext>::Error>,
 {
+    if context.has_dismissible_level_transition() {
+        let frame_changed = if matches!(phase, PointerPhase::Started) {
+            context.dismiss_level_transition_and_render()?
+        } else {
+            false
+        };
+        return Ok(current_render_work_result(context, frame_changed));
+    }
     let input = {
         let runtime = context.app_runtime_mut();
         interpret_gameplay_pointer_event(runtime.app_state, runtime.controller, id, phase, x, y)
@@ -843,6 +905,7 @@ mod tests {
         preview_boards: Vec<sokobanitron_gameplay::BoardView>,
         editor: LevelEditor,
         pending_frame_presentation: bool,
+        dismissible_level_transition: bool,
         frame_followup_request: Option<FrameRequest>,
         simulate_frame_followup_on_render: bool,
         rendered_frames: Vec<FrameRequest>,
@@ -860,6 +923,7 @@ mod tests {
                 preview_boards: build_preview_boards(&levels),
                 editor: LevelEditor::new(),
                 pending_frame_presentation: false,
+                dismissible_level_transition: false,
                 frame_followup_request: None,
                 simulate_frame_followup_on_render: false,
                 rendered_frames: Vec::new(),
@@ -888,6 +952,7 @@ mod tests {
                 preview_boards: build_preview_boards(&[level]),
                 editor: saveable_editor(),
                 pending_frame_presentation: false,
+                dismissible_level_transition: false,
                 frame_followup_request: None,
                 simulate_frame_followup_on_render: false,
                 rendered_frames: Vec::new(),
@@ -957,6 +1022,7 @@ mod tests {
                 preview_boards: initial_levels.preview_boards,
                 editor: LevelEditor::new(),
                 pending_frame_presentation: false,
+                dismissible_level_transition: false,
                 frame_followup_request: None,
                 simulate_frame_followup_on_render: false,
                 rendered_frames: Vec::new(),
@@ -1001,6 +1067,7 @@ mod tests {
                 preview_boards,
                 editor: saveable_editor(),
                 pending_frame_presentation: false,
+                dismissible_level_transition: false,
                 frame_followup_request: None,
                 simulate_frame_followup_on_render: false,
                 rendered_frames: Vec::new(),
@@ -1053,6 +1120,24 @@ mod tests {
 
         fn has_pending_frame_presentation(&mut self) -> bool {
             self.pending_frame_presentation
+        }
+
+        fn has_dismissible_level_transition(&mut self) -> bool {
+            self.dismissible_level_transition
+        }
+
+        fn dismiss_level_transition_and_render(&mut self) -> Result<bool, Self::Error> {
+            if !self.dismissible_level_transition {
+                return Ok(false);
+            }
+            self.dismissible_level_transition = false;
+            self.pending_frame_presentation = false;
+            self.rendered_frames
+                .push(crate::gameplay::build_current_gameplay_board_frame_request(
+                    &self.controller,
+                    &self.app_state,
+                ));
+            Ok(true)
         }
 
         fn continue_frame_presentation_and_render(&mut self) -> Result<bool, Self::Error> {
@@ -1253,7 +1338,7 @@ mod tests {
         };
         assert_eq!(
             update.cause,
-            presentation::screen_requests::GameplayPresentationCause::CurrentState
+            presentation::screen_requests::GameplayPresentationCause::LevelTransition
         );
         assert_eq!(update.scene.level_number, 2);
     }
@@ -1386,6 +1471,10 @@ mod tests {
         let FrameRequest::Gameplay { update, .. } = &context.rendered_frames[0] else {
             panic!("expected gameplay frame");
         };
+        assert_eq!(
+            update.cause,
+            presentation::screen_requests::GameplayPresentationCause::LevelTransition
+        );
         assert_eq!(update.scene.board, context.controller.board().clone());
     }
 
@@ -1582,6 +1671,79 @@ mod tests {
         let FrameRequest::Editor { .. } = &context.rendered_frames[0] else {
             panic!("expected editor frame");
         };
+    }
+
+    #[test]
+    fn gameplay_mouse_press_dismisses_level_transition_without_board_action() {
+        let mut context = TestContext::new();
+        context.dismissible_level_transition = true;
+
+        let work = handle_pointer_input_and_render_in_context(
+            &mut context,
+            AppPointerInput::MousePressed { x: 32.0, y: 32.0 },
+        )
+        .unwrap();
+
+        assert!(work.frame_changed);
+        assert!(!work.needs_followup_wake);
+        assert!(!context.dismissible_level_transition);
+        assert_eq!(context.rendered_frames.len(), 1);
+        let FrameRequest::Gameplay { update } = &context.rendered_frames[0] else {
+            panic!("expected gameplay frame");
+        };
+        assert!(matches!(
+            update.cause,
+            presentation::screen_requests::GameplayPresentationCause::CurrentState
+        ));
+    }
+
+    #[test]
+    fn gameplay_touch_move_is_consumed_while_level_transition_is_active() {
+        let mut context = TestContext::new();
+        context.dismissible_level_transition = true;
+
+        let work = handle_pointer_input_and_render_in_context(
+            &mut context,
+            AppPointerInput::Pointer {
+                id: 7,
+                phase: PointerPhase::Moved,
+                x: 32.0,
+                y: 32.0,
+            },
+        )
+        .unwrap();
+
+        assert!(!work.frame_changed);
+        assert!(context.dismissible_level_transition);
+        assert!(context.rendered_frames.is_empty());
+    }
+
+    #[test]
+    fn gameplay_touch_start_dismisses_level_transition_without_board_action() {
+        let mut context = TestContext::new();
+        context.dismissible_level_transition = true;
+
+        let work = handle_pointer_input_and_render_in_context(
+            &mut context,
+            AppPointerInput::Pointer {
+                id: 7,
+                phase: PointerPhase::Started,
+                x: 32.0,
+                y: 32.0,
+            },
+        )
+        .unwrap();
+
+        assert!(work.frame_changed);
+        assert!(!context.dismissible_level_transition);
+        assert_eq!(context.rendered_frames.len(), 1);
+        let FrameRequest::Gameplay { update } = &context.rendered_frames[0] else {
+            panic!("expected gameplay frame");
+        };
+        assert!(matches!(
+            update.cause,
+            presentation::screen_requests::GameplayPresentationCause::CurrentState
+        ));
     }
 
     #[test]

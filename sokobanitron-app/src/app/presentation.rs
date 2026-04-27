@@ -101,6 +101,10 @@ impl AppFrameRenderer {
         app_state.is_gameplay_screen() && self.gameplay_presentation.has_pending_presentation()
     }
 
+    pub fn has_dismissible_level_transition(&self, app_state: &AppState) -> bool {
+        app_state.is_gameplay_screen() && self.gameplay_presentation.has_active_level_transition()
+    }
+
     pub fn draw_frame_request(
         &mut self,
         frame: &mut [u8],
@@ -154,6 +158,22 @@ impl AppFrameRenderer {
             height,
             &mut self.gameplay_presentation,
         )
+    }
+
+    pub fn dismiss_level_transition_if_visible(
+        &mut self,
+        app_state: &AppState,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+    ) -> FrameDamage {
+        if !app_state.is_gameplay_screen() || !self.gameplay_presentation.dismiss_level_transition()
+        {
+            return FrameDamage::Noop;
+        }
+        self.gameplay_presentation
+            .draw(&mut self.renderer, frame, width, height);
+        FrameDamage::Full
     }
 }
 
@@ -272,9 +292,10 @@ mod tests {
         render_presentation_plan,
     };
     use crate::app::{AppState, FrameRequest};
+    use crate::level_bootstrap::build_preview_boards;
     use presentation::screen_requests::{
         GameplayMenuScreenRequest, GameplayPresentationCause, GameplayPresentationUpdate,
-        LevelSelectScreenRequest,
+        LevelSelectScreenRequest, LevelSetListEntry, LevelSetSelectScreenRequest,
     };
     use sokobanitron_gameplay::{BoardCell, GameplayController};
     use sokobanitron_gameplay::{
@@ -514,5 +535,88 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn gameplay_overlay_preserves_previous_scene_for_level_select_transition() {
+        let levels = vec![
+            "#####\n#@$.#\n#####".to_string(),
+            "#######\n#@  $.#\n#######".to_string(),
+        ];
+        let mut controller = GameplayController::new(levels.clone(), None);
+        let app_state = AppState::default();
+        let preview_boards = build_preview_boards(&levels);
+        let mut renderer = AppFrameRenderer::new();
+        let mut frame = vec![0; 96 * 64];
+
+        let gameplay_before =
+            crate::gameplay::build_current_gameplay_board_frame_request(&controller, &app_state);
+        renderer.draw_frame_request(&mut frame, 96, 64, &gameplay_before, &preview_boards);
+
+        let level_select = FrameRequest::LevelSelect {
+            screen: LevelSelectScreenRequest {
+                page_start: 0,
+                resume_level: 0,
+            },
+        };
+        renderer.draw_frame_request(&mut frame, 96, 64, &level_select, &preview_boards);
+
+        controller.jump_to_level(1);
+        let gameplay_after = crate::gameplay::build_gameplay_frame_request_with_cause(
+            &controller,
+            &app_state,
+            GameplayPresentationCause::LevelTransition,
+        );
+        renderer.draw_frame_request(&mut frame, 96, 64, &gameplay_after, &preview_boards);
+
+        assert!(renderer.has_pending_visible_presentation(&app_state));
+        assert!(renderer.has_dismissible_level_transition(&app_state));
+    }
+
+    #[test]
+    fn gameplay_overlay_preserves_previous_scene_for_level_set_transition() {
+        let alpha_levels = vec!["#####\n#@$.#\n#####".to_string()];
+        let beta_levels = vec!["#######\n#@  $.#\n#######".to_string()];
+        let mut controller = GameplayController::new(alpha_levels.clone(), None);
+        let mut app_state = AppState::default();
+        let preview_boards = build_preview_boards(&alpha_levels);
+        let mut renderer = AppFrameRenderer::new();
+        let mut frame = vec![0; 96 * 64];
+
+        let gameplay_before =
+            crate::gameplay::build_current_gameplay_board_frame_request(&controller, &app_state);
+        renderer.draw_frame_request(&mut frame, 96, 64, &gameplay_before, &preview_boards);
+
+        let level_set_select = FrameRequest::LevelSetSelect {
+            screen: LevelSetSelectScreenRequest {
+                page_start: 0,
+                active_level_set: Some(0),
+                entries: vec![
+                    LevelSetListEntry {
+                        title: "Alpha".to_string(),
+                        completed_puzzle_count: 0,
+                        total_puzzle_count: 1,
+                    },
+                    LevelSetListEntry {
+                        title: "Beta".to_string(),
+                        completed_puzzle_count: 0,
+                        total_puzzle_count: 1,
+                    },
+                ],
+            },
+        };
+        renderer.draw_frame_request(&mut frame, 96, 64, &level_set_select, &preview_boards);
+
+        controller = GameplayController::new(beta_levels.clone(), None);
+        app_state.gameplay.active_level_set = Some(1);
+        let gameplay_after = crate::gameplay::build_gameplay_frame_request_with_cause(
+            &controller,
+            &app_state,
+            GameplayPresentationCause::LevelTransition,
+        );
+        renderer.draw_frame_request(&mut frame, 96, 64, &gameplay_after, &preview_boards);
+
+        assert!(renderer.has_pending_visible_presentation(&app_state));
+        assert!(renderer.has_dismissible_level_transition(&app_state));
     }
 }

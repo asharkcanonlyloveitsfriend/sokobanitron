@@ -20,6 +20,7 @@ pub struct AppUpdate {
     pub persistence: PersistenceUpdate,
     pub level_set_selected: Option<usize>,
     pub gameplay_effect: Option<GameplayTapEffect>,
+    pub fallback_gameplay_cause: Option<GameplayPresentationCause>,
     pub presentation_plan: Option<PresentationPlan>,
 }
 
@@ -106,8 +107,10 @@ pub fn apply_action(
                     update.presentation_plan = Some(gameplay_presentation_plan(
                         controller,
                         app_state,
-                        GameplayPresentationCause::CurrentState,
+                        GameplayPresentationCause::LevelTransition,
                     ));
+                    update.fallback_gameplay_cause =
+                        Some(GameplayPresentationCause::LevelTransition);
                 }
             }
         }
@@ -116,6 +119,7 @@ pub fn apply_action(
                 && level_set < app_state.gameplay.level_sets.len()
             {
                 update.level_set_selected = Some(level_set);
+                update.fallback_gameplay_cause = Some(GameplayPresentationCause::LevelTransition);
                 app_state.ui.overlay = None;
             }
         }
@@ -178,8 +182,9 @@ fn apply_advance_after_solved(
     update.presentation_plan = Some(gameplay_presentation_plan(
         controller,
         app_state,
-        GameplayPresentationCause::CurrentState,
+        GameplayPresentationCause::LevelTransition,
     ));
+    update.fallback_gameplay_cause = Some(GameplayPresentationCause::LevelTransition);
 }
 
 fn apply_board_tap(
@@ -476,6 +481,10 @@ mod tests {
         );
 
         assert_eq!(update.level_set_selected, Some(1));
+        assert_eq!(
+            update.fallback_gameplay_cause,
+            Some(GameplayPresentationCause::LevelTransition)
+        );
         assert_eq!(app_state.ui.overlay, None);
     }
 
@@ -493,11 +502,18 @@ mod tests {
 
         assert_eq!(controller.current_level(), 1);
         assert_eq!(app_state.ui.overlay, None);
+        assert_eq!(
+            update.fallback_gameplay_cause,
+            Some(GameplayPresentationCause::LevelTransition)
+        );
         let Some(plan) = update.presentation_plan else {
             panic!("selected level should render");
         };
         let render_update = single_gameplay_render_update(&plan);
-        assert_eq!(render_update.cause, GameplayPresentationCause::CurrentState);
+        assert_eq!(
+            render_update.cause,
+            GameplayPresentationCause::LevelTransition
+        );
         assert_eq!(render_update.scene.board, *controller.board());
         assert_eq!(render_update.scene.level_number, 2);
         assert_eq!(render_update.scene.mode, GameplayScreenMode::Normal);
@@ -517,6 +533,10 @@ mod tests {
         );
 
         assert_eq!(controller.current_level(), 1);
+        assert_eq!(
+            update.fallback_gameplay_cause,
+            Some(GameplayPresentationCause::LevelTransition)
+        );
         assert!(update.presentation_plan.is_some());
     }
 
@@ -555,6 +575,10 @@ mod tests {
 
         assert_eq!(controller.current_level(), 1);
         assert_eq!(update.persistence.resume_level_to_persist, Some(1));
+        assert_eq!(
+            update.fallback_gameplay_cause,
+            Some(GameplayPresentationCause::LevelTransition)
+        );
         let Some(plan) = update.presentation_plan else {
             panic!("expected gameplay render for next level");
         };
@@ -567,7 +591,10 @@ mod tests {
         else {
             panic!("expected one gameplay render step");
         };
-        assert_eq!(render_update.cause, GameplayPresentationCause::CurrentState);
+        assert_eq!(
+            render_update.cause,
+            GameplayPresentationCause::LevelTransition
+        );
         assert_eq!(render_update.scene.level_number, 2);
     }
 

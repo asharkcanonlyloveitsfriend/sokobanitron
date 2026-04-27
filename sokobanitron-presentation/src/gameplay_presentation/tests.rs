@@ -682,11 +682,12 @@ fn repeated_animated_update_replays_for_unchanged_scene() {
 }
 
 #[test]
-fn scene_change_drops_pending_animation() {
+fn limited_scene_change_drops_pending_animation() {
     let mut rejected_update = gameplay_scene(1);
     rejected_update.cause = GameplayPresentationCause::BoxMoveRejected;
     let moved_update = gameplay_scene(2);
-    let mut state = GameplayPresentationState::new();
+    let mut state =
+        GameplayPresentationState::with_animation_policy(GameplayAnimationPolicy::Limited);
     let start = Instant::now();
 
     state.replace_update_at(rejected_update, start);
@@ -695,4 +696,124 @@ fn scene_change_drops_pending_animation() {
 
     assert!(!state.has_pending_presentation());
     assert_eq!(state.current_scene(), Some(&moved_update.scene));
+}
+
+#[test]
+fn current_state_same_level_scene_refresh_does_not_start_level_transition() {
+    let previous = gameplay_scene(1);
+    let moved_update = gameplay_scene(1);
+    let mut state = GameplayPresentationState::new();
+    let start = Instant::now();
+
+    state.replace_update_at(previous, start);
+    let result = state.replace_update_at(moved_update.clone(), start + Duration::from_millis(100));
+
+    assert!(!result.has_pending_presentation);
+    assert!(!state.has_pending_presentation());
+    assert_eq!(state.current_scene(), Some(&moved_update.scene));
+}
+
+#[test]
+fn current_state_different_level_scene_refresh_does_not_start_level_transition() {
+    let previous = gameplay_scene(1);
+    let moved_update = gameplay_scene(2);
+    let mut state = GameplayPresentationState::new();
+    let start = Instant::now();
+
+    state.replace_update_at(previous, start);
+    let result = state.replace_update_at(moved_update.clone(), start + Duration::from_millis(100));
+
+    assert!(!result.has_pending_presentation);
+    assert!(!state.has_pending_presentation());
+    assert_eq!(state.current_scene(), Some(&moved_update.scene));
+}
+
+#[test]
+fn level_change_starts_level_transition() {
+    let previous = gameplay_scene(1);
+    let mut moved_update = gameplay_scene(2);
+    moved_update.cause = GameplayPresentationCause::LevelTransition;
+    let mut state = GameplayPresentationState::new();
+    let start = Instant::now();
+
+    state.replace_update_at(previous, start);
+    let result = state.replace_update_at(moved_update.clone(), start + Duration::from_millis(100));
+
+    assert_eq!(result.damage, GameplayDamage::Full);
+    assert!(result.has_pending_presentation);
+    assert!(state.has_pending_presentation());
+    assert_eq!(state.current_scene(), Some(&moved_update.scene));
+}
+
+#[test]
+fn non_level_transition_update_does_not_start_level_transition() {
+    let previous = gameplay_scene(1);
+    let mut moved_update = gameplay_scene(2);
+    moved_update.cause = GameplayPresentationCause::Restarted;
+    let mut state = GameplayPresentationState::new();
+    let start = Instant::now();
+
+    state.replace_update_at(previous, start);
+    let result = state.replace_update_at(moved_update.clone(), start + Duration::from_millis(100));
+
+    assert!(!result.has_pending_presentation);
+    assert!(!state.has_pending_presentation());
+    assert_eq!(state.current_scene(), Some(&moved_update.scene));
+}
+
+#[test]
+fn level_transition_frames_hide_new_level_entities_until_complete() {
+    let previous = update_from_board(
+        floor_board(5, 3, Vec::new(), None, None, false),
+        GameplayPresentationCause::CurrentState,
+    );
+    let mut current_with_entities = update_from_board(
+        floor_board(
+            5,
+            3,
+            vec![cell(2, 1)],
+            Some(cell(1, 1)),
+            Some(cell(2, 1)),
+            false,
+        ),
+        GameplayPresentationCause::LevelTransition,
+    );
+    let mut current_without_entities = update_from_board(
+        floor_board(5, 3, Vec::new(), None, None, false),
+        GameplayPresentationCause::LevelTransition,
+    );
+    current_with_entities.scene.level_number = 2;
+    current_without_entities.scene.level_number = 2;
+
+    let mut state_with_entities = GameplayPresentationState::new();
+    let mut state_without_entities = GameplayPresentationState::new();
+    let mut renderer_with_entities = Renderer::new();
+    let mut renderer_without_entities = Renderer::new();
+    let start = Instant::now();
+    state_with_entities.replace_update_at(previous.clone(), start);
+    state_without_entities.replace_update_at(previous, start);
+    state_with_entities.replace_update_at(current_with_entities, start);
+    state_without_entities.replace_update_at(current_without_entities, start);
+
+    for elapsed_ms in [0, 100, 200, 300] {
+        let mut frame_with_entities = vec![0; 96 * 64];
+        let mut frame_without_entities = vec![0; 96 * 64];
+        let now = start + Duration::from_millis(elapsed_ms);
+        state_with_entities.draw_at(
+            &mut renderer_with_entities,
+            &mut frame_with_entities,
+            96,
+            64,
+            now,
+        );
+        state_without_entities.draw_at(
+            &mut renderer_without_entities,
+            &mut frame_without_entities,
+            96,
+            64,
+            now,
+        );
+
+        assert_eq!(frame_with_entities, frame_without_entities);
+    }
 }

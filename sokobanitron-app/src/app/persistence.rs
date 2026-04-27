@@ -235,6 +235,7 @@ mod tests {
             changes: Default::default(),
             persistence: Default::default(),
             level_set_selected: Some(1),
+            fallback_gameplay_cause: None,
             presentation_plan: None,
             rendered_frame: false,
             render_work: Default::default(),

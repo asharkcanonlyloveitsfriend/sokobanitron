@@ -23,6 +23,8 @@ pub struct GameplayScreenRequest {
 pub enum GameplayPresentationCause {
     /// Render the current gameplay scene without attributing it to a specific gameplay action.
     CurrentState,
+    /// Render a gameplay scene reached by changing to a different level.
+    LevelTransition,
     SelectionChanged {
         selected_box: Option<BoardCell>,
     },

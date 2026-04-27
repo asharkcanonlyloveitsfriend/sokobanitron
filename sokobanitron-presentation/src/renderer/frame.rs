@@ -46,12 +46,12 @@ impl Renderer {
                 frame_damage_from_gameplay(&update.scene, &result.damage, width, height)
             }
             FrameRequest::GameplayMenu { screen } => {
-                gameplay_presentation.clear();
+                gameplay_presentation.clear_transient_presentation();
                 self.draw_gameplay_menu(frame, width, height, screen);
                 FrameDamage::Full
             }
             FrameRequest::LevelSelect { screen } => {
-                gameplay_presentation.clear();
+                gameplay_presentation.clear_transient_presentation();
                 self.draw_background_only(frame, width, height);
                 self.draw_level_select_menu_contents(
                     frame,
@@ -65,7 +65,7 @@ impl Renderer {
                 FrameDamage::Full
             }
             FrameRequest::LevelSetSelect { screen } => {
-                gameplay_presentation.clear();
+                gameplay_presentation.clear_transient_presentation();
                 self.draw_background_only(frame, width, height);
                 self.draw_level_set_select_menu_contents(frame, width, height, screen);
                 draw_controls_ui(frame, width, height, true, self.theme());
