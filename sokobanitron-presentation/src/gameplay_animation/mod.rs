@@ -594,11 +594,57 @@ mod tests {
         let _ = runner.advance_to_with_damage(now + Duration::from_millis(50));
         assert_eq!(
             runner.current_dirty_cells(),
-            vec![BoardCell::new(1, 0), BoardCell::new(2, 0)]
+            vec![
+                BoardCell::new(1, 0),
+                BoardCell::new(2, 0),
+                BoardCell::new(3, 0),
+                BoardCell::new(3, 1)
+            ]
         );
 
         let _ = runner.advance_to_with_damage(now + Duration::from_millis(100));
         assert_eq!(runner.current_dirty_cells(), Vec::<BoardCell>::new());
+    }
+
+    #[test]
+    fn full_box_move_flash_light_clear_damage_includes_path() {
+        let now = Instant::now();
+        let previous = update_with_state(
+            GameplayPresentationCause::CurrentState,
+            Some(BoardCell::new(1, 0)),
+            vec![false, false, true, false, false, false, false, false],
+        );
+        let update = update_with_state(
+            GameplayPresentationCause::BoxMoved {
+                path: vec![
+                    BoardCell::new(2, 0),
+                    BoardCell::new(3, 0),
+                    BoardCell::new(3, 1),
+                ],
+            },
+            Some(BoardCell::new(2, 0)),
+            vec![false, false, false, true, false, false, false, false],
+        );
+        let mut runner = GameplayAnimationRunner::default();
+
+        assert!(runner.enqueue_for_update(
+            Some(&previous.scene),
+            &update,
+            GameplayAnimationPolicy::Full,
+            now,
+        ));
+        let _ = runner.advance_to_with_damage(now + Duration::from_millis(50));
+
+        assert_eq!(
+            runner.clear_damage(),
+            vec![
+                BoardCell::new(1, 0),
+                BoardCell::new(2, 0),
+                BoardCell::new(3, 0),
+                BoardCell::new(3, 1)
+            ]
+        );
+        assert!(!runner.has_active_animation());
     }
 
     #[test]

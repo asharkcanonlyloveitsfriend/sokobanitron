@@ -106,6 +106,15 @@ impl FullBoxMoveAnimation {
             .unwrap_or_default()
     }
 
+    fn flash_dirty_cells_with_path(&self) -> Vec<BoardCell> {
+        let mut dirty = flash_dirty_cells(&self.flash_targets);
+        if let Some(path) = self.path.as_ref() {
+            dirty.extend(full_box_move_path_visible_cells(path, 0.0));
+            dirty = normalize_cells(dirty);
+        }
+        dirty
+    }
+
     fn cleanup_ticks_until_next_step(&self) -> Option<u32> {
         if self.cleanup_progress_segments >= self.total_segments as f32 {
             None
@@ -145,15 +154,9 @@ impl GameplayAnimation for FullBoxMoveAnimation {
 
     fn dirty_cells(&self) -> Vec<BoardCell> {
         match self.phase {
-            FullBoxMovePhase::FlashDark => {
-                let mut dirty = flash_dirty_cells(&self.flash_targets);
-                if let Some(path) = self.path.as_ref() {
-                    dirty.extend(full_box_move_path_visible_cells(path, 0.0));
-                    dirty = normalize_cells(dirty);
-                }
-                dirty
+            FullBoxMovePhase::FlashDark | FullBoxMovePhase::FlashLight => {
+                self.flash_dirty_cells_with_path()
             }
-            FullBoxMovePhase::FlashLight => flash_dirty_cells(&self.flash_targets),
             FullBoxMovePhase::Cleanup => self.cleanup_dirty_cells(),
         }
     }

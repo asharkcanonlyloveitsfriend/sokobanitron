@@ -453,6 +453,97 @@ fn player_move_entity_flash_final_damage_restores_current_player_cell() {
 }
 
 #[test]
+fn interrupting_box_move_flash_light_clears_path_pixels() {
+    const WIDTH: u32 = 160;
+    const HEIGHT: u32 = 160;
+    let previous_board = floor_board(4, 2, vec![cell(2, 0)], Some(cell(1, 0)), None, false);
+    let current_board = floor_board(4, 2, vec![cell(3, 0)], Some(cell(2, 0)), None, false);
+    let interrupted_board = floor_board(
+        4,
+        2,
+        vec![cell(3, 0)],
+        Some(cell(2, 0)),
+        Some(cell(3, 0)),
+        false,
+    );
+    let previous = GameplayPresentationUpdate {
+        scene: GameplayScreenRequest {
+            viewport: fit_board_viewport_for_controls(WIDTH, HEIGHT, &previous_board),
+            board: previous_board,
+            level_number: 1,
+            mode: GameplayScreenMode::Normal,
+        },
+        cause: GameplayPresentationCause::CurrentState,
+    };
+    let current = GameplayPresentationUpdate {
+        scene: GameplayScreenRequest {
+            viewport: fit_board_viewport_for_controls(WIDTH, HEIGHT, &current_board),
+            board: current_board,
+            level_number: 1,
+            mode: GameplayScreenMode::Normal,
+        },
+        cause: GameplayPresentationCause::BoxMoved {
+            path: vec![cell(2, 0), cell(3, 0), cell(3, 1)],
+        },
+    };
+    let interrupted = GameplayPresentationUpdate {
+        scene: GameplayScreenRequest {
+            viewport: fit_board_viewport_for_controls(WIDTH, HEIGHT, &interrupted_board),
+            board: interrupted_board,
+            level_number: 1,
+            mode: GameplayScreenMode::Normal,
+        },
+        cause: GameplayPresentationCause::SelectionChanged {
+            selected_box: Some(cell(3, 0)),
+        },
+    };
+    let start = Instant::now();
+    let mut state = GameplayPresentationState::new();
+    let mut partial_renderer = Renderer::new();
+    let mut full_renderer = Renderer::new();
+    let mut partial_frame = vec![0; (WIDTH * HEIGHT) as usize];
+    let mut full_frame = vec![0; (WIDTH * HEIGHT) as usize];
+
+    state.replace_update_at(previous, start);
+    state.draw_at(
+        &mut partial_renderer,
+        &mut partial_frame,
+        WIDTH,
+        HEIGHT,
+        start,
+    );
+    let result = state.replace_update_at(current, start);
+    state.draw_damage(
+        &mut partial_renderer,
+        &mut partial_frame,
+        WIDTH,
+        HEIGHT,
+        &result.damage,
+    );
+    let result = state.advance_presentation_with_damage_at(start + Duration::from_millis(50));
+    state.draw_damage(
+        &mut partial_renderer,
+        &mut partial_frame,
+        WIDTH,
+        HEIGHT,
+        &result.damage,
+    );
+
+    let result = state.replace_update_at(interrupted.clone(), start + Duration::from_millis(75));
+    state.draw_damage(
+        &mut partial_renderer,
+        &mut partial_frame,
+        WIDTH,
+        HEIGHT,
+        &result.damage,
+    );
+    full_renderer.draw_gameplay_scene(&mut full_frame, WIDTH, HEIGHT, &interrupted.scene);
+
+    assert_eq!(partial_frame, full_frame);
+    assert!(!state.has_pending_presentation());
+}
+
+#[test]
 fn box_move_entity_flash_damage_includes_hidden_current_player_cell() {
     let previous = update_from_board(
         floor_board(5, 3, vec![cell(2, 1)], Some(cell(1, 1)), None, false),
