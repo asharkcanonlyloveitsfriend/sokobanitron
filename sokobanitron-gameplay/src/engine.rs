@@ -1,5 +1,5 @@
 use crate::board_cell::BoardCell;
-use crate::session::GameplayMoveDirection;
+use crate::session::{GameplayMode, GameplayMoveDirection};
 use sokobanitron_core::pathfinder::{BoxPathfinder, PlayerPathfinder, Position as GridPosition};
 use std::collections::HashSet;
 
@@ -14,6 +14,7 @@ pub(crate) struct GameEngine {
     player: GridPosition,
     boxes: HashSet<GridPosition>,
     box_move_history: Vec<Vec<GridPosition>>,
+    mode: GameplayMode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,7 +26,7 @@ pub(crate) enum StepOutcome {
 }
 
 impl GameEngine {
-    pub(crate) fn from_ascii(ascii: &str) -> Option<Self> {
+    pub(crate) fn from_ascii_with_mode(ascii: &str, mode: GameplayMode) -> Option<Self> {
         let lines = ascii.lines().collect::<Vec<_>>();
         let height = lines.len();
         let width = lines.iter().map(|line| line.len()).max()?;
@@ -82,6 +83,7 @@ impl GameEngine {
             player: initial_player,
             boxes,
             box_move_history: Vec::new(),
+            mode,
         })
     }
 
@@ -243,6 +245,9 @@ impl GameEngine {
     }
 
     fn push_box_into_void_position(&mut self, from: GridPosition, to: GridPosition) -> bool {
+        if self.mode == GameplayMode::Strict {
+            return false;
+        }
         if !self.boxes.contains(&from) {
             return false;
         }
@@ -339,7 +344,7 @@ fn offset_position(
 #[cfg(test)]
 mod tests {
     use super::GameEngine;
-    use crate::BoardCell;
+    use crate::{BoardCell, GameplayMode};
 
     fn cell(x: u32, y: u32) -> BoardCell {
         BoardCell::new(x, y)
@@ -348,7 +353,8 @@ mod tests {
     #[test]
     fn push_box_into_void_then_undo_restores_box() {
         let ascii = "#####\n# @ #\n# $ #\n#####";
-        let mut engine = GameEngine::from_ascii(ascii).expect("expected valid level");
+        let mut engine = GameEngine::from_ascii_with_mode(ascii, GameplayMode::Normal)
+            .expect("expected valid level");
 
         let pushed = engine.push_box_into_void(cell(2, 2), cell(2, 3));
         assert!(pushed);
@@ -369,7 +375,8 @@ mod tests {
     #[test]
     fn move_box_to_then_undo_restores_positions() {
         let ascii = "#####\n# @ #\n# $ #\n#   #\n#####";
-        let mut engine = GameEngine::from_ascii(ascii).expect("expected valid level");
+        let mut engine = GameEngine::from_ascii_with_mode(ascii, GameplayMode::Normal)
+            .expect("expected valid level");
 
         let path = engine
             .move_box_to(cell(2, 2), cell(2, 3))
@@ -388,7 +395,8 @@ mod tests {
     #[test]
     fn can_undo_is_true_after_level_is_solved_when_history_exists() {
         let ascii = "#####\n# @ #\n# $.#\n#####";
-        let mut engine = GameEngine::from_ascii(ascii).expect("expected valid level");
+        let mut engine = GameEngine::from_ascii_with_mode(ascii, GameplayMode::Normal)
+            .expect("expected valid level");
 
         assert!(
             engine.move_box_to(cell(2, 2), cell(3, 2)).is_some(),
@@ -408,7 +416,8 @@ mod tests {
     #[test]
     fn last_box_move_destination_tracks_latest_remaining_history() {
         let ascii = "########\n#@ $   #\n#  $ . #\n########";
-        let mut engine = GameEngine::from_ascii(ascii).expect("expected valid level");
+        let mut engine = GameEngine::from_ascii_with_mode(ascii, GameplayMode::Normal)
+            .expect("expected valid level");
 
         let first_path = engine
             .move_box_to(cell(3, 1), cell(4, 1))
@@ -436,7 +445,8 @@ mod tests {
     #[test]
     fn undo_can_be_applied_until_history_is_empty() {
         let ascii = "########\n#@ $   #\n#  $ . #\n########";
-        let mut engine = GameEngine::from_ascii(ascii).expect("expected valid level");
+        let mut engine = GameEngine::from_ascii_with_mode(ascii, GameplayMode::Normal)
+            .expect("expected valid level");
 
         let first_path = engine
             .move_box_to(cell(3, 1), cell(4, 1))

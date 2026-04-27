@@ -19,6 +19,13 @@ pub enum GameplayMoveDirection {
     Right,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum GameplayMode {
+    #[default]
+    Normal,
+    Strict,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GameplayTapEffect {
     None,
@@ -46,6 +53,7 @@ pub(crate) struct GameplaySessionTapOutcome {
 
 pub struct GameplaySession {
     level_ascii: String,
+    mode: GameplayMode,
     presenter: GameBoardPresenter,
     engine: GameEngine,
     selected_box: Option<BoardCell>,
@@ -54,9 +62,14 @@ pub struct GameplaySession {
 
 impl GameplaySession {
     pub fn from_level_ascii(level_ascii: String) -> Self {
+        Self::from_level_ascii_with_mode(level_ascii, GameplayMode::Normal)
+    }
+
+    pub fn from_level_ascii_with_mode(level_ascii: String, mode: GameplayMode) -> Self {
         let parsed = parse_level_ascii(&level_ascii);
         let presenter = GameBoardPresenter::new(parsed);
-        let engine = GameEngine::from_ascii(&level_ascii).expect("level ascii must parse");
+        let engine =
+            GameEngine::from_ascii_with_mode(&level_ascii, mode).expect("level ascii must parse");
 
         let player = Some(engine.player());
         let box_positions: HashSet<BoardCell> = engine.boxes().collect();
@@ -64,6 +77,7 @@ impl GameplaySession {
 
         Self {
             level_ascii,
+            mode,
             presenter,
             engine,
             selected_box: None,
@@ -203,7 +217,8 @@ impl GameplaySession {
     }
 
     pub fn restart(&mut self) {
-        self.engine = GameEngine::from_ascii(&self.level_ascii).expect("level ascii must parse");
+        self.engine = GameEngine::from_ascii_with_mode(&self.level_ascii, self.mode)
+            .expect("level ascii must parse");
         self.selected_box = None;
         self.sync_board();
     }

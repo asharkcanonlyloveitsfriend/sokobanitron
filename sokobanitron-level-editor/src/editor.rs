@@ -376,7 +376,7 @@ impl LevelEditor {
             origin_x: bounds.min_x,
             origin_y: bounds.min_y,
             initial_boxes,
-            controller: GameplayController::new(vec![level_ascii], None),
+            controller: GameplayController::new_strict(vec![level_ascii], None),
         })
     }
 
@@ -923,6 +923,29 @@ mod tests {
         editor
     }
 
+    fn setup_play_editor_with_void_push() -> LevelEditor {
+        let mut editor = LevelEditor::new();
+        clear_world(&mut editor);
+        paint_floor(&mut editor, 0, 0);
+        paint_floor(&mut editor, 1, 0);
+        paint_goal_with_box(&mut editor, 3, 0);
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Move));
+        editor.apply_command(EditorCommand::SelectBox {
+            cell_x: 3,
+            cell_y: 0,
+        });
+        editor.apply_command(EditorCommand::MoveSelectedBoxTo {
+            cell_x: 1,
+            cell_y: 0,
+        });
+        editor.apply_command(EditorCommand::PositionPlayer {
+            cell_x: 0,
+            cell_y: 0,
+        });
+        editor.apply_command(EditorCommand::ToggleMode);
+        editor
+    }
+
     fn setup_validated_editor() -> LevelEditor {
         let mut editor = setup_simple_playable_editor();
         editor.apply_command(EditorCommand::ToggleMode);
@@ -1030,6 +1053,28 @@ mod tests {
         assert!(!editor.view_has_box(1, 0));
         assert!(editor.view_has_box(2, 0));
         assert_eq!(editor.view_player(), Some((1, 0)));
+    }
+
+    #[test]
+    fn play_mode_rejects_pushing_box_into_void() {
+        let mut editor = setup_play_editor_with_void_push();
+
+        let select = editor.apply_command(EditorCommand::PlayCell {
+            cell_x: 1,
+            cell_y: 0,
+        });
+        let reject = editor.apply_command(EditorCommand::PlayCell {
+            cell_x: 2,
+            cell_y: 0,
+        });
+
+        assert!(select.world_changed);
+        assert!(reject.world_changed);
+        assert!(!reject.play_solved);
+        assert_eq!(editor.view_selected_box(), None);
+        assert_eq!(editor.view_player(), Some((0, 0)));
+        assert!(editor.view_has_box(1, 0));
+        assert!(!editor.view_has_box(2, 0));
     }
 
     #[test]

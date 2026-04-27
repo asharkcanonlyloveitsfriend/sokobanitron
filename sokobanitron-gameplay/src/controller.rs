@@ -1,7 +1,7 @@
 use crate::board_cell::BoardCell;
 use crate::presenter::BoardView;
 use crate::session::{
-    GameplayKey, GameplayMoveDirection, GameplaySession, GameplaySessionTapOutcome,
+    GameplayKey, GameplayMode, GameplayMoveDirection, GameplaySession, GameplaySessionTapOutcome,
     GameplayTapEffect, GameplayTapEvent,
 };
 
@@ -23,6 +23,7 @@ pub struct GameplayController {
     current_level: usize,
     resume_level: usize,
     resume_level_persisted: bool,
+    mode: GameplayMode,
     session: GameplaySession,
 }
 
@@ -32,10 +33,29 @@ impl GameplayController {
         Self::new_at_level(levels, start_level, resume_level)
     }
 
+    pub fn new_strict(levels: Vec<String>, resume_level: Option<usize>) -> Self {
+        let start_level = resume_level.unwrap_or(0);
+        Self::new_at_level_with_mode(levels, start_level, resume_level, GameplayMode::Strict)
+    }
+
     pub fn new_at_level(
         levels: Vec<String>,
         start_level: usize,
         persisted_resume_level: Option<usize>,
+    ) -> Self {
+        Self::new_at_level_with_mode(
+            levels,
+            start_level,
+            persisted_resume_level,
+            GameplayMode::Normal,
+        )
+    }
+
+    fn new_at_level_with_mode(
+        levels: Vec<String>,
+        start_level: usize,
+        persisted_resume_level: Option<usize>,
+        mode: GameplayMode,
     ) -> Self {
         assert!(!levels.is_empty(), "levels must not be empty");
         let current_level = Some(start_level)
@@ -45,12 +65,20 @@ impl GameplayController {
         let resume_level = persisted_resume_level
             .filter(|idx| *idx < levels.len())
             .unwrap_or(current_level);
-        let session = GameplaySession::from_level_ascii(levels[current_level].clone());
+        let session = match mode {
+            GameplayMode::Normal => {
+                GameplaySession::from_level_ascii(levels[current_level].clone())
+            }
+            GameplayMode::Strict => {
+                GameplaySession::from_level_ascii_with_mode(levels[current_level].clone(), mode)
+            }
+        };
         Self {
             levels,
             current_level,
             resume_level,
             resume_level_persisted,
+            mode,
             session,
         }
     }
@@ -94,7 +122,10 @@ impl GameplayController {
         }
         let clamped = index.min(self.levels.len().saturating_sub(1));
         self.current_level = clamped;
-        self.session = GameplaySession::from_level_ascii(self.levels[self.current_level].clone());
+        self.session = GameplaySession::from_level_ascii_with_mode(
+            self.levels[self.current_level].clone(),
+            self.mode,
+        );
         GameplayControllerChanges {
             level_changed: Some(self.current_level),
             resume_level_to_persist: None,
@@ -216,6 +247,28 @@ mod tests {
     }
 
     #[test]
+    fn strict_mode_rejects_selected_box_move_into_void() {
+        let level = "#####\n#@$##\n#####".to_string();
+        let mut controller = GameplayController::new_strict(vec![level], None);
+
+        let select = controller.click_cell_with_outcome(cell(2, 1));
+        assert_eq!(
+            select.effect,
+            GameplayTapEffect::SelectionChanged {
+                selected_box: Some(cell(2, 1))
+            }
+        );
+
+        let reject = controller.click_cell_with_outcome(cell(3, 1));
+
+        assert_eq!(reject.effect, GameplayTapEffect::BoxMoveRejected);
+        assert_eq!(reject.event, GameplayTapEvent::None);
+        assert!(controller.board().has_box(cell(2, 1)));
+        assert!(!controller.board().has_box(cell(3, 1)));
+        assert_eq!(controller.board().player(), Some(cell(1, 1)));
+    }
+
+    #[test]
     fn first_meaningful_tap_updates_resume_level_without_emitting_event() {
         let level = "#######\n#@ $. #\n#######".to_string();
         let mut controller = GameplayController::new(vec![level], None);
@@ -278,5 +331,19 @@ mod tests {
         );
         assert_eq!(controller.board().player(), Some(cell(3, 1)));
         assert!(controller.board().has_box(cell(4, 1)));
+    }
+
+    #[test]
+    fn strict_mode_rejects_directional_push_into_void() {
+        let level = "#####\n#@$##\n#####".to_string();
+        let mut controller = GameplayController::new_strict(vec![level], None);
+
+        let outcome = controller.move_direction_with_outcome(GameplayMoveDirection::Right);
+
+        assert_eq!(outcome.effect, GameplayTapEffect::None);
+        assert_eq!(outcome.event, GameplayTapEvent::None);
+        assert_eq!(controller.board().player(), Some(cell(1, 1)));
+        assert!(controller.board().has_box(cell(2, 1)));
+        assert!(!controller.board().has_box(cell(3, 1)));
     }
 }
