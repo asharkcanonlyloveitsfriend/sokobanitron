@@ -4,7 +4,7 @@ mod input;
 mod paint_mode;
 mod view;
 
-pub use frame::build_current_editor_frame_request;
+pub use frame::{build_current_editor_frame_request, build_sleep_editor_frame_request};
 pub use input::{
     EditorUiAction, editor_cursor_moved, editor_mouse_pressed, editor_mouse_released, editor_touch,
 };

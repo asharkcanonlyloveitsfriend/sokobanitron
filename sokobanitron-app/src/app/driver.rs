@@ -12,8 +12,9 @@ use super::reducer::PersistenceUpdate;
 use super::reducer::apply_action;
 use super::state::{AppInteractionMode, AppScreen, AppState};
 use crate::editor::{
-    EditorUiAction, build_current_editor_frame_request, editor_cursor_moved, editor_mouse_pressed,
-    editor_mouse_released, editor_touch, reset_editor_view_state, resize_editor_surface,
+    EditorUiAction, build_current_editor_frame_request, build_sleep_editor_frame_request,
+    editor_cursor_moved, editor_mouse_pressed, editor_mouse_released, editor_touch,
+    reset_editor_interaction_state, reset_editor_view_state, resize_editor_surface,
     set_editor_double_tap_window, set_editor_touch_slop,
 };
 use crate::gameplay::{
@@ -285,6 +286,20 @@ impl SharedAppRuntime {
         build_sleep_gameplay_frame_request(&self.controller, &self.app_state)
     }
 
+    fn sleep_current_frame_request(&self) -> FrameRequest {
+        match self.app_state.active_screen() {
+            AppScreen::Gameplay => self.sleep_gameplay_frame_request(),
+            AppScreen::Editor => build_sleep_editor_frame_request(&self.app_state, &self.editor),
+        }
+    }
+
+    fn prepare_state_for_sleep_frame(&mut self) {
+        self.app_state.ui.overlay = None;
+        if self.app_state.is_editor_screen() {
+            reset_editor_interaction_state(&mut self.app_state);
+        }
+    }
+
     fn draw_frame_request(&mut self, request: &FrameRequest) -> FrameDamage {
         self.frame_renderer.draw_frame_request(
             &mut self.gray_frame,
@@ -367,12 +382,13 @@ impl SharedAppRuntime {
         self.render_full_frame_request(&request, presenter)
     }
 
-    pub fn render_sleep_gameplay_frame<P: AppFramePresenter>(
+    pub fn render_sleep_current_frame<P: AppFramePresenter>(
         &mut self,
         presenter: &mut P,
     ) -> Result<(), P::Error> {
-        let request = self.sleep_gameplay_frame_request();
-        self.render_frame_request(&request, presenter)
+        self.prepare_state_for_sleep_frame();
+        let request = self.sleep_current_frame_request();
+        self.render_full_frame_request(&request, presenter)
     }
 
     fn render_pending_visible_presentation<P: AppFramePresenter>(
@@ -1206,6 +1222,70 @@ mod tests {
         assert_eq!(runtime.surface_width(), 64);
         assert_eq!(runtime.surface_height(), 32);
         assert_eq!(runtime.gray_frame().len(), 64 * 32);
+    }
+
+    #[test]
+    fn sleep_current_frame_closes_gameplay_overlay_and_marks_player_sleeping() {
+        let mut runtime = SharedAppRuntime::new(
+            runtime_initial_levels(vec!["###\n#@#\n###".to_string()]),
+            128,
+            96,
+            SharedAppRuntimeConfig::default(),
+        );
+        runtime.app_state.ui.overlay = Some(AppOverlay::GameplayMenu);
+        let mut presenter = RecordingPresenter::default();
+
+        runtime
+            .render_sleep_current_frame(&mut presenter)
+            .expect("sleep render");
+
+        assert_eq!(runtime.app_state.ui.overlay, None);
+        assert_eq!(presenter.frames.len(), 1);
+        assert_eq!(presenter.frames[0].0, FrameDamage::Full);
+        let FrameRequest::Gameplay { update } = runtime.sleep_current_frame_request() else {
+            panic!("expected gameplay sleep frame");
+        };
+        assert!(update.scene.sleeping_player);
+        assert_eq!(
+            update.scene.mode,
+            presentation::screen_requests::GameplayScreenMode::Sleep
+        );
+    }
+
+    #[test]
+    fn sleep_current_frame_closes_editor_overlay_and_marks_player_sleeping() {
+        let mut runtime = SharedAppRuntime::new(
+            runtime_initial_levels(vec!["###\n#@#\n###".to_string()]),
+            128,
+            96,
+            SharedAppRuntimeConfig::default(),
+        );
+        runtime.app_state.ui.screen = AppScreen::Editor;
+        runtime.app_state.ui.overlay = Some(AppOverlay::EditorModeMenu);
+        runtime
+            .editor
+            .apply_command(EditorCommand::SetMode(EditorMode::Move));
+        runtime.editor.apply_command(EditorCommand::PositionPlayer {
+            cell_x: 0,
+            cell_y: 0,
+        });
+        let mut presenter = RecordingPresenter::default();
+
+        runtime
+            .render_sleep_current_frame(&mut presenter)
+            .expect("sleep render");
+
+        assert_eq!(runtime.app_state.ui.overlay, None);
+        assert_eq!(presenter.frames.len(), 1);
+        assert_eq!(presenter.frames[0].0, FrameDamage::Full);
+        let FrameRequest::Editor { screen } = runtime.sleep_current_frame_request() else {
+            panic!("expected editor sleep frame");
+        };
+        assert_eq!(
+            screen.mode_indicator,
+            presentation::EditorModeIndicator::Move
+        );
+        assert!(screen.sleeping_player);
     }
 
     #[test]

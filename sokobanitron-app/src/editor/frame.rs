@@ -31,18 +31,31 @@ pub fn build_current_editor_frame_request(
     } else if app_state.is_editor_mode_menu_open() {
         FrameRequest::EditorModeMenu {
             screen: EditorModeMenuScreenRequest {
-                editor: build_editor_screen_request(app_state, editor),
+                editor: build_editor_screen_request(app_state, editor, false),
                 can_enter_play: editor.can_enter_play(),
             },
         }
     } else {
         FrameRequest::Editor {
-            screen: build_editor_screen_request(app_state, editor),
+            screen: build_editor_screen_request(app_state, editor, false),
         }
     }
 }
 
-fn build_editor_screen_request(app_state: &AppState, editor: &LevelEditor) -> EditorScreenRequest {
+pub fn build_sleep_editor_frame_request(
+    app_state: &AppState,
+    editor: &LevelEditor,
+) -> FrameRequest {
+    FrameRequest::Editor {
+        screen: build_editor_screen_request(app_state, editor, true),
+    }
+}
+
+fn build_editor_screen_request(
+    app_state: &AppState,
+    editor: &LevelEditor,
+    sleeping_player: bool,
+) -> EditorScreenRequest {
     let snapshot = editor.snapshot();
     let visible = build_visible_window(&app_state.editor, editor);
     EditorScreenRequest {
@@ -61,6 +74,7 @@ fn build_editor_screen_request(app_state: &AppState, editor: &LevelEditor) -> Ed
         can_zoom_in: !app_state.supports_multi_touch
             && matches!(snapshot.mode, EditorMode::Draw)
             && can_zoom_in(&app_state.editor, editor),
+        sleeping_player,
     }
 }
 
@@ -107,7 +121,7 @@ fn build_count_overlays(
 
 #[cfg(test)]
 mod tests {
-    use super::build_current_editor_frame_request;
+    use super::{build_current_editor_frame_request, build_sleep_editor_frame_request};
     use crate::app::presentation::FrameRequest;
     use crate::app::state::{AppOverlay, AppScreen, AppState};
     use presentation::screen_requests::EditorModeIndicator;
@@ -199,6 +213,27 @@ mod tests {
 
         assert_eq!(screen.editor.mode_indicator, EditorModeIndicator::Draw);
         assert!(!screen.can_enter_play);
+    }
+
+    #[test]
+    fn sleep_editor_frame_returns_plain_editor_frame_and_marks_player_sleeping() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        app_state.ui.overlay = Some(AppOverlay::EditorModeMenu);
+        let mut editor = LevelEditor::new();
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Move));
+        editor.apply_command(EditorCommand::PositionPlayer {
+            cell_x: 0,
+            cell_y: 0,
+        });
+
+        let FrameRequest::Editor { screen } = build_sleep_editor_frame_request(&app_state, &editor)
+        else {
+            panic!("expected editor frame");
+        };
+
+        assert_eq!(screen.mode_indicator, EditorModeIndicator::Move);
+        assert!(screen.sleeping_player);
     }
 
     #[test]

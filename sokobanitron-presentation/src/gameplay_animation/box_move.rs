@@ -407,6 +407,7 @@ mod tests {
             board: board.clone(),
             level_number: 1,
             mode: GameplayScreenMode::Normal,
+            sleeping_player: false,
         };
         let current_board = BoardView::new(
             4,
@@ -422,6 +423,7 @@ mod tests {
             board: current_board,
             level_number: 1,
             mode: GameplayScreenMode::Normal,
+            sleeping_player: false,
         };
         let mut animation =
             FullBoxMoveAnimation::new(&previous_scene, &current_scene, path.clone()).unwrap();

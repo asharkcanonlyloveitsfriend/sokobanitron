@@ -48,7 +48,6 @@ pub(super) fn gameplay_damage(
     if previous.level_number != current.level_number {
         return GameplayDamage::Full;
     }
-
     let mut dirty = Vec::new();
 
     if previous.board.player() != current.board.player() {
@@ -143,6 +142,9 @@ fn gameplay_cell_damage_compatible(
     // This compatibility check is intentionally about render structure only. Pass-one policy
     // fallbacks like level changes sit outside it.
     if previous.mode != GameplayScreenMode::Normal || current.mode != GameplayScreenMode::Normal {
+        return false;
+    }
+    if previous.sleeping_player != current.sleeping_player {
         return false;
     }
     if previous.viewport != current.viewport {

@@ -394,6 +394,7 @@ mod tests {
                 board,
                 level_number: 1,
                 mode: GameplayScreenMode::Normal,
+                sleeping_player: false,
             },
             cause,
         }

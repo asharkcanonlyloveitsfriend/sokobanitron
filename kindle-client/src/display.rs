@@ -19,7 +19,7 @@ impl KindleApp {
         let mut presenter = KindleFramePresenter {
             display: &mut self.display,
         };
-        self.runtime.render_sleep_gameplay_frame(&mut presenter)
+        self.runtime.render_sleep_current_frame(&mut presenter)
     }
 
     pub(crate) fn handle_pointer_input_and_render(

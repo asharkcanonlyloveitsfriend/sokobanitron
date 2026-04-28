@@ -14,6 +14,7 @@ pub struct GameplayScreenRequest {
     pub viewport: BoardViewport,
     pub level_number: usize,
     pub mode: GameplayScreenMode,
+    pub sleeping_player: bool,
 }
 
 /// Records the primary reason this gameplay presentation update was produced.
@@ -97,6 +98,7 @@ pub struct EditorScreenRequest {
     pub puzzle_solved: bool,
     pub can_zoom_out: bool,
     pub can_zoom_in: bool,
+    pub sleeping_player: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

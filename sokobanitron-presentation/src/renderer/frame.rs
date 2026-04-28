@@ -119,6 +119,9 @@ impl Renderer {
             FrameRequest::Gameplay { update } => {
                 editor_presentation.clear();
                 let _ = gameplay_presentation.take_gameplay_frame_obscured_by_overlay();
+                if update.scene.sleeping_player {
+                    gameplay_presentation.clear_transient_presentation();
+                }
                 gameplay_presentation.replace_update(update.clone());
                 gameplay_presentation.draw(self, frame, width, height);
                 FrameDamage::Full

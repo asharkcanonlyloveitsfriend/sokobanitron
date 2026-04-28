@@ -1,14 +1,16 @@
 use crate::assets::{UI_ICON_SIZE, UiIcon, draw_ui_icon_scaled_in_rect};
 use crate::layout::{
-    ScreenRect, editor_bottom_left_button_rect, editor_bottom_right_button_rect,
-    editor_mode_button_rect, editor_mode_menu_damage_rect, editor_mode_menu_option_rects,
-    editor_mode_menu_rect, overlay_secondary_action_button_rect,
+    ScreenRect, UI_BUTTON_MARGIN, UI_BUTTON_SIZE, editor_bottom_left_button_rect,
+    editor_bottom_right_button_rect, editor_mode_button_rect, editor_mode_menu_damage_rect,
+    editor_mode_menu_option_rects, editor_mode_menu_rect, overlay_secondary_action_button_rect,
 };
 use crate::screen_requests::{
     EditorMenuScreenRequest, EditorModeIndicator, EditorModeMenuScreenRequest, EditorScreenRequest,
 };
 
-use super::chrome::{draw_overlay_primary_action_button_label, draw_top_menu_toggle};
+use super::chrome::{
+    draw_overlay_primary_action_button_label, draw_sleep_label, draw_top_menu_toggle,
+};
 use super::pixel_ui::{
     PIXEL_FONT_HEIGHT, draw_centered_text_in_rect, draw_text, measure_text_width,
 };
@@ -58,7 +60,11 @@ impl Renderer {
             composition,
         );
         self.draw_editor_overlays_on_frame(frame, width, height, request);
-        self.draw_editor_chrome_on_frame(frame, width, height, request);
+        if request.sleeping_player {
+            self.draw_editor_sleep_chrome_on_frame(frame, width, height);
+        } else {
+            self.draw_editor_chrome_on_frame(frame, width, height, request);
+        }
     }
 
     pub(crate) fn draw_editor_screen_cells(
@@ -176,18 +182,31 @@ impl Renderer {
         );
         draw_top_menu_toggle(frame, width, height, false, self.theme);
     }
+
+    fn draw_editor_sleep_chrome_on_frame(&mut self, frame: &mut [u8], width: u32, height: u32) {
+        let rect = ScreenRect {
+            x: 0,
+            y: 0,
+            w: width,
+            h: UI_BUTTON_MARGIN + UI_BUTTON_SIZE,
+        };
+        self.restore_background_rect(frame, width, height, rect);
+        draw_sleep_label(frame, width, height, rect, self.theme);
+    }
 }
 
 pub(crate) fn editor_board_scene_composition(
     request: &EditorScreenRequest,
 ) -> BoardSceneComposition {
-    if matches!(request.mode_indicator, EditorModeIndicator::Draw) {
+    let mut composition = if matches!(request.mode_indicator, EditorModeIndicator::Draw) {
         BoardSceneComposition::editor_draw_scene()
     } else if request.puzzle_solved {
         BoardSceneComposition::editor_solved_play_scene()
     } else {
         BoardSceneComposition::static_scene()
-    }
+    };
+    composition.player.sleeping = request.sleeping_player;
+    composition
 }
 
 fn draw_editor_controls(
@@ -495,6 +514,7 @@ mod tests {
             puzzle_solved: false,
             can_zoom_out: false,
             can_zoom_in: false,
+            sleeping_player: false,
         };
         let mut renderer = Renderer::new();
         let mut frame = vec![0; 64 * 64];
@@ -516,6 +536,7 @@ mod tests {
             puzzle_solved: true,
             can_zoom_out: false,
             can_zoom_in: false,
+            sleeping_player: false,
         };
         let mut renderer = Renderer::new();
         let mut frame = vec![0; 64 * 64];
@@ -524,6 +545,28 @@ mod tests {
 
         assert!(renderer.solved_box_bitmap_cache.is_empty());
         assert!(!renderer.squint_player_bitmap_cache.is_empty());
+    }
+
+    #[test]
+    fn sleeping_editor_render_uses_sleeping_player_visuals() {
+        let board = solved_board();
+        let request = EditorScreenRequest {
+            viewport: fit_board_viewport_for_controls(64, 64, &board),
+            board,
+            move_counts: Vec::new(),
+            mode_indicator: EditorModeIndicator::Move,
+            puzzle_solved: false,
+            can_zoom_out: false,
+            can_zoom_in: false,
+            sleeping_player: true,
+        };
+        let mut renderer = Renderer::new();
+        let mut frame = vec![0; 64 * 64];
+
+        renderer.draw_editor_screen(&mut frame, 64, 64, &request);
+
+        assert!(!renderer.sleeping_player_bitmap_cache.is_empty());
+        assert!(renderer.player_bitmap_cache.is_empty());
     }
 
     #[test]
@@ -537,6 +580,7 @@ mod tests {
             puzzle_solved: false,
             can_zoom_out: false,
             can_zoom_in: false,
+            sleeping_player: false,
         };
         let request = EditorModeMenuScreenRequest {
             editor,

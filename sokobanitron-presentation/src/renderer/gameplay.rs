@@ -31,7 +31,7 @@ impl GameplaySceneComposition {
         Self {
             board: BoardSceneComposition::gameplay_snapshot(
                 entity_visual_style,
-                matches!(request.mode, GameplayScreenMode::Sleep),
+                request.sleeping_player || matches!(request.mode, GameplayScreenMode::Sleep),
             ),
             chrome: match request.mode {
                 GameplayScreenMode::Normal => GameplayChromePhase::GameplayControls {

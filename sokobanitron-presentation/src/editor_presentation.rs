@@ -161,6 +161,9 @@ fn editor_damage(
     if !editor_cell_damage_compatible(previous, current) {
         return EditorDamage::Full;
     }
+    if previous.sleeping_player != current.sleeping_player {
+        return EditorDamage::Full;
+    }
 
     let mut dirty = Vec::new();
     for cell in current.board.cells() {
@@ -461,6 +464,7 @@ mod tests {
             puzzle_solved: false,
             can_zoom_out: false,
             can_zoom_in: false,
+            sleeping_player: false,
         }
     }
 

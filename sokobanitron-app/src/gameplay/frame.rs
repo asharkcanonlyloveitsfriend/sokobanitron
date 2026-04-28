@@ -27,6 +27,7 @@ pub fn build_gameplay_frame_request(
             controller,
             app_state,
             GameplayScreenMode::Normal,
+            false,
             GameplayPresentationCause::CurrentState,
         ),
     }
@@ -41,6 +42,7 @@ pub fn build_sleep_gameplay_frame_request(
             controller,
             app_state,
             GameplayScreenMode::Sleep,
+            true,
             GameplayPresentationCause::CurrentState,
         ),
     }
@@ -56,6 +58,7 @@ pub(crate) fn build_gameplay_frame_request_with_cause(
             controller,
             app_state,
             GameplayScreenMode::Normal,
+            false,
             cause,
         ),
     }
@@ -123,6 +126,7 @@ fn build_gameplay_presentation_update(
     controller: &GameplayController,
     app_state: &AppState,
     mode: GameplayScreenMode,
+    sleeping_player: bool,
     cause: GameplayPresentationCause,
 ) -> GameplayPresentationUpdate {
     let board = controller.board();
@@ -133,6 +137,7 @@ fn build_gameplay_presentation_update(
             viewport,
             level_number: controller.current_level() + 1,
             mode,
+            sleeping_player,
         },
         cause,
     }
@@ -140,7 +145,10 @@ fn build_gameplay_presentation_update(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_current_gameplay_screen_frame_request, build_level_select_frame_request};
+    use super::{
+        build_current_gameplay_screen_frame_request, build_level_select_frame_request,
+        build_sleep_gameplay_frame_request,
+    };
     use crate::app::presentation::FrameRequest;
     use crate::app::state::{AppOverlay, AppState};
     use presentation::screen_requests::{
@@ -216,5 +224,23 @@ mod tests {
 
         assert_eq!(level_number, 1);
         assert_eq!(cause, GameplayPresentationCause::CurrentState);
+    }
+
+    #[test]
+    fn sleep_gameplay_frame_uses_sleep_chrome_and_marks_player_sleeping() {
+        let controller = controller();
+        let app_state = AppState::default();
+
+        let FrameRequest::Gameplay { update } =
+            build_sleep_gameplay_frame_request(&controller, &app_state)
+        else {
+            panic!("expected gameplay request");
+        };
+
+        assert_eq!(
+            update.scene.mode,
+            presentation::screen_requests::GameplayScreenMode::Sleep
+        );
+        assert!(update.scene.sleeping_player);
     }
 }

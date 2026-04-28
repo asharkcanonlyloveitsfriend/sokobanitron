@@ -46,6 +46,7 @@ fn gameplay_scene_with_player(
             board,
             level_number,
             mode: GameplayScreenMode::Normal,
+            sleeping_player: false,
         },
         cause: GameplayPresentationCause::CurrentState,
     }
@@ -61,6 +62,7 @@ fn update_from_board(
             board,
             level_number: 1,
             mode: GameplayScreenMode::Normal,
+            sleeping_player: false,
         },
         cause,
     }
@@ -472,6 +474,7 @@ fn interrupting_box_move_flash_light_clears_path_pixels() {
             board: previous_board,
             level_number: 1,
             mode: GameplayScreenMode::Normal,
+            sleeping_player: false,
         },
         cause: GameplayPresentationCause::CurrentState,
     };
@@ -481,6 +484,7 @@ fn interrupting_box_move_flash_light_clears_path_pixels() {
             board: current_board,
             level_number: 1,
             mode: GameplayScreenMode::Normal,
+            sleeping_player: false,
         },
         cause: GameplayPresentationCause::BoxMoved {
             path: vec![cell(2, 0), cell(3, 0), cell(3, 1)],
@@ -492,6 +496,7 @@ fn interrupting_box_move_flash_light_clears_path_pixels() {
             board: interrupted_board,
             level_number: 1,
             mode: GameplayScreenMode::Normal,
+            sleeping_player: false,
         },
         cause: GameplayPresentationCause::SelectionChanged {
             selected_box: Some(cell(3, 0)),

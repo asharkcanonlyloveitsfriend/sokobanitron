@@ -334,6 +334,7 @@ mod tests {
             board,
             level_number: 1,
             mode: GameplayScreenMode::Normal,
+            sleeping_player: false,
         };
         let renderer = Renderer::new();
 
@@ -363,6 +364,7 @@ mod tests {
             board,
             level_number: 1,
             mode: GameplayScreenMode::Normal,
+            sleeping_player: false,
         };
         let renderer = Renderer::new();
         let mut frame = vec![0; 96 * 64];
