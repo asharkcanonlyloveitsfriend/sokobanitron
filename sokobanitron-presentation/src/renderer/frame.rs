@@ -45,14 +45,21 @@ impl Renderer {
         match request {
             FrameRequest::Gameplay { update } => {
                 editor_presentation.clear();
+                let force_full = gameplay_presentation.take_gameplay_frame_obscured_by_overlay();
                 let result = gameplay_presentation.replace_update_with_damage(update.clone());
-                gameplay_presentation.draw_damage(self, frame, width, height, &result.damage);
-                frame_damage_from_gameplay(&update.scene, &result.damage, width, height)
+                if force_full {
+                    gameplay_presentation.draw(self, frame, width, height);
+                    FrameDamage::Full
+                } else {
+                    gameplay_presentation.draw_damage(self, frame, width, height, &result.damage);
+                    frame_damage_from_gameplay(&update.scene, &result.damage, width, height)
+                }
             }
             FrameRequest::GameplayMenu { screen } => {
                 editor_presentation.clear();
                 gameplay_presentation.clear_transient_presentation();
                 self.draw_gameplay_menu(frame, width, height, screen);
+                gameplay_presentation.mark_gameplay_frame_obscured_by_overlay();
                 FrameDamage::Full
             }
             FrameRequest::LevelSelect { screen } => {
@@ -68,6 +75,7 @@ impl Renderer {
                     screen.page_start,
                 );
                 draw_controls_ui(frame, width, height, true, self.theme());
+                gameplay_presentation.mark_gameplay_frame_obscured_by_overlay();
                 FrameDamage::Full
             }
             FrameRequest::LevelSetSelect { screen } => {
@@ -76,6 +84,7 @@ impl Renderer {
                 self.draw_background_only(frame, width, height);
                 self.draw_level_set_select_menu_contents(frame, width, height, screen);
                 draw_controls_ui(frame, width, height, true, self.theme());
+                gameplay_presentation.mark_gameplay_frame_obscured_by_overlay();
                 FrameDamage::Full
             }
             FrameRequest::Editor { screen } => {
@@ -109,6 +118,7 @@ impl Renderer {
         match request {
             FrameRequest::Gameplay { update } => {
                 editor_presentation.clear();
+                let _ = gameplay_presentation.take_gameplay_frame_obscured_by_overlay();
                 gameplay_presentation.replace_update(update.clone());
                 gameplay_presentation.draw(self, frame, width, height);
                 FrameDamage::Full

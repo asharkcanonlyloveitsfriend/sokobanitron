@@ -73,6 +73,7 @@ pub struct GameplayPresentationState {
     visual_effect: GameplayVisualEffect,
     animation_runner: GameplayAnimationRunner,
     level_transition: Option<LevelTransition>,
+    gameplay_frame_obscured_by_overlay: bool,
 }
 
 impl Default for GameplayPresentationState {
@@ -94,6 +95,7 @@ impl GameplayPresentationState {
             visual_effect: GameplayVisualEffect::default(),
             animation_runner: GameplayAnimationRunner::default(),
             level_transition: None,
+            gameplay_frame_obscured_by_overlay: false,
         }
     }
 
@@ -203,7 +205,16 @@ impl GameplayPresentationState {
 
     pub fn clear(&mut self) {
         self.current_scene = None;
+        self.gameplay_frame_obscured_by_overlay = false;
         self.clear_transient_presentation();
+    }
+
+    pub fn mark_gameplay_frame_obscured_by_overlay(&mut self) {
+        self.gameplay_frame_obscured_by_overlay = true;
+    }
+
+    pub fn take_gameplay_frame_obscured_by_overlay(&mut self) -> bool {
+        std::mem::take(&mut self.gameplay_frame_obscured_by_overlay)
     }
 
     pub fn clear_transient_presentation(&mut self) {

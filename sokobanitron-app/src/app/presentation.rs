@@ -292,8 +292,8 @@ fn gameplay_presentation_cause_for_effect(
 #[cfg(test)]
 mod tests {
     use super::{
-        AppFrameRenderer, FrameSink, GameplayAnimationPolicy, PresentationPlan, PresentationStep,
-        RendererOverrides, build_presentation_plan, gameplay_presentation_plan,
+        AppFrameRenderer, FrameDamage, FrameSink, GameplayAnimationPolicy, PresentationPlan,
+        PresentationStep, RendererOverrides, build_presentation_plan, gameplay_presentation_plan,
         render_presentation_plan,
     };
     use crate::app::{AppState, FrameRequest};
@@ -623,5 +623,65 @@ mod tests {
 
         assert!(renderer.has_pending_visible_presentation(&app_state));
         assert!(renderer.has_dismissible_level_transition(&app_state));
+    }
+
+    #[test]
+    fn renderer_redraws_gameplay_after_fullscreen_overlay() {
+        let levels = vec!["#####\n#@$.#\n#####".to_string()];
+        let controller = GameplayController::new(levels.clone(), None);
+        let preview_boards = build_preview_boards(&levels);
+        let overlays = [
+            FrameRequest::GameplayMenu {
+                screen: GameplayMenuScreenRequest {
+                    primary_action_label: Some("EDIT"),
+                    show_change_level_set: true,
+                },
+            },
+            FrameRequest::LevelSelect {
+                screen: LevelSelectScreenRequest {
+                    page_start: 0,
+                    resume_level: 0,
+                },
+            },
+            FrameRequest::LevelSetSelect {
+                screen: LevelSetSelectScreenRequest {
+                    page_start: 0,
+                    active_level_set: Some(0),
+                    entries: vec![LevelSetListEntry {
+                        title: "Alpha".to_string(),
+                        completed_puzzle_count: 0,
+                        total_puzzle_count: 1,
+                    }],
+                },
+            },
+        ];
+
+        for overlay in overlays {
+            let app_state = AppState::default();
+            let mut renderer = AppFrameRenderer::new();
+            let mut frame = vec![0; 96 * 64];
+
+            let gameplay_before = crate::gameplay::build_current_gameplay_board_frame_request(
+                &controller,
+                &app_state,
+            );
+            assert_eq!(
+                renderer.draw_frame_request(&mut frame, 96, 64, &gameplay_before, &preview_boards),
+                FrameDamage::Full
+            );
+            assert_eq!(
+                renderer.draw_frame_request(&mut frame, 96, 64, &overlay, &preview_boards),
+                FrameDamage::Full
+            );
+
+            let gameplay_after = crate::gameplay::build_current_gameplay_board_frame_request(
+                &controller,
+                &app_state,
+            );
+            assert_eq!(
+                renderer.draw_frame_request(&mut frame, 96, 64, &gameplay_after, &preview_boards),
+                FrameDamage::Full
+            );
+        }
     }
 }
