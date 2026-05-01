@@ -24,6 +24,9 @@ pub(super) fn draw_path_from_progress(
     }
     let clip_rect = clip_cell.map(|cell| scene.viewport.cell_to_screen_rect(cell));
     let consumed = path_progress_segments.min(total_segments as f32);
+    if consumed >= total_segments as f32 {
+        return;
+    }
     let start_segment = consumed
         .floor()
         .clamp(0.0, (total_segments.saturating_sub(1)) as f32) as usize;

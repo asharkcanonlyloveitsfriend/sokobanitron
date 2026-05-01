@@ -1,9 +1,10 @@
-use super::GameplayAnimation;
 use super::box_vanish_drawing::draw_limited_vanishing_box_at;
+use super::{GameplayAnimation, animation_tick_duration};
 use crate::gameplay_animation::GameplayAnimationPolicy;
 use crate::renderer::Renderer;
 use crate::screen_requests::GameplayScreenRequest;
 use sokobanitron_gameplay::BoardCell;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct BoxVanishPhase {
@@ -113,6 +114,17 @@ impl BoxVanishAnimation {
             GameplayAnimationPolicy::Limited => &LIMITED_BOX_VANISH_PHASES,
         }
     }
+
+    fn phase_index_for_elapsed(&self, elapsed: Duration) -> usize {
+        let mut elapsed_at_phase_end = Duration::ZERO;
+        for (index, phase) in self.phases().iter().enumerate() {
+            elapsed_at_phase_end += animation_tick_duration(phase.ticks);
+            if elapsed < elapsed_at_phase_end {
+                return index;
+            }
+        }
+        self.phases().len()
+    }
 }
 
 impl GameplayAnimation for BoxVanishAnimation {
@@ -160,12 +172,25 @@ impl GameplayAnimation for BoxVanishAnimation {
         }
     }
 
-    fn ticks_until_next_step(&self) -> Option<u32> {
-        self.phases().get(self.phase_index).map(|phase| phase.ticks)
+    fn duration(&self) -> Duration {
+        self.phases()
+            .iter()
+            .map(|phase| animation_tick_duration(phase.ticks))
+            .sum()
     }
 
-    fn step(&mut self) {
-        self.phase_index += 1;
+    fn set_elapsed(&mut self, elapsed: Duration) {
+        self.phase_index = self.phase_index_for_elapsed(elapsed);
+    }
+
+    fn advance_to_elapsed(&mut self, elapsed: Duration) -> Vec<BoardCell> {
+        let previous_phase_index = self.phase_index;
+        self.set_elapsed(elapsed);
+        if previous_phase_index == self.phase_index {
+            Vec::new()
+        } else {
+            vec![self.position]
+        }
     }
 }
 

@@ -1,10 +1,14 @@
-use super::GameplayAnimation;
+use super::{GameplayAnimation, animation_tick_duration};
 use crate::gameplay_animation::GameplayAnimationPolicy;
 use crate::renderer::{Renderer, blit_premultiplied_gray_alpha, premultiply_straight_gray};
 use crate::screen_requests::{
     GameplayPresentationCause, GameplayPresentationUpdate, GameplayScreenRequest,
 };
 use sokobanitron_gameplay::BoardCell;
+use std::time::Duration;
+
+const FLASH_DARK_TICKS: u32 = 1;
+const FLASH_LIGHT_TICKS: u32 = 1;
 
 pub(super) struct EntityFlashAnimation {
     targets: FlashTargets,
@@ -46,6 +50,20 @@ pub(super) fn flash_color(phase: EntityFlashPhase, renderer: &Renderer) -> Optio
         EntityFlashPhase::FlashDark => Some(renderer.theme.gray_13),
         EntityFlashPhase::FlashLight => Some(renderer.theme.gray_1),
         EntityFlashPhase::Complete => None,
+    }
+}
+
+pub(super) fn entity_flash_duration() -> Duration {
+    animation_tick_duration(FLASH_DARK_TICKS + FLASH_LIGHT_TICKS)
+}
+
+pub(super) fn entity_flash_phase_for_elapsed(elapsed: Duration) -> EntityFlashPhase {
+    if elapsed < animation_tick_duration(FLASH_DARK_TICKS) {
+        EntityFlashPhase::FlashDark
+    } else if elapsed < entity_flash_duration() {
+        EntityFlashPhase::FlashLight
+    } else {
+        EntityFlashPhase::Complete
     }
 }
 
@@ -143,20 +161,22 @@ impl GameplayAnimation for EntityFlashAnimation {
         );
     }
 
-    fn ticks_until_next_step(&self) -> Option<u32> {
-        match self.phase {
-            EntityFlashPhase::FlashDark => Some(1),
-            EntityFlashPhase::FlashLight => Some(1),
-            EntityFlashPhase::Complete => None,
-        }
+    fn duration(&self) -> Duration {
+        entity_flash_duration()
     }
 
-    fn step(&mut self) {
-        self.phase = match self.phase {
-            EntityFlashPhase::FlashDark => EntityFlashPhase::FlashLight,
-            EntityFlashPhase::FlashLight => EntityFlashPhase::Complete,
-            EntityFlashPhase::Complete => EntityFlashPhase::Complete,
-        };
+    fn set_elapsed(&mut self, elapsed: Duration) {
+        self.phase = entity_flash_phase_for_elapsed(elapsed);
+    }
+
+    fn advance_to_elapsed(&mut self, elapsed: Duration) -> Vec<BoardCell> {
+        let previous_phase = self.phase;
+        self.set_elapsed(elapsed);
+        if previous_phase == self.phase {
+            Vec::new()
+        } else {
+            flash_dirty_cells(&self.targets)
+        }
     }
 }
 

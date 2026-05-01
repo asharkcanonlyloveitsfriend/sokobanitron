@@ -19,6 +19,10 @@ use std::time::{Duration, Instant};
 
 const ANIMATION_TICK: Duration = Duration::from_millis(50);
 
+pub(super) fn animation_tick_duration(ticks: u32) -> Duration {
+    ANIMATION_TICK * ticks
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GameplayAnimationPolicy {
     #[default]
@@ -62,14 +66,23 @@ pub(crate) trait GameplayAnimation {
     ) {
     }
 
-    fn ticks_until_next_step(&self) -> Option<u32>;
+    fn duration(&self) -> Duration;
 
-    fn step(&mut self);
+    fn set_elapsed(&mut self, elapsed: Duration);
+
+    fn advance_to_elapsed(&mut self, elapsed: Duration) -> Vec<BoardCell> {
+        let previous_dirty = self.dirty_cells();
+        self.set_elapsed(elapsed);
+        let mut dirty = previous_dirty;
+        dirty.extend(self.dirty_cells());
+        normalize_cells(dirty)
+    }
 }
 
 struct ActiveAnimation {
     animation: Box<dyn GameplayAnimation>,
-    next_step_at: Option<Instant>,
+    started_at: Instant,
+    ends_at: Instant,
 }
 
 #[derive(Default)]
@@ -118,44 +131,38 @@ impl GameplayAnimationRunner {
                 continue;
             }
 
-            let next_step_at = self
+            let ends_at = self
                 .active
                 .as_ref()
                 .expect("active animation checked above")
-                .next_step_at;
-            let Some(next_step_at) = next_step_at else {
-                self.finish_active(now);
-                dirty.extend(self.current_dirty_cells());
-                continue;
+                .ends_at;
+            let elapsed = {
+                let active = self
+                    .active
+                    .as_ref()
+                    .expect("active animation checked above");
+                if now >= ends_at {
+                    active.animation.duration()
+                } else {
+                    now.saturating_duration_since(active.started_at)
+                }
             };
-            if next_step_at > now {
-                return normalize_cells(dirty);
-            }
 
-            let finished = {
+            let finished = now >= ends_at;
+            {
                 let active = self
                     .active
                     .as_mut()
                     .expect("active animation checked above");
-                // The runner owns transition bookkeeping: union the dirty cells from the old and
-                // new animation states so individual animations only need to report their local
-                // current dirty footprint.
-                let previous_dirty = active.animation.dirty_cells();
-                active.animation.step();
-                active.next_step_at = active.animation.ticks_until_next_step().map(|ticks| {
-                    now + Duration::from_millis(
-                        ANIMATION_TICK.as_millis() as u64 * u64::from(ticks),
-                    )
-                });
-                dirty.extend(previous_dirty);
-                dirty.extend(active.animation.dirty_cells());
-                active.next_step_at.is_none()
-            };
-
-            if finished {
-                self.finish_active(now);
-                dirty.extend(self.current_dirty_cells());
+                dirty.extend(active.animation.advance_to_elapsed(elapsed));
             }
+
+            if !finished {
+                return normalize_cells(dirty);
+            }
+
+            self.finish_active(ends_at);
+            dirty.extend(self.current_dirty_cells());
         }
     }
 
@@ -221,21 +228,21 @@ impl GameplayAnimationRunner {
     }
 
     fn start_next(&mut self, now: Instant) {
-        let Some(animation) = self.queue.pop_front() else {
+        let Some(mut animation) = self.queue.pop_front() else {
             self.active = None;
             return;
         };
-        let next_step_at = animation.ticks_until_next_step().map(|ticks| {
-            now + Duration::from_millis(ANIMATION_TICK.as_millis() as u64 * u64::from(ticks))
-        });
+        animation.set_elapsed(Duration::ZERO);
+        let ends_at = now + animation.duration();
         self.active = Some(ActiveAnimation {
             animation,
-            next_step_at,
+            started_at: now,
+            ends_at,
         });
         if self
             .active
             .as_ref()
-            .is_some_and(|active| active.next_step_at.is_none())
+            .is_some_and(|active| active.ends_at <= now)
         {
             self.finish_active(now);
         }
@@ -592,15 +599,19 @@ mod tests {
             ]
         );
 
-        let _ = runner.advance_to_with_damage(now + Duration::from_millis(50));
+        let damage = runner.advance_to_with_damage(now + Duration::from_millis(50));
         assert_eq!(
-            runner.current_dirty_cells(),
+            damage,
             vec![
                 BoardCell::new(1, 0),
                 BoardCell::new(2, 0),
                 BoardCell::new(3, 0),
                 BoardCell::new(3, 1)
             ]
+        );
+        assert_eq!(
+            runner.current_dirty_cells(),
+            vec![BoardCell::new(1, 0), BoardCell::new(2, 0)]
         );
 
         let _ = runner.advance_to_with_damage(now + Duration::from_millis(100));
@@ -638,12 +649,7 @@ mod tests {
 
         assert_eq!(
             runner.clear_damage(),
-            vec![
-                BoardCell::new(1, 0),
-                BoardCell::new(2, 0),
-                BoardCell::new(3, 0),
-                BoardCell::new(3, 1)
-            ]
+            vec![BoardCell::new(1, 0), BoardCell::new(2, 0)]
         );
         assert!(!runner.has_active_animation());
     }
@@ -676,9 +682,7 @@ mod tests {
             runner.current_dirty_cells(),
             vec![BoardCell::new(1, 0), BoardCell::new(2, 0)]
         );
-        let _ = runner.advance_to_with_damage(now + Duration::from_millis(100));
-        assert!(runner.has_active_animation());
-        let final_damage = runner.advance_to_with_damage(now + Duration::from_millis(150));
+        let final_damage = runner.advance_to_with_damage(now + Duration::from_millis(100));
         assert_eq!(
             final_damage,
             vec![BoardCell::new(1, 0), BoardCell::new(2, 0)]

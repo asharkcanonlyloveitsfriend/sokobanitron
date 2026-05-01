@@ -1,7 +1,11 @@
-use super::GameplayAnimation;
+use super::{GameplayAnimation, animation_tick_duration};
 use crate::renderer::{Renderer, blit_premultiplied_gray_alpha};
 use crate::screen_requests::GameplayScreenRequest;
 use sokobanitron_gameplay::BoardCell;
+use std::time::Duration;
+
+const WAIT_TICKS: u32 = 8;
+const BLINK_TICKS: u32 = 6;
 
 pub(super) struct BlinkAnimation {
     player_position: BoardCell,
@@ -20,6 +24,16 @@ impl BlinkAnimation {
         Self {
             player_position,
             phase: BlinkPhase::Waiting,
+        }
+    }
+
+    fn phase_for_elapsed(elapsed: Duration) -> BlinkPhase {
+        if elapsed < animation_tick_duration(WAIT_TICKS) {
+            BlinkPhase::Waiting
+        } else if elapsed < animation_tick_duration(WAIT_TICKS + BLINK_TICKS) {
+            BlinkPhase::Blinking
+        } else {
+            BlinkPhase::Complete
         }
     }
 }
@@ -57,19 +71,24 @@ impl GameplayAnimation for BlinkAnimation {
         );
     }
 
-    fn ticks_until_next_step(&self) -> Option<u32> {
-        match self.phase {
-            BlinkPhase::Waiting => Some(8),
-            BlinkPhase::Blinking => Some(6),
-            BlinkPhase::Complete => None,
-        }
+    fn duration(&self) -> Duration {
+        animation_tick_duration(WAIT_TICKS + BLINK_TICKS)
     }
 
-    fn step(&mut self) {
-        self.phase = match self.phase {
-            BlinkPhase::Waiting => BlinkPhase::Blinking,
-            BlinkPhase::Blinking => BlinkPhase::Complete,
-            BlinkPhase::Complete => BlinkPhase::Complete,
-        };
+    fn set_elapsed(&mut self, elapsed: Duration) {
+        self.phase = Self::phase_for_elapsed(elapsed);
+    }
+
+    fn advance_to_elapsed(&mut self, elapsed: Duration) -> Vec<BoardCell> {
+        let previous_phase = self.phase;
+        let previous_dirty = self.dirty_cells();
+        self.set_elapsed(elapsed);
+        if previous_phase == self.phase {
+            Vec::new()
+        } else {
+            let mut dirty = previous_dirty;
+            dirty.extend(self.dirty_cells());
+            dirty
+        }
     }
 }

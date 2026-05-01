@@ -21,7 +21,8 @@ const FLASH_GAP: f32 = FLASH_GAP_STEPS * SWEEP_STEP;
 pub(super) struct LevelTransition {
     state: TransitionState,
     scratch: TransitionScratch,
-    next_frame_at: Instant,
+    started_at: Instant,
+    last_drawn_step_index: Option<u32>,
 }
 
 impl LevelTransition {
@@ -43,19 +44,17 @@ impl LevelTransition {
         Some(Self {
             state: TransitionState::new(previous_scene.clone(), update.scene.clone()),
             scratch: TransitionScratch::default(),
-            next_frame_at: now,
+            started_at: now,
+            last_drawn_step_index: None,
         })
     }
 
     pub(super) fn is_done(&self) -> bool {
-        self.state
-            .flash_tiles
-            .iter()
-            .all(|tile| tile.phase_index >= TILE_FLASH_PHASES.len())
+        self.state.is_done()
     }
 
     pub(super) fn is_ready_to_draw(&self, now: Instant) -> bool {
-        self.is_done() || now >= self.next_frame_at
+        self.last_drawn_step_index != Some(self.step_index_at(now))
     }
 
     fn draw(&mut self, renderer: &mut Renderer, frame: &mut [u8], width: u32, height: u32) {
@@ -71,16 +70,24 @@ impl LevelTransition {
         height: u32,
         now: Instant,
     ) -> bool {
+        let step_index = self.step_index_at(now);
+        self.state.advance_to_step(step_index);
         if self.is_done() {
             self.state.draw_final(renderer, frame, width, height);
             return true;
         }
         self.draw(renderer, frame, width, height);
-        if self.is_ready_to_draw(now) {
-            self.state.finish_drawn_frame();
-            self.next_frame_at = next_frame_at(now);
-        }
+        self.last_drawn_step_index = Some(step_index);
         false
+    }
+
+    fn step_index_at(&self, now: Instant) -> u32 {
+        let step_duration = animation_step_duration();
+        if step_duration.is_zero() {
+            return u32::MAX;
+        }
+        let elapsed = now.saturating_duration_since(self.started_at);
+        (elapsed.as_nanos() / step_duration.as_nanos()).min(u128::from(u32::MAX)) as u32
     }
 }
 
@@ -123,8 +130,8 @@ impl TransitionScratch {
     }
 }
 
-fn next_frame_at(now: Instant) -> Instant {
-    now + ANIMATION_TICK * TICKS_PER_STEP
+fn animation_step_duration() -> Duration {
+    ANIMATION_TICK * TICKS_PER_STEP
 }
 
 #[derive(Debug, Clone)]
@@ -151,17 +158,25 @@ impl TransitionState {
         }
     }
 
-    fn finish_drawn_frame(&mut self) {
-        self.step_index = self.step_index.saturating_add(1);
-        let back = self.front_sweep_position() - SWEEP_BAND_WIDTH;
-        for tile in &mut self.flash_tiles {
-            if tile.phase_index >= TILE_FLASH_PHASES.len() {
-                continue;
+    fn is_done(&self) -> bool {
+        self.flash_tiles
+            .iter()
+            .all(|tile| tile.phase_index >= TILE_FLASH_PHASES.len())
+    }
+
+    fn advance_to_step(&mut self, step_index: u32) {
+        while self.step_index < step_index && !self.is_done() {
+            self.step_index = self.step_index.saturating_add(1);
+            let back = self.front_sweep_position() - SWEEP_BAND_WIDTH;
+            for tile in &mut self.flash_tiles {
+                if tile.phase_index >= TILE_FLASH_PHASES.len() {
+                    continue;
+                }
+                if back < tile.completion_s + FLASH_GAP {
+                    continue;
+                }
+                tile.phase_index += 1;
             }
-            if back < tile.completion_s + FLASH_GAP {
-                continue;
-            }
-            tile.phase_index += 1;
         }
     }
 
