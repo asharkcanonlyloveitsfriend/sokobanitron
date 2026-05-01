@@ -455,8 +455,13 @@ fn begin_editor_board_interaction(
             }
         }
         EditorMode::Play => {
+            let double_tap_target = if editor.view_player() == Some((world_x, world_y)) {
+                EditorDoubleTapTarget::PlayPlayer(world_x, world_y)
+            } else {
+                EditorDoubleTapTarget::PlayNonPlayer(world_x, world_y)
+            };
             let is_double_tap = app_state.editor.interaction.double_tap.register_tap(
-                EditorDoubleTapTarget::PlayCell(world_x, world_y),
+                double_tap_target,
                 contact.at,
                 app_state.editor.interaction.double_tap_window,
             );
@@ -573,7 +578,7 @@ fn immediate_draw_mode_double_tap_target(
         .interaction
         .double_tap
         .has_pending_tap(
-            EditorDoubleTapTarget::DrawCell(world_x, world_y),
+            EditorDoubleTapTarget::Draw(world_x, world_y),
             event.at,
             app_state.editor.interaction.double_tap_window,
         )
@@ -594,7 +599,7 @@ fn resolve_paint_mode(
     }
 
     if ui.interaction.double_tap.register_tap(
-        EditorDoubleTapTarget::DrawCell(world_x, world_y),
+        EditorDoubleTapTarget::Draw(world_x, world_y),
         at,
         ui.interaction.double_tap_window,
     ) {
@@ -1335,5 +1340,18 @@ mod tests {
         assert_eq!(editor.view_player(), Some((0, 0)));
         assert!(editor.view_has_box(1, 0));
         assert!(!editor.view_has_box(2, 0));
+    }
+
+    #[test]
+    fn second_play_mode_tap_on_cell_player_moved_to_does_not_restart() {
+        let (mut app_state, mut editor) = play_mode_editor_with_unsolved_play_move();
+
+        tap_world_cell(&mut app_state, &mut editor, 0, 0);
+        tap_world_cell(&mut app_state, &mut editor, 0, 0);
+
+        assert_eq!(editor.mode(), EditorMode::Play);
+        assert_eq!(editor.view_player(), Some((0, 0)));
+        assert!(!editor.view_has_box(1, 0));
+        assert!(editor.view_has_box(2, 0));
     }
 }

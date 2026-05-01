@@ -26,8 +26,14 @@ pub struct GameplayUiState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GameplayInteractionState {
     pub(crate) touch: TouchPointerState,
-    pub(crate) double_tap: DoubleTapTracker<BoardCell>,
+    pub(crate) double_tap: DoubleTapTracker<GameplayDoubleTapTarget>,
     pub(crate) double_tap_window: Duration,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GameplayDoubleTapTarget {
+    BoardCell(BoardCell),
+    Player(BoardCell),
 }
 
 impl Default for GameplayInteractionState {

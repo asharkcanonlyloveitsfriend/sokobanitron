@@ -64,8 +64,9 @@ pub(crate) struct ActiveEditorStroke {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EditorDoubleTapTarget {
-    DrawCell(i32, i32),
-    PlayCell(i32, i32),
+    Draw(i32, i32),
+    PlayNonPlayer(i32, i32),
+    PlayPlayer(i32, i32),
 }
 
 impl Default for EditorUiState {

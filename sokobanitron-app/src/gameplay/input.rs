@@ -1,4 +1,4 @@
-use super::view::{GameplayUiState, build_gameplay_board_viewport};
+use super::view::{GameplayDoubleTapTarget, GameplayUiState, build_gameplay_board_viewport};
 use crate::app::input::AppInput;
 use crate::app::state::{AppOverlay, AppState};
 use crate::shared::{MOUSE_POINTER_ID, PointerEvent, PointerGesture, PointerPhase, ScreenPoint};
@@ -167,8 +167,13 @@ fn interpret_gameplay_tap(
         return input;
     };
 
+    let double_tap_target = if surface.board.player() == Some(cell) {
+        GameplayDoubleTapTarget::Player(cell)
+    } else {
+        GameplayDoubleTapTarget::BoardCell(cell)
+    };
     let is_double_tap = gameplay.interaction.double_tap.register_tap(
-        cell,
+        double_tap_target,
         at,
         gameplay.interaction.double_tap_window,
     );
@@ -549,6 +554,30 @@ mod tests {
         assert_eq!(
             gameplay_pointer_tap(&mut gameplay, &surface, is_gameplay_screen, tap_x, tap_y),
             AppInput::BoardDoubleTap(BoardCell::new(2, 1))
+        );
+    }
+
+    #[test]
+    fn second_tap_on_cell_player_moved_to_is_not_board_double_tap() {
+        let mut controller = test_controller();
+        let app_state = test_app_state();
+        let mut gameplay = app_state.gameplay.clone();
+        let is_gameplay_screen = test_is_gameplay_screen(&app_state);
+        let cell = BoardCell::new(2, 1);
+        let surface = test_surface(&controller, &app_state);
+        let (tap_x, tap_y) = cell_center(&surface, cell);
+
+        assert_eq!(
+            gameplay_pointer_tap(&mut gameplay, &surface, is_gameplay_screen, tap_x, tap_y),
+            AppInput::BoardTap(cell)
+        );
+        let _ = controller.click_cell_with_outcome(cell);
+        assert_eq!(controller.board().player(), Some(cell));
+
+        let surface = test_surface(&controller, &app_state);
+        assert_eq!(
+            gameplay_pointer_tap(&mut gameplay, &surface, is_gameplay_screen, tap_x, tap_y),
+            AppInput::BoardTap(cell)
         );
     }
 
