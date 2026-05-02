@@ -6,6 +6,18 @@
 
 This project is in early development. Prefer simple, legible code with strong assumptions over defensive code that tries to tolerate invalid input.
 
+## API changes and backward compatibility
+
+This project does not maintain backward compatibility for internal APIs during early development. Assume there are no old clients or external projects that need to keep compiling against previous API shapes.
+
+When an API changes:
+- update all callers to the new API
+- remove compatibility wrappers, legacy constructors, aliases, and deprecated paths
+- prefer one clear current API over parallel old and new forms
+- do not preserve obsolete behavior unless there is an explicit project reason
+
+The desired default is to clean up the old API immediately so the codebase reflects the current design.
+
 ## Thin clients, shared Rust core
 
 The intended architecture is thin platform clients with a shared Rust core. Keep platform-specific code small and push gameplay, presentation logic, and other shared behavior into Rust whenever possible.
