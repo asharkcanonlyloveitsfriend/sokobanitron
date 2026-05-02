@@ -104,7 +104,7 @@ mod tests {
         resize_gameplay_surface, set_gameplay_level_sets, set_gameplay_max_cell_size,
     };
     use crate::persistence::{LevelSetCatalogEntry, LevelSetKind};
-    use sokobanitron_gameplay::{BoardView, TileKind};
+    use sokobanitron_gameplay::{BoardSolveState, BoardView, TileKind};
 
     fn sample_level_sets() -> Vec<LevelSetCatalogEntry> {
         vec![
@@ -132,7 +132,7 @@ mod tests {
             vec![false; len],
             None,
             None,
-            false,
+            BoardSolveState::Unsolved,
         )
     }
 

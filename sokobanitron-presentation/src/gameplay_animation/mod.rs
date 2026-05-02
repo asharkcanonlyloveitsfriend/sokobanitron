@@ -208,10 +208,6 @@ impl GameplayAnimationRunner {
         }
     }
 
-    pub(crate) fn enqueue_blink(&mut self, player_position: BoardCell, now: Instant) {
-        self.enqueue(Box::new(BlinkAnimation::new(player_position)), now);
-    }
-
     pub(crate) fn current_dirty_cells(&self) -> Vec<BoardCell> {
         self.active
             .as_ref()
@@ -288,6 +284,7 @@ fn ordered_animations_for_update(
     let mut ordered = OrderedAnimations::default();
     enqueue_state_change_flash(&mut ordered, previous_scene, update, policy);
     enqueue_cause_animations(&mut ordered, previous_scene, update, policy);
+    enqueue_dirty_solution_blink(&mut ordered, previous_scene, update);
     ordered.into_vec()
 }
 
@@ -340,12 +337,27 @@ fn enqueue_box_removed_animations(
     ordered.push_blink(update.scene.board.player());
 }
 
+fn enqueue_dirty_solution_blink(
+    ordered: &mut OrderedAnimations,
+    previous_scene: Option<&GameplayScreenRequest>,
+    update: &GameplayPresentationUpdate,
+) {
+    if matches!(update.cause, GameplayPresentationCause::BoxRemoved { .. }) {
+        return;
+    }
+    let Some(previous_scene) = previous_scene else {
+        return;
+    };
+    if !previous_scene.board.is_solved() && update.scene.board.is_dirty_solution() {
+        ordered.push_blink(update.scene.board.player());
+    }
+}
+
 fn is_state_change_flash_cause(cause: &GameplayPresentationCause) -> bool {
     matches!(
         cause,
         GameplayPresentationCause::PlayerMoved { .. }
             | GameplayPresentationCause::BoxRemoved { .. }
-            | GameplayPresentationCause::PuzzleSolved { .. }
             | GameplayPresentationCause::UndoApplied
             | GameplayPresentationCause::Restarted
     )
@@ -365,7 +377,7 @@ mod tests {
         GameplayPresentationCause, GameplayPresentationUpdate, GameplayScreenMode,
         GameplayScreenRequest,
     };
-    use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
+    use sokobanitron_gameplay::{BoardCell, BoardSolveState, BoardView, TileKind};
     use std::time::{Duration, Instant};
 
     fn update_with_cause(cause: GameplayPresentationCause) -> GameplayPresentationUpdate {
@@ -376,6 +388,15 @@ mod tests {
         cause: GameplayPresentationCause,
         player: Option<BoardCell>,
         boxes: Vec<bool>,
+    ) -> GameplayPresentationUpdate {
+        update_with_solve_state(cause, player, boxes, BoardSolveState::Unsolved)
+    }
+
+    fn update_with_solve_state(
+        cause: GameplayPresentationCause,
+        player: Option<BoardCell>,
+        boxes: Vec<bool>,
+        solve_state: BoardSolveState,
     ) -> GameplayPresentationUpdate {
         let board = BoardView::new(
             4,
@@ -393,7 +414,7 @@ mod tests {
             boxes,
             player,
             None,
-            false,
+            solve_state,
         );
         GameplayPresentationUpdate {
             scene: GameplayScreenRequest {
@@ -559,6 +580,49 @@ mod tests {
         assert!(runner.hides_player());
         let _ = runner.advance_to_with_damage(now + Duration::from_millis(100));
         assert!(!runner.has_active_animation());
+    }
+
+    #[test]
+    fn dirty_solve_blink_waits_until_box_move_finishes() {
+        let now = Instant::now();
+        let previous = update_with_state(
+            GameplayPresentationCause::CurrentState,
+            Some(BoardCell::new(1, 0)),
+            vec![false, false, true, false, false, false, false, false],
+        );
+        let update = update_with_solve_state(
+            GameplayPresentationCause::BoxMoved {
+                path: vec![
+                    BoardCell::new(2, 0),
+                    BoardCell::new(3, 0),
+                    BoardCell::new(3, 1),
+                ],
+            },
+            Some(BoardCell::new(2, 0)),
+            vec![false, false, false, true, false, false, false, false],
+            BoardSolveState::SolvedDirty,
+        );
+        let mut runner = GameplayAnimationRunner::default();
+
+        assert!(runner.enqueue_for_update(
+            Some(&previous.scene),
+            &update,
+            GameplayAnimationPolicy::Full,
+            now,
+        ));
+
+        assert!(runner.has_active_animation());
+        assert!(runner.hides_player());
+        let _ = runner.advance_to_with_damage(now + Duration::from_millis(100));
+        assert!(runner.has_active_animation());
+        assert!(!runner.hides_player());
+        assert_eq!(runner.current_dirty_cells(), Vec::<BoardCell>::new());
+
+        assert_eq!(
+            runner.advance_to_with_damage(now + Duration::from_millis(500)),
+            vec![BoardCell::new(2, 0)]
+        );
+        assert!(runner.has_active_animation());
     }
 
     #[test]

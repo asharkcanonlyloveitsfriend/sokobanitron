@@ -896,13 +896,9 @@ mod tests {
                 update: move_update,
                 ..
             }),
-            PresentationStep::Render(FrameRequest::Gameplay {
-                update: solved_update,
-                ..
-            }),
         ] = solved_plan.steps.as_slice()
         else {
-            panic!("expected move render followed by solved render");
+            panic!("expected one solved move render");
         };
         assert_eq!(
             move_update.cause,
@@ -911,11 +907,6 @@ mod tests {
             }
         );
         assert!(move_update.scene.board.is_solved());
-        assert_eq!(
-            solved_update.cause,
-            GameplayPresentationCause::PuzzleSolved { clean: true }
-        );
-        assert!(solved_update.scene.board.is_solved());
 
         let restart = apply_action(&mut controller, &mut app_state, AppAction::Restart);
         let Some(restart_plan) = restart.presentation_plan else {

@@ -424,16 +424,32 @@ mod tests {
     use crate::screen_requests::{
         EditorModeIndicator, EditorModeMenuScreenRequest, EditorScreenRequest,
     };
-    use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
+    use sokobanitron_gameplay::{BoardCell, BoardSolveState, BoardView, TileKind};
 
     fn board(tile_at_center: TileKind) -> BoardView {
         let mut tiles = vec![TileKind::Floor; 9];
         tiles[4] = tile_at_center;
-        BoardView::new(3, 3, tiles, vec![false; 9], None, None, false)
+        BoardView::new(
+            3,
+            3,
+            tiles,
+            vec![false; 9],
+            None,
+            None,
+            BoardSolveState::Unsolved,
+        )
     }
 
     fn single_cell_board(tile: TileKind) -> BoardView {
-        BoardView::new(1, 1, vec![tile], vec![false], None, None, false)
+        BoardView::new(
+            1,
+            1,
+            vec![tile],
+            vec![false],
+            None,
+            None,
+            BoardSolveState::Unsolved,
+        )
     }
 
     fn request(board: BoardView, mode_indicator: EditorModeIndicator) -> EditorScreenRequest {
@@ -801,7 +817,7 @@ mod tests {
             vec![false; 9],
             Some(BoardCell::new(0, 0)),
             None,
-            false,
+            BoardSolveState::Unsolved,
         );
         let current_board = BoardView::new(
             3,
@@ -810,7 +826,7 @@ mod tests {
             vec![false; 9],
             Some(BoardCell::new(2, 2)),
             None,
-            false,
+            BoardSolveState::Unsolved,
         );
         let viewport = BoardViewport {
             origin_x: 20,

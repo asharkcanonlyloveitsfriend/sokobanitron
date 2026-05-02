@@ -230,7 +230,7 @@ mod tests {
         top_left_level_button_rect,
     };
     use crate::layout::{BoardViewport, BoardViewportOptions};
-    use sokobanitron_gameplay::{BoardView, TileKind};
+    use sokobanitron_gameplay::{BoardSolveState, BoardView, TileKind};
 
     fn board_with_tile(width: u32, height: u32, tile: TileKind) -> BoardView {
         let len = (width * height) as usize;
@@ -241,7 +241,7 @@ mod tests {
             vec![false; len],
             None,
             None,
-            false,
+            BoardSolveState::Unsolved,
         )
     }
 

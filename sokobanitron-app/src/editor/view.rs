@@ -5,7 +5,7 @@
 //! own editor commands, undo/history, or any drawing logic.
 
 use presentation::layout::BoardViewport;
-use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
+use sokobanitron_gameplay::{BoardCell, BoardSolveState, BoardView, TileKind};
 use sokobanitron_level_editor::{EditorMode, LevelEditor, NonVoidBounds};
 
 use crate::shared::{DoubleTapTracker, PointerId, TouchPointerState, TouchStartPolicy};
@@ -181,7 +181,7 @@ pub(crate) fn build_visible_window(ui: &EditorUiState, editor: &LevelEditor) -> 
         boxes,
         player_local,
         selected_box_local,
-        false,
+        BoardSolveState::Unsolved,
     );
 
     let board_pixel_width = (board_cols + GRID_MARGIN_TILES.saturating_mul(2)) * cell_size;

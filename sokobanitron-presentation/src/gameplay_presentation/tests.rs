@@ -1,12 +1,13 @@
 use super::{GameplayDamage, GameplayPresentationState};
-use crate::gameplay_animation::GameplayAnimationPolicy;
+use crate::editor_presentation::EditorPresentationState;
+use crate::gameplay_animation::{GameplayAnimationPolicy, GameplayAnimationRunner};
 use crate::layout::fit_board_viewport_for_controls;
 use crate::renderer::Renderer;
 use crate::screen_requests::{
-    GameplayPresentationCause, GameplayPresentationUpdate, GameplayScreenMode,
+    FrameRequest, GameplayPresentationCause, GameplayPresentationUpdate, GameplayScreenMode,
     GameplayScreenRequest,
 };
-use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
+use sokobanitron_gameplay::{BoardCell, BoardSolveState, BoardView, TileKind};
 use std::time::{Duration, Instant};
 
 fn gameplay_scene(level_number: usize) -> GameplayPresentationUpdate {
@@ -38,7 +39,7 @@ fn gameplay_scene_with_player(
         vec![false; 9],
         player,
         None,
-        false,
+        BoardSolveState::Unsolved,
     );
     GameplayPresentationUpdate {
         scene: GameplayScreenRequest {
@@ -74,7 +75,7 @@ fn floor_board(
     boxes: Vec<BoardCell>,
     player: Option<BoardCell>,
     selected_box: Option<BoardCell>,
-    solved: bool,
+    solve_state: BoardSolveState,
 ) -> BoardView {
     let len = (width * height) as usize;
     let mut box_flags = vec![false; len];
@@ -88,7 +89,7 @@ fn floor_board(
         box_flags,
         player,
         selected_box,
-        solved,
+        solve_state,
     )
 }
 
@@ -113,12 +114,19 @@ fn gameplay_damage_for_box_move_is_normalized_dirty_cells() {
             vec![cell(2, 1)],
             Some(cell(1, 1)),
             Some(cell(2, 1)),
-            false,
+            BoardSolveState::Unsolved,
         ),
         GameplayPresentationCause::CurrentState,
     );
     let current = update_from_board(
-        floor_board(5, 3, vec![cell(3, 1)], Some(cell(1, 1)), None, false),
+        floor_board(
+            5,
+            3,
+            vec![cell(3, 1)],
+            Some(cell(1, 1)),
+            None,
+            BoardSolveState::Unsolved,
+        ),
         GameplayPresentationCause::BoxMoved {
             path: vec![cell(2, 1), cell(3, 1)],
         },
@@ -138,11 +146,25 @@ fn gameplay_damage_for_box_move_is_normalized_dirty_cells() {
 #[test]
 fn limited_box_move_damage_includes_sampled_interior_cells_only() {
     let previous = update_from_board(
-        floor_board(7, 3, vec![cell(2, 1)], Some(cell(1, 1)), None, false),
+        floor_board(
+            7,
+            3,
+            vec![cell(2, 1)],
+            Some(cell(1, 1)),
+            None,
+            BoardSolveState::Unsolved,
+        ),
         GameplayPresentationCause::CurrentState,
     );
     let current = update_from_board(
-        floor_board(7, 3, vec![cell(6, 1)], Some(cell(5, 1)), None, false),
+        floor_board(
+            7,
+            3,
+            vec![cell(6, 1)],
+            Some(cell(5, 1)),
+            None,
+            BoardSolveState::Unsolved,
+        ),
         GameplayPresentationCause::BoxMoved {
             path: vec![cell(2, 1), cell(3, 1), cell(4, 1), cell(5, 1), cell(6, 1)],
         },
@@ -167,7 +189,7 @@ fn limited_box_move_damage_includes_sampled_interior_cells_only() {
 }
 
 #[test]
-fn clean_puzzle_solved_effect_dirties_boxes_and_player() {
+fn solved_flag_dirties_boxes_and_player() {
     let previous = update_from_board(
         floor_board(
             5,
@@ -175,7 +197,7 @@ fn clean_puzzle_solved_effect_dirties_boxes_and_player() {
             vec![cell(1, 1), cell(2, 1)],
             Some(cell(0, 1)),
             None,
-            false,
+            BoardSolveState::Unsolved,
         ),
         GameplayPresentationCause::CurrentState,
     );
@@ -186,9 +208,9 @@ fn clean_puzzle_solved_effect_dirties_boxes_and_player() {
             vec![cell(1, 1), cell(2, 1)],
             Some(cell(0, 1)),
             None,
-            true,
+            BoardSolveState::SolvedClean,
         ),
-        GameplayPresentationCause::PuzzleSolved { clean: true },
+        GameplayPresentationCause::CurrentState,
     );
     let mut state = GameplayPresentationState::new();
 
@@ -202,49 +224,99 @@ fn clean_puzzle_solved_effect_dirties_boxes_and_player() {
 }
 
 #[test]
-fn dirty_puzzle_solved_effect_dirties_boxes_then_blink_dirties_player() {
-    let previous = update_from_board(
+fn full_sleep_frame_uses_solved_board_visuals_without_presentation_state() {
+    const WIDTH: u32 = 96;
+    const HEIGHT: u32 = 64;
+    let solved = update_from_board(
         floor_board(
             5,
             3,
             vec![cell(1, 1), cell(2, 1)],
             Some(cell(0, 1)),
             None,
-            false,
+            BoardSolveState::SolvedClean,
         ),
         GameplayPresentationCause::CurrentState,
     );
-    let current = update_from_board(
-        floor_board(
-            5,
-            3,
-            vec![cell(1, 1), cell(2, 1)],
-            Some(cell(0, 1)),
-            None,
-            true,
-        ),
-        GameplayPresentationCause::PuzzleSolved { clean: false },
-    );
-    let start = Instant::now();
+    let sleep_update = GameplayPresentationUpdate {
+        scene: GameplayScreenRequest {
+            mode: GameplayScreenMode::Sleep,
+            sleeping_player: true,
+            ..solved.scene.clone()
+        },
+        cause: GameplayPresentationCause::CurrentState,
+    };
     let mut state = GameplayPresentationState::new();
+    let mut editor_state = EditorPresentationState::new();
+    let mut renderer = Renderer::new();
+    let mut frame = vec![0; (WIDTH * HEIGHT) as usize];
+    let mut expected_renderer = Renderer::new();
+    let mut expected_frame = vec![0; (WIDTH * HEIGHT) as usize];
 
-    state.replace_update_at(previous, start);
-    let result = state.replace_update_at(current, start);
-
-    assert_eq!(
-        result.damage,
-        GameplayDamage::Cells(vec![cell(1, 1), cell(2, 1)])
+    renderer.draw_full_frame_request(
+        &mut frame,
+        WIDTH,
+        HEIGHT,
+        &FrameRequest::Gameplay {
+            update: sleep_update.clone(),
+        },
+        &mut state,
+        &mut editor_state,
+        &[],
     );
-    assert!(state.has_pending_presentation());
+    expected_renderer.draw_gameplay_scene_with_animation(
+        &mut expected_frame,
+        WIDTH,
+        HEIGHT,
+        &sleep_update.scene,
+        &GameplayAnimationRunner::default(),
+    );
 
-    let blink_result =
-        state.advance_presentation_with_damage_at(start + Duration::from_millis(400));
-
-    assert_eq!(blink_result.damage, GameplayDamage::Cells(vec![cell(0, 1)]));
+    assert_eq!(frame, expected_frame);
+    assert!(!renderer.solved_box_bitmap_cache.is_empty());
+    assert!(!renderer.sleeping_player_bitmap_cache.is_empty());
+    assert!(renderer.squint_player_bitmap_cache.is_empty());
 }
 
 #[test]
-fn solved_board_flag_without_puzzle_solved_effect_does_not_dirty_entities() {
+fn full_frame_uses_dirty_solved_board_visuals_without_presentation_state() {
+    const WIDTH: u32 = 96;
+    const HEIGHT: u32 = 64;
+    let dirty_solved = update_from_board(
+        floor_board(
+            5,
+            3,
+            vec![cell(1, 1), cell(2, 1)],
+            Some(cell(0, 1)),
+            None,
+            BoardSolveState::SolvedDirty,
+        ),
+        GameplayPresentationCause::CurrentState,
+    );
+    let mut state = GameplayPresentationState::new();
+    let mut editor_state = EditorPresentationState::new();
+    let mut renderer = Renderer::new();
+    let mut frame = vec![0; (WIDTH * HEIGHT) as usize];
+
+    renderer.draw_full_frame_request(
+        &mut frame,
+        WIDTH,
+        HEIGHT,
+        &FrameRequest::Gameplay {
+            update: dirty_solved,
+        },
+        &mut state,
+        &mut editor_state,
+        &[],
+    );
+
+    assert!(!renderer.solved_box_bitmap_cache.is_empty());
+    assert!(!renderer.player_bitmap_cache.is_empty());
+    assert!(renderer.squint_player_bitmap_cache.is_empty());
+}
+
+#[test]
+fn solved_board_flag_without_puzzle_solved_event_dirties_entities() {
     let previous = update_from_board(
         floor_board(
             5,
@@ -252,7 +324,7 @@ fn solved_board_flag_without_puzzle_solved_effect_does_not_dirty_entities() {
             vec![cell(1, 1), cell(2, 1)],
             Some(cell(0, 1)),
             None,
-            false,
+            BoardSolveState::Unsolved,
         ),
         GameplayPresentationCause::CurrentState,
     );
@@ -263,7 +335,7 @@ fn solved_board_flag_without_puzzle_solved_effect_does_not_dirty_entities() {
             vec![cell(1, 1), cell(2, 1)],
             Some(cell(0, 1)),
             None,
-            true,
+            BoardSolveState::SolvedClean,
         ),
         GameplayPresentationCause::CurrentState,
     );
@@ -273,56 +345,54 @@ fn solved_board_flag_without_puzzle_solved_effect_does_not_dirty_entities() {
     let _ = state.replace_update_without_presentation_effects_at(previous, now);
     let result = state.replace_update_without_presentation_effects_at(current, now);
 
-    assert_eq!(result.damage, GameplayDamage::Cells(Vec::new()));
+    assert_eq!(
+        result.damage,
+        GameplayDamage::Cells(vec![cell(0, 1), cell(1, 1), cell(2, 1)])
+    );
 }
 
 #[test]
-fn puzzle_solved_effect_waits_for_full_policy_box_move_animation() {
+fn solved_flag_dirties_stationary_boxes_during_full_policy_box_move_animation() {
     let previous = update_from_board(
-        floor_board(5, 3, vec![cell(2, 1)], Some(cell(1, 1)), None, false),
+        floor_board(
+            5,
+            4,
+            vec![cell(2, 1), cell(1, 2)],
+            Some(cell(1, 1)),
+            None,
+            BoardSolveState::Unsolved,
+        ),
         GameplayPresentationCause::CurrentState,
     );
     let current = update_from_board(
-        floor_board(5, 3, vec![cell(4, 1)], Some(cell(3, 1)), None, true),
+        floor_board(
+            5,
+            4,
+            vec![cell(4, 1), cell(1, 2)],
+            Some(cell(3, 1)),
+            None,
+            BoardSolveState::SolvedClean,
+        ),
         GameplayPresentationCause::BoxMoved {
             path: vec![cell(2, 1), cell(3, 1), cell(4, 1)],
         },
     );
-    let solved = GameplayPresentationUpdate {
-        cause: GameplayPresentationCause::PuzzleSolved { clean: true },
-        ..current.clone()
-    };
     let start = Instant::now();
     let mut state = GameplayPresentationState::new();
 
-    let _ = state.replace_update_without_presentation_effects_at(previous.clone(), start);
-    let _ = state.replace_update_without_presentation_effects_at(current.clone(), start);
-    assert!(state.animation_runner.enqueue_for_update(
-        Some(&previous.scene),
-        &current,
-        GameplayAnimationPolicy::Full,
-        start,
-    ));
-    let solved_result = state.replace_update_at(solved, start);
-
-    assert_eq!(solved_result.damage, GameplayDamage::Cells(Vec::new()));
-    assert!(state.has_pending_presentation());
-
-    let first_animation_result =
-        state.advance_presentation_with_damage_at(start + Duration::from_millis(50));
+    state.replace_update_at(previous, start);
+    let result = state.replace_update_at(current, start);
     assert_eq!(
-        first_animation_result.damage,
-        GameplayDamage::Cells(vec![cell(1, 1), cell(2, 1), cell(3, 1), cell(4, 1)])
+        result.damage,
+        GameplayDamage::Cells(vec![
+            cell(1, 1),
+            cell(2, 1),
+            cell(3, 1),
+            cell(4, 1),
+            cell(1, 2)
+        ])
     );
     assert!(state.has_pending_presentation());
-
-    let solved_result =
-        state.advance_presentation_with_damage_at(start + Duration::from_millis(100));
-    assert_eq!(
-        solved_result.damage,
-        GameplayDamage::Cells(vec![cell(1, 1), cell(2, 1), cell(3, 1), cell(4, 1)])
-    );
-    assert!(!state.has_pending_presentation());
 }
 
 #[test]
@@ -334,9 +404,9 @@ fn restart_after_solve_dirties_all_entity_cells() {
             vec![cell(1, 1), cell(2, 1)],
             Some(cell(0, 1)),
             None,
-            true,
+            BoardSolveState::SolvedClean,
         ),
-        GameplayPresentationCause::PuzzleSolved { clean: true },
+        GameplayPresentationCause::CurrentState,
     );
     let restarted = update_from_board(
         floor_board(
@@ -345,7 +415,7 @@ fn restart_after_solve_dirties_all_entity_cells() {
             vec![cell(1, 1), cell(2, 1)],
             Some(cell(0, 1)),
             None,
-            false,
+            BoardSolveState::Unsolved,
         ),
         GameplayPresentationCause::Restarted,
     );
@@ -358,7 +428,7 @@ fn restart_after_solve_dirties_all_entity_cells() {
             vec![cell(1, 1), cell(2, 1)],
             Some(cell(0, 1)),
             None,
-            false,
+            BoardSolveState::Unsolved,
         ),
         GameplayPresentationCause::CurrentState,
     );
@@ -387,7 +457,7 @@ fn restart_before_solve_uses_normal_board_damage_only() {
             vec![cell(1, 1), cell(2, 1)],
             Some(cell(0, 1)),
             None,
-            false,
+            BoardSolveState::Unsolved,
         ),
         GameplayPresentationCause::CurrentState,
     );
@@ -407,11 +477,25 @@ fn restart_before_solve_uses_normal_board_damage_only() {
 #[test]
 fn player_move_entity_flash_final_damage_restores_current_player_cell() {
     let previous = update_from_board(
-        floor_board(5, 3, Vec::new(), Some(cell(1, 1)), None, false),
+        floor_board(
+            5,
+            3,
+            Vec::new(),
+            Some(cell(1, 1)),
+            None,
+            BoardSolveState::Unsolved,
+        ),
         GameplayPresentationCause::CurrentState,
     );
     let current = update_from_board(
-        floor_board(5, 3, Vec::new(), Some(cell(2, 1)), None, false),
+        floor_board(
+            5,
+            3,
+            Vec::new(),
+            Some(cell(2, 1)),
+            None,
+            BoardSolveState::Unsolved,
+        ),
         GameplayPresentationCause::PlayerMoved { to: cell(2, 1) },
     );
     let start = Instant::now();
@@ -458,15 +542,29 @@ fn player_move_entity_flash_final_damage_restores_current_player_cell() {
 fn interrupting_box_move_flash_light_clears_path_pixels() {
     const WIDTH: u32 = 160;
     const HEIGHT: u32 = 160;
-    let previous_board = floor_board(4, 2, vec![cell(2, 0)], Some(cell(1, 0)), None, false);
-    let current_board = floor_board(4, 2, vec![cell(3, 0)], Some(cell(2, 0)), None, false);
+    let previous_board = floor_board(
+        4,
+        2,
+        vec![cell(2, 0)],
+        Some(cell(1, 0)),
+        None,
+        BoardSolveState::Unsolved,
+    );
+    let current_board = floor_board(
+        4,
+        2,
+        vec![cell(3, 0)],
+        Some(cell(2, 0)),
+        None,
+        BoardSolveState::Unsolved,
+    );
     let interrupted_board = floor_board(
         4,
         2,
         vec![cell(3, 0)],
         Some(cell(2, 0)),
         Some(cell(3, 0)),
-        false,
+        BoardSolveState::Unsolved,
     );
     let previous = GameplayPresentationUpdate {
         scene: GameplayScreenRequest {
@@ -551,11 +649,25 @@ fn interrupting_box_move_flash_light_clears_path_pixels() {
 #[test]
 fn box_move_entity_flash_damage_includes_hidden_current_player_cell() {
     let previous = update_from_board(
-        floor_board(5, 3, vec![cell(2, 1)], Some(cell(1, 1)), None, false),
+        floor_board(
+            5,
+            3,
+            vec![cell(2, 1)],
+            Some(cell(1, 1)),
+            None,
+            BoardSolveState::Unsolved,
+        ),
         GameplayPresentationCause::CurrentState,
     );
     let current = update_from_board(
-        floor_board(5, 3, vec![cell(3, 1)], Some(cell(1, 1)), None, false),
+        floor_board(
+            5,
+            3,
+            vec![cell(3, 1)],
+            Some(cell(1, 1)),
+            None,
+            BoardSolveState::Unsolved,
+        ),
         GameplayPresentationCause::BoxMoved {
             path: vec![cell(2, 1), cell(3, 1)],
         },
@@ -593,12 +705,19 @@ fn partial_cell_draw_matches_full_gameplay_render() {
             vec![cell(2, 1)],
             Some(cell(1, 1)),
             Some(cell(2, 1)),
-            false,
+            BoardSolveState::Unsolved,
         ),
         GameplayPresentationCause::CurrentState,
     );
     let current = update_from_board(
-        floor_board(5, 3, vec![cell(3, 1)], Some(cell(1, 1)), None, false),
+        floor_board(
+            5,
+            3,
+            vec![cell(3, 1)],
+            Some(cell(1, 1)),
+            None,
+            BoardSolveState::Unsolved,
+        ),
         GameplayPresentationCause::BoxMoved {
             path: vec![cell(2, 1), cell(3, 1)],
         },
@@ -650,7 +769,7 @@ fn partial_cell_draw_matches_full_gameplay_render_with_goal_tile() {
             vec![false, false, false, true, false, false, false, false, false],
             Some(cell(2, 1)),
             None,
-            false,
+            BoardSolveState::Unsolved,
         ),
         GameplayPresentationCause::CurrentState,
     );
@@ -662,7 +781,7 @@ fn partial_cell_draw_matches_full_gameplay_render_with_goal_tile() {
             vec![false, true, false, false, false, false, false, false, false],
             Some(cell(1, 1)),
             None,
-            false,
+            BoardSolveState::Unsolved,
         ),
         GameplayPresentationCause::BoxMoved {
             path: vec![cell(0, 1), cell(1, 0)],
@@ -860,7 +979,7 @@ fn non_level_transition_update_does_not_start_level_transition() {
 #[test]
 fn level_transition_frames_hide_new_level_entities_until_complete() {
     let previous = update_from_board(
-        floor_board(5, 3, Vec::new(), None, None, false),
+        floor_board(5, 3, Vec::new(), None, None, BoardSolveState::Unsolved),
         GameplayPresentationCause::CurrentState,
     );
     let mut current_with_entities = update_from_board(
@@ -870,12 +989,12 @@ fn level_transition_frames_hide_new_level_entities_until_complete() {
             vec![cell(2, 1)],
             Some(cell(1, 1)),
             Some(cell(2, 1)),
-            false,
+            BoardSolveState::Unsolved,
         ),
         GameplayPresentationCause::LevelTransition,
     );
     let mut current_without_entities = update_from_board(
-        floor_board(5, 3, Vec::new(), None, None, false),
+        floor_board(5, 3, Vec::new(), None, None, BoardSolveState::Unsolved),
         GameplayPresentationCause::LevelTransition,
     );
     current_with_entities.scene.level_number = 2;

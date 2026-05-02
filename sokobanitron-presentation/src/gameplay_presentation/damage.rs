@@ -66,17 +66,12 @@ pub(super) fn gameplay_damage(
         add_optional_cell(&mut dirty, current.board.selected_box());
     }
 
-    GameplayDamage::Cells(normalize_cells(dirty))
-}
+    if previous.board.solve_state() != current.board.solve_state() {
+        add_entity_cells(&mut dirty, previous);
+        add_entity_cells(&mut dirty, current);
+    }
 
-pub(super) fn gameplay_board_state_changed(
-    previous: Option<&GameplayScreenRequest>,
-    current: &GameplayScreenRequest,
-) -> bool {
-    let Some(previous) = previous else {
-        return true;
-    };
-    previous.board != current.board
+    GameplayDamage::Cells(normalize_cells(dirty))
 }
 
 pub(super) fn restart_damage(

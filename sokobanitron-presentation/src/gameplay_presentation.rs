@@ -4,7 +4,6 @@
 //! the latest gameplay scene and delegates drawing to the shared gameplay renderer.
 
 mod damage;
-mod effects;
 mod level_transition;
 
 use crate::gameplay_animation::{GameplayAnimationPolicy, GameplayAnimationRunner};
@@ -12,14 +11,11 @@ use crate::layout::ScreenRect;
 use crate::renderer::Renderer;
 use crate::screen_requests::{GameplayPresentationUpdate, GameplayScreenRequest};
 use sokobanitron_gameplay::BoardCell;
-use std::collections::VecDeque;
 use std::time::Instant;
 
 use self::damage::{
-    add_optional_cell, gameplay_board_state_changed, gameplay_damage, merge_damage,
-    normalize_cells, restart_damage,
+    add_optional_cell, gameplay_damage, merge_damage, normalize_cells, restart_damage,
 };
-use self::effects::{GameplayVisualEffect, QueuedGameplayEffect, queued_effect_for_update};
 use self::level_transition::LevelTransition;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,8 +65,6 @@ pub fn gameplay_damage_union_rect(
 pub struct GameplayPresentationState {
     animation_policy: GameplayAnimationPolicy,
     current_scene: Option<GameplayScreenRequest>,
-    pending_effects: VecDeque<QueuedGameplayEffect>,
-    visual_effect: GameplayVisualEffect,
     animation_runner: GameplayAnimationRunner,
     level_transition: Option<LevelTransition>,
     gameplay_frame_obscured_by_overlay: bool,
@@ -91,8 +85,6 @@ impl GameplayPresentationState {
         Self {
             animation_policy,
             current_scene: None,
-            pending_effects: VecDeque::new(),
-            visual_effect: GameplayVisualEffect::default(),
             animation_runner: GameplayAnimationRunner::default(),
             level_transition: None,
             gameplay_frame_obscured_by_overlay: false,
@@ -124,7 +116,6 @@ impl GameplayPresentationState {
         now: Instant,
         suspend_presentation_effects: bool,
     ) -> GameplayPresentationResult {
-        let queued_effect = queued_effect_for_update(&update);
         let previous_scene = self.current_scene.clone();
         let previous_scene_ref = previous_scene.as_ref();
         let level_transition = if !suspend_presentation_effects
@@ -136,28 +127,19 @@ impl GameplayPresentationState {
         };
         let scene_unchanged = previous_scene_ref == Some(&update.scene);
         let mut damage = gameplay_damage(previous_scene_ref, &update.scene);
-        if suspend_presentation_effects {
-            if !scene_unchanged && gameplay_board_state_changed(previous_scene_ref, &update.scene) {
-                self.pending_effects.clear();
-                self.visual_effect = GameplayVisualEffect::default();
-            }
-        } else if scene_unchanged {
-            damage = merge_damage(damage, self.advance_ready_presentation_at(now));
-        } else {
-            damage = merge_damage(
-                damage,
-                self.clear_animation_damage(update.scene.board.player()),
-            );
-            if gameplay_board_state_changed(previous_scene_ref, &update.scene) {
-                self.pending_effects.clear();
-                self.visual_effect = GameplayVisualEffect::default();
+        if !suspend_presentation_effects {
+            if scene_unchanged {
+                damage = merge_damage(damage, self.advance_ready_presentation_at(now));
+            } else {
+                damage = merge_damage(
+                    damage,
+                    self.clear_animation_damage(update.scene.board.player()),
+                );
             }
         }
         damage = merge_damage(damage, restart_damage(previous_scene_ref, &update));
         self.current_scene = Some(update.scene.clone());
         if level_transition.is_some() {
-            self.pending_effects.clear();
-            self.visual_effect = GameplayVisualEffect::default();
             self.animation_runner.clear();
             self.level_transition = level_transition;
             return GameplayPresentationResult::new(GameplayDamage::Full, true);
@@ -173,9 +155,6 @@ impl GameplayPresentationState {
             self.animation_policy,
             now,
         );
-        if let Some(effect) = queued_effect {
-            self.pending_effects.push_back(effect);
-        }
         if animation_enqueued {
             damage = merge_damage(
                 damage,
@@ -186,7 +165,6 @@ impl GameplayPresentationState {
                 ),
             );
         }
-        damage = merge_damage(damage, self.apply_ready_effects(now));
         self.presentation_result(damage)
     }
 
@@ -218,16 +196,12 @@ impl GameplayPresentationState {
     }
 
     pub fn clear_transient_presentation(&mut self) {
-        self.pending_effects.clear();
-        self.visual_effect = GameplayVisualEffect::default();
         self.animation_runner.clear();
         self.level_transition = None;
     }
 
     pub fn has_pending_presentation(&self) -> bool {
-        self.level_transition.is_some()
-            || self.animation_runner.has_active_animation()
-            || !self.pending_effects.is_empty()
+        self.level_transition.is_some() || self.animation_runner.has_active_animation()
     }
 
     pub fn has_active_level_transition(&self) -> bool {
@@ -267,7 +241,6 @@ impl GameplayPresentationState {
                     height,
                     scene,
                     cells,
-                    self.visual_effect.entity_visual_style(),
                     &self.animation_runner,
                 );
             }
@@ -292,17 +265,15 @@ impl GameplayPresentationState {
             return;
         }
         let _ = self.advance_ready_presentation_at(now);
-        let _ = self.apply_ready_effects(now);
         let scene = self
             .current_scene
             .as_ref()
             .expect("current scene checked before presentation advance");
-        renderer.draw_gameplay_scene_with_style_and_animation(
+        renderer.draw_gameplay_scene_with_animation(
             frame,
             width,
             height,
             scene,
-            self.visual_effect.entity_visual_style(),
             &self.animation_runner,
         );
     }
@@ -325,9 +296,8 @@ impl GameplayPresentationState {
                 self.has_pending_presentation(),
             );
         }
-        let mut damage = GameplayDamage::Cells(self.advance_ready_presentation_at(now));
-        damage = merge_damage(damage, self.apply_ready_effects(now));
-        self.presentation_result(damage)
+        let dirty = self.advance_ready_presentation_at(now);
+        self.presentation_result(GameplayDamage::Cells(dirty))
     }
 
     fn advance_ready_presentation_at(&mut self, now: Instant) -> Vec<BoardCell> {

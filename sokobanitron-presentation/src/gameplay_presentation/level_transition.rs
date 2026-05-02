@@ -181,12 +181,11 @@ impl TransitionState {
     }
 
     fn draw_final(&self, renderer: &mut Renderer, frame: &mut [u8], width: u32, height: u32) {
-        renderer.draw_gameplay_scene_with_style_and_animation(
+        renderer.draw_gameplay_scene_with_animation(
             frame,
             width,
             height,
             &self.new_scene,
-            crate::renderer::EntityVisualStyle::Standard,
             &crate::gameplay_animation::GameplayAnimationRunner::default(),
         );
     }

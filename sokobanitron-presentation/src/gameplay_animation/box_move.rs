@@ -382,8 +382,7 @@ mod tests {
     use crate::gameplay_animation::entity_flash::EntityFlashPhase;
     use crate::layout::fit_board_viewport_for_controls;
     use crate::screen_requests::{GameplayScreenMode, GameplayScreenRequest};
-    use sokobanitron_gameplay::BoardCell;
-    use sokobanitron_gameplay::{BoardView, TileKind};
+    use sokobanitron_gameplay::{BoardCell, BoardSolveState, BoardView, TileKind};
 
     #[test]
     fn limited_box_move_samples_skip_first_second_to_last_and_last_cells() {
@@ -443,7 +442,7 @@ mod tests {
             vec![false, false, true, false],
             Some(BoardCell::new(1, 0)),
             None,
-            false,
+            BoardSolveState::Unsolved,
         );
         let previous_scene = GameplayScreenRequest {
             viewport: fit_board_viewport_for_controls(96, 64, &board),
@@ -459,7 +458,7 @@ mod tests {
             vec![false, false, false, true],
             Some(BoardCell::new(2, 0)),
             None,
-            false,
+            BoardSolveState::Unsolved,
         );
         let current_scene = GameplayScreenRequest {
             viewport: fit_board_viewport_for_controls(96, 64, &current_board),

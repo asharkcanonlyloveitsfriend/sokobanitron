@@ -226,7 +226,7 @@ fn neighbor_cell(board: &BoardView, tile: BoardCell, edge: TileEdge) -> Option<B
 mod tests {
     use super::{Renderer, TileBorderPolicy};
     use crate::layout::BoardViewport;
-    use sokobanitron_gameplay::{BoardView, TileKind};
+    use sokobanitron_gameplay::{BoardSolveState, BoardView, TileKind};
 
     fn board(tiles: Vec<TileKind>) -> BoardView {
         let len = tiles.len();
@@ -237,7 +237,7 @@ mod tests {
             vec![false; len],
             None,
             None,
-            false,
+            BoardSolveState::Unsolved,
         )
     }
 

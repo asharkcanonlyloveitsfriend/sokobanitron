@@ -10,6 +10,7 @@ use sokobanitron_gameplay::BoardCell;
 
 use super::{BoardSceneComposition, EntityVisualStyle, Renderer, chrome};
 use crate::gameplay_animation::GameplayAnimationRunner;
+use sokobanitron_gameplay::BoardSolveState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct GameplaySceneComposition {
@@ -24,13 +25,10 @@ enum GameplayChromePhase {
 }
 
 impl GameplaySceneComposition {
-    fn from_request(
-        request: &GameplayScreenRequest,
-        entity_visual_style: EntityVisualStyle,
-    ) -> Self {
+    fn from_request(request: &GameplayScreenRequest) -> Self {
         Self {
             board: BoardSceneComposition::gameplay_snapshot(
-                entity_visual_style,
+                entity_visual_style_for_request(request),
                 request.sleeping_player || matches!(request.mode, GameplayScreenMode::Sleep),
             ),
             chrome: match request.mode {
@@ -52,26 +50,24 @@ impl Renderer {
         height: u32,
         request: &GameplayScreenRequest,
     ) {
-        self.draw_gameplay_scene_with_style_and_animation(
+        self.draw_gameplay_scene_with_animation(
             frame,
             width,
             height,
             request,
-            EntityVisualStyle::Standard,
             &GameplayAnimationRunner::default(),
         );
     }
 
-    pub(crate) fn draw_gameplay_scene_with_style_and_animation(
+    pub(crate) fn draw_gameplay_scene_with_animation(
         &mut self,
         frame: &mut [u8],
         width: u32,
         height: u32,
         request: &GameplayScreenRequest,
-        entity_visual_style: EntityVisualStyle,
         animation_runner: &GameplayAnimationRunner,
     ) {
-        let composition = GameplaySceneComposition::from_request(request, entity_visual_style);
+        let composition = GameplaySceneComposition::from_request(request);
         self.draw_gameplay_board_scene(
             frame,
             width,
@@ -97,10 +93,9 @@ impl Renderer {
         height: u32,
         request: &GameplayScreenRequest,
         cells: &[BoardCell],
-        entity_visual_style: EntityVisualStyle,
         animation_runner: &GameplayAnimationRunner,
     ) {
-        let composition = GameplaySceneComposition::from_request(request, entity_visual_style);
+        let composition = GameplaySceneComposition::from_request(request);
         assert!(
             matches!(
                 composition.chrome,
@@ -229,5 +224,13 @@ impl Renderer {
         };
         self.restore_background_rect(frame, width, height, rect);
         chrome::draw_sleep_label(frame, width, height, rect, self.theme);
+    }
+}
+
+fn entity_visual_style_for_request(request: &GameplayScreenRequest) -> EntityVisualStyle {
+    match request.board.solve_state() {
+        BoardSolveState::Unsolved => EntityVisualStyle::Standard,
+        BoardSolveState::SolvedClean => EntityVisualStyle::SolvedClean,
+        BoardSolveState::SolvedDirty => EntityVisualStyle::SolvedDirty,
     }
 }

@@ -154,15 +154,10 @@ mod tests {
         let Some(plan) = solved_move.presentation_plan else {
             panic!("expected solved move render");
         };
-        let [
-            PresentationStep::Render(move_request),
-            PresentationStep::Render(solved_request),
-        ] = plan.steps.as_slice()
-        else {
-            panic!("expected move render followed by solved render");
+        let [PresentationStep::Render(move_request)] = plan.steps.as_slice() else {
+            panic!("expected one solved move render");
         };
         let move_update = gameplay_update(move_request.clone());
-        let solved_update = gameplay_update(solved_request.clone());
 
         assert_eq!(
             move_update.cause,
@@ -171,11 +166,6 @@ mod tests {
             }
         );
         assert!(move_update.scene.board.is_solved());
-        assert_eq!(
-            solved_update.cause,
-            GameplayPresentationCause::PuzzleSolved { clean: true }
-        );
-        assert!(solved_update.scene.board.is_solved());
 
         let expected_cells = vec![
             cell(1, 1),
@@ -211,16 +201,6 @@ mod tests {
             }
         );
 
-        assert_eq!(
-            frame_renderer.draw_frame_request(
-                &mut frame,
-                crate::config::WIDTH as u32,
-                crate::config::HEIGHT as u32,
-                solved_request,
-                &[],
-            ),
-            FrameDamage::Noop
-        );
         assert!(frame_renderer.has_pending_visible_presentation(&app_state));
     }
 }

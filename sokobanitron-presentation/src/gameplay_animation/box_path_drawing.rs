@@ -310,7 +310,7 @@ mod tests {
     use crate::layout::fit_board_viewport_for_controls;
     use crate::renderer::Renderer;
     use crate::screen_requests::{GameplayScreenMode, GameplayScreenRequest};
-    use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
+    use sokobanitron_gameplay::{BoardCell, BoardSolveState, BoardView, TileKind};
 
     #[test]
     fn filled_circle_composites_alpha_into_gray_frame() {
@@ -330,7 +330,7 @@ mod tests {
             vec![false, false],
             None,
             None,
-            false,
+            BoardSolveState::Unsolved,
         );
         let scene = GameplayScreenRequest {
             viewport: fit_board_viewport_for_controls(96, 64, &board),
@@ -360,7 +360,7 @@ mod tests {
             vec![false, false],
             None,
             None,
-            false,
+            BoardSolveState::Unsolved,
         );
         let scene = GameplayScreenRequest {
             viewport: fit_board_viewport_for_controls(96, 64, &board),

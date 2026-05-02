@@ -367,9 +367,9 @@ mod tests {
     use super::{BoxSpriteVariant, PlayerSpriteVariant, Renderer};
     use crate::layout::fit_board_viewport_for_controls;
     use crate::renderer::EntityVisualStyle;
-    use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
+    use sokobanitron_gameplay::{BoardCell, BoardSolveState, BoardView, TileKind};
 
-    fn board(is_solved: bool) -> BoardView {
+    fn board(solve_state: BoardSolveState) -> BoardView {
         BoardView::new(
             3,
             3,
@@ -387,7 +387,7 @@ mod tests {
             vec![false, false, false, false, true, false, false, false, false],
             Some(BoardCell::new(1, 1)),
             None,
-            is_solved,
+            solve_state,
         )
     }
 
@@ -415,8 +415,8 @@ mod tests {
 
     #[test]
     fn generic_board_render_does_not_opt_into_solved_visuals() {
-        let solved_board = board(true);
-        let unsolved_board = board(false);
+        let solved_board = board(BoardSolveState::SolvedClean);
+        let unsolved_board = board(BoardSolveState::Unsolved);
         let solved_viewport = fit_board_viewport_for_controls(64, 64, &solved_board);
         let unsolved_viewport = fit_board_viewport_for_controls(64, 64, &unsolved_board);
         let mut solved_renderer = Renderer::new();
@@ -450,7 +450,7 @@ mod tests {
 
     #[test]
     fn gameplay_scene_uses_solved_visuals_when_opted_in() {
-        let board = board(true);
+        let board = board(BoardSolveState::SolvedClean);
         let viewport = fit_board_viewport_for_controls(64, 64, &board);
         let mut renderer = Renderer::new();
         let mut frame = vec![0; 64 * 64];
@@ -472,7 +472,7 @@ mod tests {
 
     #[test]
     fn dirty_solved_visuals_keep_standard_player() {
-        let board = board(true);
+        let board = board(BoardSolveState::SolvedDirty);
         let viewport = fit_board_viewport_for_controls(64, 64, &board);
         let mut renderer = Renderer::new();
         let mut frame = vec![0; 64 * 64];
@@ -495,7 +495,7 @@ mod tests {
 
     #[test]
     fn sleep_mode_keeps_sleeping_player_on_solved_gameplay_board() {
-        let board = board(true);
+        let board = board(BoardSolveState::SolvedClean);
         let viewport = fit_board_viewport_for_controls(64, 64, &board);
         let mut renderer = Renderer::new();
         let mut frame = vec![0; 64 * 64];

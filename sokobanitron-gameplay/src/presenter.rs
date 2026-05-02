@@ -15,6 +15,34 @@ pub enum TileKind {
     Goal,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BoardSolveState {
+    #[default]
+    Unsolved,
+    SolvedClean,
+    SolvedDirty,
+}
+
+impl BoardSolveState {
+    pub fn from_solution(is_solved: bool, clean: bool) -> Self {
+        if !is_solved {
+            Self::Unsolved
+        } else if clean {
+            Self::SolvedClean
+        } else {
+            Self::SolvedDirty
+        }
+    }
+
+    pub fn is_solved(self) -> bool {
+        self != Self::Unsolved
+    }
+
+    pub fn is_dirty_solution(self) -> bool {
+        self == Self::SolvedDirty
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoardView {
     width: u32,
@@ -23,7 +51,7 @@ pub struct BoardView {
     boxes: Vec<bool>,
     player: Option<BoardCell>,
     selected_box: Option<BoardCell>,
-    is_solved: bool,
+    solve_state: BoardSolveState,
 }
 
 impl BoardView {
@@ -34,7 +62,7 @@ impl BoardView {
         boxes: Vec<bool>,
         player: Option<BoardCell>,
         selected_box: Option<BoardCell>,
-        is_solved: bool,
+        solve_state: BoardSolveState,
     ) -> Self {
         assert_eq!(tiles.len(), (width as usize) * (height as usize));
         assert_eq!(boxes.len(), (width as usize) * (height as usize));
@@ -45,7 +73,7 @@ impl BoardView {
             boxes,
             player,
             selected_box,
-            is_solved,
+            solve_state,
         }
     }
 
@@ -78,7 +106,15 @@ impl BoardView {
     }
 
     pub fn is_solved(&self) -> bool {
-        self.is_solved
+        self.solve_state.is_solved()
+    }
+
+    pub fn is_dirty_solution(&self) -> bool {
+        self.solve_state.is_dirty_solution()
+    }
+
+    pub fn solve_state(&self) -> BoardSolveState {
+        self.solve_state
     }
 }
 
@@ -96,7 +132,7 @@ impl GameBoardPresenter {
         player: Option<BoardCell>,
         box_positions: &HashSet<BoardCell>,
         selected_box: Option<BoardCell>,
-        is_solved: bool,
+        solve_state: BoardSolveState,
     ) -> BoardView {
         let mut tiles = Vec::with_capacity((self.level.width * self.level.height) as usize);
         let mut boxes = Vec::with_capacity((self.level.width * self.level.height) as usize);
@@ -119,7 +155,7 @@ impl GameBoardPresenter {
             boxes,
             player,
             selected_box,
-            is_solved,
+            solve_state,
         )
     }
 }

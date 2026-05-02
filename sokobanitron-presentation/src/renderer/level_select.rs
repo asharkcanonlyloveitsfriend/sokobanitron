@@ -170,7 +170,7 @@ fn draw_selection_brackets(
 #[cfg(test)]
 mod tests {
     use super::Renderer;
-    use sokobanitron_gameplay::{BoardCell, BoardView, TileKind};
+    use sokobanitron_gameplay::{BoardCell, BoardSolveState, BoardView, TileKind};
 
     fn solved_board() -> BoardView {
         BoardView::new(
@@ -190,7 +190,7 @@ mod tests {
             vec![false, false, false, false, true, false, false, false, false],
             Some(BoardCell::new(1, 1)),
             None,
-            true,
+            BoardSolveState::SolvedClean,
         )
     }
 

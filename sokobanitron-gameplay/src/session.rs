@@ -1,7 +1,7 @@
 use crate::board_cell::BoardCell;
 use crate::engine::{GameEngine, StepOutcome};
 use crate::level::parse_level_ascii;
-use crate::presenter::{BoardView, GameBoardPresenter, TileKind};
+use crate::presenter::{BoardSolveState, BoardView, GameBoardPresenter, TileKind};
 use std::collections::HashSet;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,7 +73,12 @@ impl GameplaySession {
 
         let player = Some(engine.player());
         let box_positions: HashSet<BoardCell> = engine.boxes().collect();
-        let board = presenter.render_board(player, &box_positions, None, engine.is_level_solved());
+        let board = presenter.render_board(
+            player,
+            &box_positions,
+            None,
+            solve_state_for_engine(&engine),
+        );
 
         Self {
             level_ascii,
@@ -240,9 +245,13 @@ impl GameplaySession {
             player,
             &box_positions,
             self.selected_box,
-            self.engine.is_level_solved(),
+            solve_state_for_engine(&self.engine),
         );
     }
+}
+
+fn solve_state_for_engine(engine: &GameEngine) -> BoardSolveState {
+    BoardSolveState::from_solution(engine.is_level_solved(), engine.is_clean_solution())
 }
 
 impl Default for GameplaySessionTapOutcome {

@@ -236,9 +236,7 @@ fn gameplay_presentation_cause_for_event(
 ) -> Option<GameplayPresentationCause> {
     match event {
         GameplayTapEvent::None => None,
-        GameplayTapEvent::PuzzleSolved { clean } => {
-            Some(GameplayPresentationCause::PuzzleSolved { clean })
-        }
+        GameplayTapEvent::PuzzleSolved { .. } => None,
     }
 }
 
@@ -435,6 +433,18 @@ mod tests {
     }
 
     #[test]
+    fn puzzle_solved_event_does_not_add_presentation_step() {
+        let (controller, app_state) = controller_and_state();
+        let plan = build_presentation_plan(
+            &outcome(GameplayTapEffect::None, true),
+            &controller,
+            &app_state,
+        );
+
+        assert!(plan.steps.is_empty());
+    }
+
+    #[test]
     fn restart_cause_can_build_semantic_render_step() {
         let (controller, app_state) = controller_and_state();
         let plan = gameplay_presentation_plan(
@@ -466,12 +476,9 @@ mod tests {
             PresentationStep::Render(FrameRequest::Gameplay {
                 update: move_update,
             }),
-            PresentationStep::Render(FrameRequest::Gameplay {
-                update: solved_update,
-            }),
         ] = plan.steps.as_slice()
         else {
-            panic!("expected move render followed by solved render");
+            panic!("expected one solved move render");
         };
         assert_eq!(
             move_update.cause,
@@ -480,11 +487,6 @@ mod tests {
             }
         );
         assert!(move_update.scene.board.is_solved());
-        assert_eq!(
-            solved_update.cause,
-            GameplayPresentationCause::PuzzleSolved { clean: true }
-        );
-        assert!(solved_update.scene.board.is_solved());
     }
 
     #[derive(Default)]
