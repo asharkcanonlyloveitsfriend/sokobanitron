@@ -20,6 +20,7 @@ use presentation::{EditorPresentationState, GameplayPresentationState, Renderer}
 use sokobanitron_gameplay::{
     BoardView, GameplayController, GameplayTapEffect, GameplayTapEvent, GameplayTapOutcome,
 };
+use std::time::Instant;
 
 pub use presentation::screen_requests::FrameRequest;
 pub use presentation::{FrameDamage, GameplayAnimationPolicy, RendererOverrides, ScreenRect};
@@ -154,15 +155,38 @@ impl AppFrameRenderer {
         width: u32,
         height: u32,
     ) -> FrameDamage {
+        self.draw_pending_visible_presentation_at(app_state, frame, width, height, Instant::now())
+    }
+
+    pub fn draw_pending_visible_presentation_at(
+        &mut self,
+        app_state: &AppState,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        now: Instant,
+    ) -> FrameDamage {
         if !self.has_pending_visible_presentation(app_state) {
             return FrameDamage::Noop;
         }
-        self.renderer.draw_active_gameplay_presentation(
+        self.renderer.draw_active_gameplay_presentation_at(
             frame,
             width,
             height,
             &mut self.gameplay_presentation,
+            now,
         )
+    }
+
+    pub fn mark_pending_visible_presentation_frame_presented_at(
+        &mut self,
+        app_state: &AppState,
+        now: Instant,
+    ) {
+        if app_state.is_gameplay_screen() {
+            self.gameplay_presentation
+                .mark_pending_frame_presented_at(now);
+        }
     }
 
     pub fn dismiss_level_transition_if_visible(

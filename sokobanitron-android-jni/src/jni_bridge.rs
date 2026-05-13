@@ -140,11 +140,14 @@ pub extern "system" fn Java_com_sokobanitron_app_dev_NativeBridge_nativePresentF
     _env: JNIEnv,
     _bridge: JObject,
     handle: jlong,
+    frame_time_nanos: jlong,
 ) -> jboolean {
     let Some(id) = handle_to_id(handle) else {
         return JNI_FALSE;
     };
-    let success = with_app_mut(id, false, |app| app.present_frame());
+    let success = with_app_mut(id, false, |app| {
+        app.present_frame(u64::try_from(frame_time_nanos).ok())
+    });
     if success { JNI_TRUE } else { JNI_FALSE }
 }
 

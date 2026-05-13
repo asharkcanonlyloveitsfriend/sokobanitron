@@ -14,8 +14,11 @@ use crate::screen_requests::{
 use sokobanitron_gameplay::BoardCell;
 use std::time::Duration;
 
-const SPEED_SCALE: f32 = 1.8;
-const SPEED_EXPONENT: f32 = 0.7;
+// Full path cleanup tuning knobs: default duration/range plus the long-path curve.
+const FULL_BOX_MOVE_DEFAULT_CLEANUP_DURATION: Duration = Duration::from_millis(150);
+const FULL_BOX_MOVE_DEFAULT_MIN_SEGMENTS: usize = 9;
+const FULL_BOX_MOVE_DEFAULT_MAX_SEGMENTS: usize = 30;
+const FULL_BOX_MOVE_LONG_PATH_EXPONENT: f32 = 0.35;
 const LIMITED_BOX_MOVE_MAX_FRAMES: usize = 3;
 
 pub(super) fn box_move_animation_for_policy(
@@ -60,7 +63,6 @@ pub(super) struct FullBoxMoveAnimation {
     flash_phase: EntityFlashPhase,
     cleanup_progress_segments: f32,
     cleanup_duration: Duration,
-    speed_per_tick: f32,
     total_segments: usize,
     duration: Duration,
 }
@@ -84,16 +86,13 @@ impl FullBoxMoveAnimation {
             .as_ref()
             .map(|path| path.len().saturating_sub(1))
             .unwrap_or(0);
-        let total = total_segments as f32;
-        let speed_per_tick = SPEED_SCALE * total.powf(SPEED_EXPONENT);
-        let cleanup_duration = cleanup_duration(total_segments, speed_per_tick);
+        let cleanup_duration = cleanup_duration(total_segments);
         Some(Self {
             flash_targets,
             path,
             flash_phase: EntityFlashPhase::FlashDark,
             cleanup_progress_segments: 0.0,
             cleanup_duration,
-            speed_per_tick,
             total_segments,
             duration: entity_flash_duration().max(cleanup_duration),
         })
@@ -113,9 +112,8 @@ impl FullBoxMoveAnimation {
         } else if elapsed >= self.cleanup_duration {
             self.total_segments as f32
         } else {
-            ((elapsed.as_secs_f32() / animation_tick_duration(1).as_secs_f32())
-                * self.speed_per_tick)
-                .min(self.total_segments as f32)
+            let cleanup_fraction = elapsed.as_secs_f32() / self.cleanup_duration.as_secs_f32();
+            (cleanup_fraction * self.total_segments as f32).min(self.total_segments as f32)
         }
     }
 }
@@ -233,13 +231,20 @@ impl GameplayAnimation for FullBoxMoveAnimation {
     }
 }
 
-fn cleanup_duration(total_segments: usize, speed_per_tick: f32) -> Duration {
-    if total_segments == 0 || speed_per_tick <= 0.0 {
-        Duration::ZERO
-    } else {
-        Duration::from_secs_f32(
-            (total_segments as f32 / speed_per_tick) * animation_tick_duration(1).as_secs_f32(),
-        )
+fn cleanup_duration(total_segments: usize) -> Duration {
+    match total_segments {
+        0 => Duration::ZERO,
+        segments if segments < FULL_BOX_MOVE_DEFAULT_MIN_SEGMENTS => {
+            FULL_BOX_MOVE_DEFAULT_CLEANUP_DURATION
+                .mul_f32(segments as f32 / FULL_BOX_MOVE_DEFAULT_MIN_SEGMENTS as f32)
+        }
+        segments if segments <= FULL_BOX_MOVE_DEFAULT_MAX_SEGMENTS => {
+            FULL_BOX_MOVE_DEFAULT_CLEANUP_DURATION
+        }
+        segments => FULL_BOX_MOVE_DEFAULT_CLEANUP_DURATION.mul_f32(
+            (segments as f32 / FULL_BOX_MOVE_DEFAULT_MAX_SEGMENTS as f32)
+                .powf(FULL_BOX_MOVE_LONG_PATH_EXPONENT),
+        ),
     }
 }
 
@@ -375,8 +380,9 @@ fn normalize_cells(mut cells: Vec<BoardCell>) -> Vec<BoardCell> {
 #[cfg(test)]
 mod tests {
     use super::{
-        FullBoxMoveAnimation, LimitedBoxMoveAnimation, full_box_move_path_interval_cells,
-        full_box_move_path_visible_cells, limited_box_move_sample_cells,
+        FullBoxMoveAnimation, LimitedBoxMoveAnimation, cleanup_duration,
+        full_box_move_path_interval_cells, full_box_move_path_visible_cells,
+        limited_box_move_sample_cells,
     };
     use crate::gameplay_animation::GameplayAnimation;
     use crate::gameplay_animation::entity_flash::EntityFlashPhase;
@@ -397,6 +403,19 @@ mod tests {
         let samples: Vec<BoardCell> = limited_box_move_sample_cells(&path).collect();
 
         assert_eq!(samples, vec![BoardCell::new(1, 0), BoardCell::new(2, 0)]);
+    }
+
+    #[test]
+    fn full_box_move_cleanup_duration_curve_matches_tuning_targets() {
+        let shortest_visible_cleanup_ms = cleanup_duration(2).as_secs_f64() * 1000.0;
+        let default_min_cleanup_ms = cleanup_duration(9).as_secs_f64() * 1000.0;
+        let default_max_cleanup_ms = cleanup_duration(30).as_secs_f64() * 1000.0;
+        let long_cleanup_ms = cleanup_duration(586).as_secs_f64() * 1000.0;
+
+        assert!((30.0..=35.0).contains(&shortest_visible_cleanup_ms));
+        assert!((149.0..=151.0).contains(&default_min_cleanup_ms));
+        assert!((149.0..=151.0).contains(&default_max_cleanup_ms));
+        assert!((415.0..=435.0).contains(&long_cleanup_ms));
     }
 
     #[test]

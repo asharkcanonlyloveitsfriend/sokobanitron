@@ -55,9 +55,12 @@ object NativeBridge {
         return nativeOnPointerEvent(handle, pointerId, phase, x, y)
     }
 
-    fun presentFrame(handle: Long): Boolean {
+    fun presentFrame(
+        handle: Long,
+        frameTimeNanos: Long,
+    ): Boolean {
         check(ensureLoaded()) { "Native library '$LIB_NAME' is not loaded." }
-        return nativePresentFrame(handle)
+        return nativePresentFrame(handle, frameTimeNanos)
     }
 
     fun hasPendingRenderWork(handle: Long): Boolean {
@@ -110,7 +113,10 @@ object NativeBridge {
         y: Float,
     ): Boolean
 
-    private external fun nativePresentFrame(handle: Long): Boolean
+    private external fun nativePresentFrame(
+        handle: Long,
+        frameTimeNanos: Long,
+    ): Boolean
 
     private external fun nativeHasPendingRenderWork(handle: Long): Boolean
 }

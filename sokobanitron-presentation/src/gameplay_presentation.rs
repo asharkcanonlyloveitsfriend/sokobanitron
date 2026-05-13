@@ -204,6 +204,10 @@ impl GameplayPresentationState {
         self.level_transition.is_some() || self.animation_runner.has_active_animation()
     }
 
+    pub fn mark_pending_frame_presented_at(&mut self, now: Instant) {
+        self.animation_runner.mark_initial_frame_presented_at(now);
+    }
+
     pub fn has_active_level_transition(&self) -> bool {
         self.level_transition.is_some()
     }

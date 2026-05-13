@@ -5,45 +5,80 @@ use crate::{
 use sokobanitron_app::app::{
     AppFramePresenter, AppPointerInput, FrameDamage, RenderWorkResult, ScreenRect,
 };
-use std::io::Result;
+use std::{io::Result, time::Instant};
 
 impl KindleApp {
     pub(crate) fn render(&mut self) -> Result<()> {
-        let mut presenter = KindleFramePresenter {
-            display: &mut self.display,
+        let (result, pending_presentation_frame) = {
+            let mut presenter = KindleFramePresenter {
+                display: &mut self.display,
+                pending_presentation_frame: false,
+            };
+            let result = self.runtime.render_current_frame(&mut presenter);
+            (result, presenter.pending_presentation_frame)
         };
-        self.runtime.render_current_frame(&mut presenter)
+        self.mark_requested_presentation_if_needed(result, pending_presentation_frame)
     }
 
     pub(crate) fn render_sleep_screen(&mut self) -> Result<()> {
-        let mut presenter = KindleFramePresenter {
-            display: &mut self.display,
+        let (result, pending_presentation_frame) = {
+            let mut presenter = KindleFramePresenter {
+                display: &mut self.display,
+                pending_presentation_frame: false,
+            };
+            let result = self.runtime.render_sleep_current_frame(&mut presenter);
+            (result, presenter.pending_presentation_frame)
         };
-        self.runtime.render_sleep_current_frame(&mut presenter)
+        self.mark_requested_presentation_if_needed(result, pending_presentation_frame)
     }
 
     pub(crate) fn handle_pointer_input_and_render(
         &mut self,
         input: AppPointerInput,
     ) -> Result<RenderWorkResult> {
-        let mut presenter = KindleFramePresenter {
-            display: &mut self.display,
+        let (result, pending_presentation_frame) = {
+            let mut presenter = KindleFramePresenter {
+                display: &mut self.display,
+                pending_presentation_frame: false,
+            };
+            let result = self
+                .runtime
+                .handle_pointer_input_and_render(input, &mut presenter);
+            (result, presenter.pending_presentation_frame)
         };
-        self.runtime
-            .handle_pointer_input_and_render(input, &mut presenter)
+        self.mark_requested_presentation_if_needed(result, pending_presentation_frame)
     }
 
     pub(crate) fn continue_pending_render_work_and_render(&mut self) -> Result<RenderWorkResult> {
-        let mut presenter = KindleFramePresenter {
-            display: &mut self.display,
+        let (result, pending_presentation_frame) = {
+            let mut presenter = KindleFramePresenter {
+                display: &mut self.display,
+                pending_presentation_frame: false,
+            };
+            let result = self
+                .runtime
+                .continue_pending_render_work_and_render(&mut presenter);
+            (result, presenter.pending_presentation_frame)
         };
-        self.runtime
-            .continue_pending_render_work_and_render(&mut presenter)
+        self.mark_requested_presentation_if_needed(result, pending_presentation_frame)
+    }
+
+    fn mark_requested_presentation_if_needed<T>(
+        &mut self,
+        result: Result<T>,
+        pending_presentation_frame: bool,
+    ) -> Result<T> {
+        if result.is_ok() && pending_presentation_frame {
+            self.runtime
+                .mark_pending_presentation_frame_presented_at(Instant::now());
+        }
+        result
     }
 }
 
 struct KindleFramePresenter<'a> {
     display: &'a mut Display,
+    pending_presentation_frame: bool,
 }
 
 impl AppFramePresenter for KindleFramePresenter<'_> {
@@ -57,6 +92,10 @@ impl AppFramePresenter for KindleFramePresenter<'_> {
         _height: u32,
     ) -> Result<()> {
         present_frame_damage(self.display, damage, gray_frame)
+    }
+
+    fn note_pending_presentation_frame(&mut self) {
+        self.pending_presentation_frame = true;
     }
 }
 

@@ -18,9 +18,19 @@ use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 const ANIMATION_TICK: Duration = Duration::from_millis(50);
+const ANIMATION_TICK_BOUNDARY_TOLERANCE: Duration = Duration::from_millis(2);
 
 pub(super) fn animation_tick_duration(ticks: u32) -> Duration {
     ANIMATION_TICK * ticks
+}
+
+fn animation_elapsed_for_timing(elapsed: Duration) -> Duration {
+    elapsed.saturating_add(ANIMATION_TICK_BOUNDARY_TOLERANCE)
+}
+
+fn animation_deadline_reached(now: Instant, deadline: Instant) -> bool {
+    now.checked_add(ANIMATION_TICK_BOUNDARY_TOLERANCE)
+        .is_none_or(|now_with_tolerance| now_with_tolerance >= deadline)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -83,6 +93,8 @@ struct ActiveAnimation {
     animation: Box<dyn GameplayAnimation>,
     started_at: Instant,
     ends_at: Instant,
+    initial_frame_drawn: bool,
+    initial_frame_presented: bool,
 }
 
 #[derive(Default)]
@@ -119,6 +131,19 @@ impl GameplayAnimationRunner {
         dirty
     }
 
+    pub(crate) fn mark_initial_frame_presented_at(&mut self, now: Instant) {
+        let Some(active) = self.active.as_mut() else {
+            return;
+        };
+        if active.initial_frame_presented || !active.initial_frame_drawn {
+            return;
+        }
+        let duration = active.animation.duration();
+        active.started_at = now;
+        active.ends_at = now + duration;
+        active.initial_frame_presented = true;
+    }
+
     pub(crate) fn advance_to_with_damage(&mut self, now: Instant) -> Vec<BoardCell> {
         let mut dirty = Vec::new();
         loop {
@@ -127,28 +152,32 @@ impl GameplayAnimationRunner {
                     return normalize_cells(dirty);
                 }
                 self.start_next(now);
-                dirty.extend(self.current_dirty_cells());
-                continue;
+                return self.draw_initial_frame();
             }
 
-            let ends_at = self
+            if self
                 .active
                 .as_ref()
-                .expect("active animation checked above")
-                .ends_at;
-            let elapsed = {
-                let active = self
-                    .active
-                    .as_ref()
-                    .expect("active animation checked above");
-                if now >= ends_at {
-                    active.animation.duration()
-                } else {
-                    now.saturating_duration_since(active.started_at)
-                }
+                .is_some_and(|active| !active.initial_frame_drawn)
+            {
+                return self.draw_initial_frame();
+            }
+
+            let active = self
+                .active
+                .as_ref()
+                .expect("active animation checked above");
+            let started_at = active.started_at;
+            let ends_at = active.ends_at;
+            let duration = active.animation.duration();
+            let raw_elapsed = now.saturating_duration_since(started_at);
+            let finished = animation_deadline_reached(now, ends_at);
+            let elapsed = if finished {
+                duration
+            } else {
+                animation_elapsed_for_timing(raw_elapsed).min(duration)
             };
 
-            let finished = now >= ends_at;
             {
                 let active = self
                     .active
@@ -161,8 +190,8 @@ impl GameplayAnimationRunner {
                 return normalize_cells(dirty);
             }
 
-            self.finish_active(ends_at);
-            dirty.extend(self.current_dirty_cells());
+            self.finish_active(now);
+            dirty.extend(self.draw_initial_frame());
         }
     }
 
@@ -229,11 +258,14 @@ impl GameplayAnimationRunner {
             return;
         };
         animation.set_elapsed(Duration::ZERO);
-        let ends_at = now + animation.duration();
+        let duration = animation.duration();
+        let ends_at = now + duration;
         self.active = Some(ActiveAnimation {
             animation,
             started_at: now,
             ends_at,
+            initial_frame_drawn: false,
+            initial_frame_presented: false,
         });
         if self
             .active
@@ -249,6 +281,14 @@ impl GameplayAnimationRunner {
         if !self.queue.is_empty() {
             self.start_next(now);
         }
+    }
+
+    fn draw_initial_frame(&mut self) -> Vec<BoardCell> {
+        let Some(active) = self.active.as_mut() else {
+            return Vec::new();
+        };
+        active.initial_frame_drawn = true;
+        normalize_cells(self.current_dirty_cells())
     }
 }
 
@@ -428,6 +468,11 @@ mod tests {
         }
     }
 
+    fn draw_and_mark_initial_frame(runner: &mut GameplayAnimationRunner, now: Instant) {
+        let _ = runner.advance_to_with_damage(now);
+        runner.mark_initial_frame_presented_at(now);
+    }
+
     #[test]
     fn blink_is_enqueued_for_box_move_rejected() {
         let now = Instant::now();
@@ -439,6 +484,7 @@ mod tests {
             GameplayAnimationPolicy::Full,
             now,
         ));
+        draw_and_mark_initial_frame(&mut runner, now);
 
         assert!(runner.has_active_animation());
         assert!(!runner.hides_player());
@@ -489,6 +535,7 @@ mod tests {
             GameplayAnimationPolicy::Limited,
             now,
         ));
+        draw_and_mark_initial_frame(&mut limited_runner, now);
 
         assert!(limited_runner.has_active_animation());
         assert!(!limited_runner.hides_player());
@@ -540,9 +587,126 @@ mod tests {
             GameplayAnimationPolicy::Full,
             now,
         ));
+        draw_and_mark_initial_frame(&mut runner, now);
 
         assert!(runner.has_active_animation());
         assert!(!runner.hides_player());
+    }
+
+    #[test]
+    fn animation_runner_advances_near_tick_boundary() {
+        let now = Instant::now();
+        let previous = update_with_state(
+            GameplayPresentationCause::CurrentState,
+            Some(BoardCell::new(0, 0)),
+            vec![false; 8],
+        );
+        let update = update_with_state(
+            GameplayPresentationCause::PlayerMoved {
+                to: BoardCell::new(1, 0),
+            },
+            Some(BoardCell::new(1, 0)),
+            vec![false; 8],
+        );
+        let mut runner = GameplayAnimationRunner::default();
+
+        assert!(runner.enqueue_for_update(
+            Some(&previous.scene),
+            &update,
+            GameplayAnimationPolicy::Full,
+            now,
+        ));
+        draw_and_mark_initial_frame(&mut runner, now);
+
+        assert_eq!(
+            runner.advance_to_with_damage(now + Duration::from_millis(47)),
+            Vec::<BoardCell>::new()
+        );
+        assert!(runner.has_active_animation());
+        assert_eq!(
+            runner.advance_to_with_damage(now + Duration::from_millis(49)),
+            vec![BoardCell::new(0, 0)]
+        );
+        assert!(runner.has_active_animation());
+        assert_eq!(
+            runner.advance_to_with_damage(now + Duration::from_millis(99)),
+            vec![BoardCell::new(0, 0)]
+        );
+        assert!(!runner.has_active_animation());
+    }
+
+    #[test]
+    fn animation_runner_can_align_initial_frame_to_present_time() {
+        let triggered_at = Instant::now();
+        let presented_at = triggered_at + Duration::from_millis(40);
+        let previous = update_with_state(
+            GameplayPresentationCause::CurrentState,
+            Some(BoardCell::new(0, 0)),
+            vec![false; 8],
+        );
+        let update = update_with_state(
+            GameplayPresentationCause::PlayerMoved {
+                to: BoardCell::new(1, 0),
+            },
+            Some(BoardCell::new(1, 0)),
+            vec![false; 8],
+        );
+        let mut runner = GameplayAnimationRunner::default();
+
+        assert!(runner.enqueue_for_update(
+            Some(&previous.scene),
+            &update,
+            GameplayAnimationPolicy::Full,
+            triggered_at,
+        ));
+        let _ = runner.advance_to_with_damage(presented_at);
+        runner.mark_initial_frame_presented_at(presented_at);
+
+        assert_eq!(
+            runner.advance_to_with_damage(presented_at + Duration::from_millis(47)),
+            Vec::<BoardCell>::new()
+        );
+        assert!(runner.has_active_animation());
+        assert_eq!(
+            runner.advance_to_with_damage(presented_at + Duration::from_millis(49)),
+            vec![BoardCell::new(0, 0)]
+        );
+        assert!(runner.has_active_animation());
+    }
+
+    #[test]
+    fn animation_runner_ignores_initial_present_mark_before_first_draw() {
+        let triggered_at = Instant::now();
+        let presented_at = triggered_at + Duration::from_millis(40);
+        let previous = update_with_state(
+            GameplayPresentationCause::CurrentState,
+            Some(BoardCell::new(0, 0)),
+            vec![false; 8],
+        );
+        let update = update_with_state(
+            GameplayPresentationCause::PlayerMoved {
+                to: BoardCell::new(1, 0),
+            },
+            Some(BoardCell::new(1, 0)),
+            vec![false; 8],
+        );
+        let mut runner = GameplayAnimationRunner::default();
+
+        assert!(runner.enqueue_for_update(
+            Some(&previous.scene),
+            &update,
+            GameplayAnimationPolicy::Full,
+            triggered_at,
+        ));
+        runner.mark_initial_frame_presented_at(triggered_at);
+        let _ = runner.advance_to_with_damage(presented_at);
+        runner.mark_initial_frame_presented_at(presented_at);
+
+        assert_eq!(
+            runner.advance_to_with_damage(presented_at + Duration::from_millis(47)),
+            Vec::<BoardCell>::new()
+        );
+        assert!(runner.has_active_animation());
     }
 
     #[test]
@@ -572,6 +736,7 @@ mod tests {
             GameplayAnimationPolicy::Full,
             now,
         ));
+        draw_and_mark_initial_frame(&mut runner, now);
 
         assert!(runner.has_active_animation());
         assert!(runner.hides_player());
@@ -610,6 +775,7 @@ mod tests {
             GameplayAnimationPolicy::Full,
             now,
         ));
+        draw_and_mark_initial_frame(&mut runner, now);
 
         assert!(runner.has_active_animation());
         assert!(runner.hides_player());
@@ -652,6 +818,7 @@ mod tests {
             GameplayAnimationPolicy::Full,
             now,
         ));
+        draw_and_mark_initial_frame(&mut runner, now);
 
         assert_eq!(
             runner.current_dirty_cells(),
@@ -709,6 +876,7 @@ mod tests {
             GameplayAnimationPolicy::Full,
             now,
         ));
+        draw_and_mark_initial_frame(&mut runner, now);
         let _ = runner.advance_to_with_damage(now + Duration::from_millis(50));
 
         assert_eq!(
@@ -741,6 +909,7 @@ mod tests {
             GameplayAnimationPolicy::Full,
             now,
         ));
+        draw_and_mark_initial_frame(&mut runner, now);
 
         assert_eq!(
             runner.current_dirty_cells(),
@@ -777,6 +946,7 @@ mod tests {
             GameplayAnimationPolicy::Limited,
             now,
         ));
+        draw_and_mark_initial_frame(&mut runner, now);
 
         assert!(runner.has_active_animation());
         assert!(!runner.hides_player());

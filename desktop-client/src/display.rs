@@ -3,11 +3,13 @@ use pixels::Pixels;
 use sokobanitron_app::app::{
     AppFramePresenter, AppInput, AppPointerInput, AppliedUpdate, FrameDamage, RenderWorkResult,
 };
+use std::time::Instant;
 
 impl App {
     pub(crate) fn apply_input_and_render(&mut self, input: AppInput) -> Result<AppliedUpdate, ()> {
         let mut presenter = DesktopFramePresenter {
             pixels: &mut self.pixels,
+            presented_frame_time: None,
         };
         self.runtime.apply_input_and_render(input, &mut presenter)
     }
@@ -18,6 +20,7 @@ impl App {
     ) -> Result<RenderWorkResult, ()> {
         let mut presenter = DesktopFramePresenter {
             pixels: &mut self.pixels,
+            presented_frame_time: None,
         };
         self.runtime
             .handle_pointer_input_and_render(input, &mut presenter)
@@ -28,6 +31,7 @@ impl App {
     ) -> Result<RenderWorkResult, ()> {
         let mut presenter = DesktopFramePresenter {
             pixels: &mut self.pixels,
+            presented_frame_time: None,
         };
         self.runtime
             .continue_pending_render_work_and_render(&mut presenter)
@@ -36,6 +40,7 @@ impl App {
     pub(crate) fn render_current(&mut self) {
         let mut presenter = DesktopFramePresenter {
             pixels: &mut self.pixels,
+            presented_frame_time: None,
         };
         let _ = self.runtime.render_current_frame(&mut presenter);
     }
@@ -43,6 +48,7 @@ impl App {
 
 struct DesktopFramePresenter<'a> {
     pixels: &'a mut Option<Pixels<'static>>,
+    presented_frame_time: Option<Instant>,
 }
 
 impl AppFramePresenter for DesktopFramePresenter<'_> {
@@ -58,8 +64,13 @@ impl AppFramePresenter for DesktopFramePresenter<'_> {
         if let Some(pixels) = self.pixels.as_mut() {
             copy_gray_to_sepia_rgba(gray_frame, pixels.frame_mut());
             pixels.render().expect("render");
+            self.presented_frame_time = Some(Instant::now());
         }
         Ok(())
+    }
+
+    fn presented_frame_time(&self) -> Option<Instant> {
+        self.presented_frame_time
     }
 }
 

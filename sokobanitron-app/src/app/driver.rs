@@ -29,7 +29,7 @@ use crate::shared::PointerPhase;
 use presentation::screen_requests::GameplayPresentationCause;
 use sokobanitron_gameplay::{BoardView, GameplayController, GameplayControllerChanges};
 use sokobanitron_level_editor::LevelEditor;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RenderWorkResult {
@@ -172,6 +172,16 @@ pub trait AppFramePresenter {
         width: u32,
         height: u32,
     ) -> Result<(), Self::Error>;
+
+    /// Returns the presentation time when `present_frame` displayed the frame synchronously.
+    ///
+    /// Deferred presenters, such as Android's Choreographer-driven surface presenter, return
+    /// `None` and mark the frame presented when the platform display callback actually fires.
+    fn presented_frame_time(&self) -> Option<Instant> {
+        None
+    }
+
+    fn note_pending_presentation_frame(&mut self) {}
 }
 
 /// Shared app runtime state that clients can embed next to platform-specific handles.
@@ -334,6 +344,21 @@ impl SharedAppRuntime {
         )
     }
 
+    fn draw_pending_visible_presentation_at(&mut self, now: Instant) -> FrameDamage {
+        self.frame_renderer.draw_pending_visible_presentation_at(
+            &self.app_state,
+            &mut self.gray_frame,
+            self.surface_width,
+            self.surface_height,
+            now,
+        )
+    }
+
+    pub fn mark_pending_presentation_frame_presented_at(&mut self, now: Instant) {
+        self.frame_renderer
+            .mark_pending_visible_presentation_frame_presented_at(&self.app_state, now);
+    }
+
     fn has_dismissible_level_transition(&self) -> bool {
         self.frame_renderer
             .has_dismissible_level_transition(&self.app_state)
@@ -354,7 +379,8 @@ impl SharedAppRuntime {
         presenter: &mut P,
     ) -> Result<(), P::Error> {
         let damage = self.draw_frame_request(request);
-        self.output_drawn_frame(damage, presenter)
+        let pending_presentation_drawn = self.has_pending_visible_presentation();
+        self.output_drawn_frame(damage, presenter, pending_presentation_drawn)
     }
 
     fn render_full_frame_request<P: AppFramePresenter>(
@@ -363,7 +389,8 @@ impl SharedAppRuntime {
         presenter: &mut P,
     ) -> Result<(), P::Error> {
         self.draw_full_frame_request(request);
-        self.output_drawn_frame(FrameDamage::Full, presenter)
+        let pending_presentation_drawn = self.has_pending_visible_presentation();
+        self.output_drawn_frame(FrameDamage::Full, presenter, pending_presentation_drawn)
     }
 
     pub fn render_current_frame<P: AppFramePresenter>(
@@ -395,8 +422,9 @@ impl SharedAppRuntime {
         &mut self,
         presenter: &mut P,
     ) -> Result<FrameDamage, P::Error> {
+        let pending_presentation_drawn = self.has_pending_visible_presentation();
         let damage = self.draw_pending_visible_presentation();
-        self.output_drawn_frame(damage, presenter)?;
+        self.output_drawn_frame(damage, presenter, pending_presentation_drawn)?;
         Ok(damage)
     }
 
@@ -408,7 +436,7 @@ impl SharedAppRuntime {
         if matches!(damage, FrameDamage::Noop) {
             return Ok(false);
         }
-        self.output_drawn_frame(damage, presenter)?;
+        self.output_drawn_frame(damage, presenter, false)?;
         Ok(true)
     }
 
@@ -447,21 +475,46 @@ impl SharedAppRuntime {
         continue_pending_render_work_and_render_in_context(&mut context)
     }
 
+    pub fn continue_pending_render_work_and_render_at<P: AppFramePresenter>(
+        &mut self,
+        presenter: &mut P,
+        now: Instant,
+    ) -> Result<RenderWorkResult, P::Error> {
+        if !self.has_pending_visible_presentation() {
+            return Ok(RenderWorkResult::default());
+        }
+        let pending_presentation_drawn = true;
+        let damage = self.draw_pending_visible_presentation_at(now);
+        self.output_drawn_frame(damage, presenter, pending_presentation_drawn)?;
+        Ok(RenderWorkResult {
+            frame_changed: !matches!(damage, FrameDamage::Noop),
+            needs_followup_wake: self.has_pending_visible_presentation(),
+        })
+    }
+
     pub fn has_pending_render_work(&self) -> bool {
         self.has_pending_visible_presentation()
     }
 
     fn output_drawn_frame<P: AppFramePresenter>(
-        &self,
+        &mut self,
         damage: FrameDamage,
         presenter: &mut P,
+        pending_presentation_drawn: bool,
     ) -> Result<(), P::Error> {
+        if pending_presentation_drawn {
+            presenter.note_pending_presentation_frame();
+        }
         presenter.present_frame(
             damage,
             &self.gray_frame,
             self.surface_width,
             self.surface_height,
-        )
+        )?;
+        if pending_presentation_drawn && let Some(presented_at) = presenter.presented_frame_time() {
+            self.mark_pending_presentation_frame_presented_at(presented_at);
+        }
+        Ok(())
     }
 }
 
@@ -890,13 +943,14 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     static NEXT_TEMP_DIR_ID: AtomicU64 = AtomicU64::new(0);
 
     #[derive(Default)]
     struct RecordingPresenter {
         frames: Vec<(FrameDamage, usize, u32, u32)>,
+        presented_frame_time: Option<Instant>,
     }
 
     impl AppFramePresenter for RecordingPresenter {
@@ -911,6 +965,10 @@ mod tests {
         ) -> Result<(), Self::Error> {
             self.frames.push((damage, gray_frame.len(), width, height));
             Ok(())
+        }
+
+        fn presented_frame_time(&self) -> Option<Instant> {
+            Some(self.presented_frame_time.unwrap_or_else(Instant::now))
         }
     }
 
@@ -1376,6 +1434,100 @@ mod tests {
         assert_eq!(presenter.frames[0].1, 128 * 96);
         assert_eq!(presenter.frames[0].2, 128);
         assert_eq!(presenter.frames[0].3, 96);
+    }
+
+    #[test]
+    fn shared_app_runtime_times_followup_animation_from_presented_frame() {
+        let level = "#####\n#@  #\n# . #\n#####".to_string();
+        let mut runtime = SharedAppRuntime::new(
+            runtime_initial_levels(vec![level.clone(), level]),
+            128,
+            96,
+            SharedAppRuntimeConfig::default(),
+        );
+        runtime
+            .render_current_frame(&mut RecordingPresenter::default())
+            .expect("initial render");
+        let presented_at = Instant::now() + Duration::from_millis(40);
+        let mut presenter = RecordingPresenter {
+            presented_frame_time: Some(presented_at),
+            ..RecordingPresenter::default()
+        };
+
+        let applied = runtime
+            .apply_input_and_render(AppInput::BoardTap(BoardCell::new(2, 1)), &mut presenter)
+            .unwrap();
+
+        assert!(applied.render_work.needs_followup_wake);
+
+        let mut followup_presenter = RecordingPresenter::default();
+        let work = runtime
+            .continue_pending_render_work_and_render_at(
+                &mut followup_presenter,
+                presented_at + Duration::from_millis(47),
+            )
+            .unwrap();
+
+        assert!(!work.frame_changed);
+        assert!(work.needs_followup_wake);
+    }
+
+    #[test]
+    fn shared_app_runtime_times_queued_animation_from_transition_presented_frame() {
+        let level = "#####\n#@$.#\n#####".to_string();
+        let mut runtime = SharedAppRuntime::new(
+            runtime_initial_levels(vec![level.clone(), level]),
+            128,
+            96,
+            SharedAppRuntimeConfig::default(),
+        );
+        runtime
+            .render_current_frame(&mut RecordingPresenter::default())
+            .expect("initial render");
+        runtime
+            .apply_input_and_render(
+                AppInput::BoardTap(BoardCell::new(2, 1)),
+                &mut RecordingPresenter::default(),
+            )
+            .expect("select box");
+
+        let first_presented_at = Instant::now() + Duration::from_millis(40);
+        let mut first_presenter = RecordingPresenter {
+            presented_frame_time: Some(first_presented_at),
+            ..RecordingPresenter::default()
+        };
+        let applied = runtime
+            .apply_input_and_render(
+                AppInput::BoardTap(BoardCell::new(3, 1)),
+                &mut first_presenter,
+            )
+            .unwrap();
+        assert!(applied.render_work.needs_followup_wake);
+
+        let transition_drawn_at = first_presented_at + Duration::from_millis(100);
+        let transition_presented_at = transition_drawn_at + Duration::from_millis(40);
+        let mut transition_presenter = RecordingPresenter {
+            presented_frame_time: Some(transition_presented_at),
+            ..RecordingPresenter::default()
+        };
+        let transition_work = runtime
+            .continue_pending_render_work_and_render_at(
+                &mut transition_presenter,
+                transition_drawn_at,
+            )
+            .unwrap();
+        assert!(transition_work.frame_changed);
+        assert!(transition_work.needs_followup_wake);
+
+        let mut followup_presenter = RecordingPresenter::default();
+        let followup_work = runtime
+            .continue_pending_render_work_and_render_at(
+                &mut followup_presenter,
+                transition_presented_at + Duration::from_millis(47),
+            )
+            .unwrap();
+        assert!(!followup_work.frame_changed);
+        assert!(followup_work.needs_followup_wake);
     }
 
     #[test]

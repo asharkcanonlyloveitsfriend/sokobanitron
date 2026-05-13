@@ -1,4 +1,5 @@
 use sokobanitron_gameplay::BoardView;
+use std::time::Instant;
 
 use crate::editor_presentation::EditorPresentationState;
 use crate::gameplay_presentation::{
@@ -152,10 +153,27 @@ impl Renderer {
         height: u32,
         gameplay_presentation: &mut GameplayPresentationState,
     ) -> FrameDamage {
+        self.draw_active_gameplay_presentation_at(
+            frame,
+            width,
+            height,
+            gameplay_presentation,
+            Instant::now(),
+        )
+    }
+
+    pub fn draw_active_gameplay_presentation_at(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        gameplay_presentation: &mut GameplayPresentationState,
+        now: Instant,
+    ) -> FrameDamage {
         let Some(scene) = gameplay_presentation.current_scene().cloned() else {
             return FrameDamage::Noop;
         };
-        let result = gameplay_presentation.advance_presentation_with_damage();
+        let result = gameplay_presentation.advance_presentation_with_damage_at(now);
         gameplay_presentation.draw_damage(self, frame, width, height, &result.damage);
         frame_damage_from_gameplay(&scene, &result.damage, width, height)
     }

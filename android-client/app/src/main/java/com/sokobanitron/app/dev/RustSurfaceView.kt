@@ -2,6 +2,7 @@ package com.sokobanitron.app.dev
 
 import android.content.Context
 import android.util.AttributeSet
+import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -12,6 +13,9 @@ class RustSurfaceView @JvmOverloads constructor(
 ) : SurfaceView(context, attrs), SurfaceHolder.Callback {
     private var nativeHandle: Long = 0L
     private var presentRetryPending = false
+    private var renderFrameCallbackScheduled = false
+    private var pendingRenderAllowsRetry = false
+    private var pendingRenderFrameCallback: Choreographer.FrameCallback? = null
 
     init {
         holder.addCallback(this)
@@ -37,11 +41,11 @@ class RustSurfaceView @JvmOverloads constructor(
         }
 
         NativeBridge.setSurface(nativeHandle, holder.surface)
-        render()
+        scheduleRender()
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
-        presentRetryPending = false
+        clearPendingRender()
         val handle = nativeHandle
         if (handle != 0L) {
             NativeBridge.setSurface(handle, null)
@@ -91,7 +95,7 @@ class RustSurfaceView @JvmOverloads constructor(
         }
 
         if (shouldRender) {
-            render()
+            scheduleRender()
         }
         return true
     }
@@ -102,7 +106,7 @@ class RustSurfaceView @JvmOverloads constructor(
     }
 
     fun release() {
-        presentRetryPending = false
+        clearPendingRender()
         if (nativeHandle != 0L) {
             NativeBridge.setSurface(nativeHandle, null)
             NativeBridge.destroy(nativeHandle)
@@ -129,21 +133,53 @@ class RustSurfaceView @JvmOverloads constructor(
             event.getY(index),
         )
 
-    private fun render() {
-        render(allowRetry = true)
+    private fun scheduleRender(allowRetry: Boolean = true) {
+        pendingRenderAllowsRetry = pendingRenderAllowsRetry || allowRetry
+        if (renderFrameCallbackScheduled) return
+
+        renderFrameCallbackScheduled = true
+        val callback =
+            object : Choreographer.FrameCallback {
+                override fun doFrame(frameTimeNanos: Long) {
+                    if (pendingRenderFrameCallback !== this) return
+
+                    pendingRenderFrameCallback = null
+                    renderFrameCallbackScheduled = false
+                    val callbackAllowsRetry = pendingRenderAllowsRetry
+                    pendingRenderAllowsRetry = false
+                    render(frameTimeNanos, callbackAllowsRetry)
+                }
+            }
+        pendingRenderFrameCallback = callback
+        Choreographer.getInstance().postFrameCallback(callback)
     }
 
-    private fun render(allowRetry: Boolean) {
+    private fun clearPendingRender() {
+        pendingRenderFrameCallback?.let {
+            Choreographer.getInstance().removeFrameCallback(it)
+        }
+        pendingRenderFrameCallback = null
+        pendingRenderAllowsRetry = false
+        presentRetryPending = false
+        renderFrameCallbackScheduled = false
+    }
+
+    private fun render(
+        frameTimeNanos: Long,
+        allowRetry: Boolean,
+    ) {
         val handle = nativeHandle
         if (handle == 0L || !holder.surface.isValid) {
             presentRetryPending = false
             return
         }
 
-        if (NativeBridge.presentFrame(handle)) {
+        val presented = NativeBridge.presentFrame(handle, frameTimeNanos)
+        if (presented) {
             presentRetryPending = false
-            if (NativeBridge.hasPendingRenderWork(handle) && holder.surface.isValid) {
-                postOnAnimation { render() }
+            val pendingAfter = NativeBridge.hasPendingRenderWork(handle)
+            if (pendingAfter && holder.surface.isValid) {
+                scheduleRender()
             }
             return
         }
@@ -152,7 +188,9 @@ class RustSurfaceView @JvmOverloads constructor(
         presentRetryPending = true
         post {
             presentRetryPending = false
-            render(allowRetry = false)
+            if (nativeHandle != 0L && holder.surface.isValid) {
+                scheduleRender(allowRetry = false)
+            }
         }
     }
 
