@@ -332,11 +332,10 @@ impl GameplayAnimation for LimitedBoxMoveAnimation {
 
     fn set_elapsed(&mut self, elapsed: Duration) {
         let tick_nanos = animation_tick_duration(1).as_nanos();
-        let elapsed_ticks = if tick_nanos == 0 {
-            self.frame_count
-        } else {
-            (elapsed.as_nanos() / tick_nanos) as usize
-        };
+        let elapsed_ticks = elapsed
+            .as_nanos()
+            .checked_div(tick_nanos)
+            .map_or(self.frame_count, |ticks| ticks as usize);
         self.frame_index = elapsed_ticks.min(self.frame_count);
     }
 

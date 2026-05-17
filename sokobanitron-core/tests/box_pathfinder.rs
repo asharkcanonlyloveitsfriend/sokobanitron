@@ -78,7 +78,7 @@ fn find_box_path_blocked() {
 }
 
 #[test]
-fn benchmark_cases_all_resolve() {
+fn benchmark_fixture_cases_return_paths_from_box_to_target() {
     let cases = [
         (
             "l5",
@@ -103,10 +103,20 @@ fn benchmark_cases_all_resolve() {
     ];
 
     for (name, ascii_map) in cases {
-        let (mut pathfinder, to) = parse_box_pathfinder_with_target(ascii_map);
-        assert!(
-            pathfinder.find_box_path(to).is_some(),
-            "benchmark case should resolve: {name}"
+        let (mut pathfinder, to, box_pos) = parse_box_pathfinder_with_target(ascii_map);
+        let path = pathfinder
+            .find_box_path(to)
+            .unwrap_or_else(|| panic!("benchmark case should resolve: {name}"));
+
+        assert_eq!(
+            path.first().copied(),
+            Some(box_pos),
+            "benchmark case should start at the box position: {name}"
+        );
+        assert_eq!(
+            path.last().copied(),
+            Some(to),
+            "benchmark case should end at the target: {name}"
         );
     }
 }
@@ -150,7 +160,7 @@ fn parse_box_mover_with_endpoints(ascii_map: &str) -> (BoxPathfinder, Position, 
     (BoxPathfinder::new(grid, box_pos, player), to, box_pos)
 }
 
-fn parse_box_pathfinder_with_target(ascii_map: &str) -> (BoxPathfinder, Position) {
+fn parse_box_pathfinder_with_target(ascii_map: &str) -> (BoxPathfinder, Position, Position) {
     let lines = ascii_map.lines().collect::<Vec<_>>();
     let width = lines.iter().map(|line| line.len()).max().unwrap_or(0);
     let mut player = None;
@@ -190,5 +200,5 @@ fn parse_box_pathfinder_with_target(ascii_map: &str) -> (BoxPathfinder, Position
     let to = to.expect("map must contain 'x'");
     let box_pos = box_pos.expect("map must contain 'b'");
 
-    (BoxPathfinder::new(grid, box_pos, player), to)
+    (BoxPathfinder::new(grid, box_pos, player), to, box_pos)
 }
