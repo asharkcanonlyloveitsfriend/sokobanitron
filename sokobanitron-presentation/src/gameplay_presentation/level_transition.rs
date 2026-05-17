@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 const TICKS_PER_STEP: u32 = 2;
 const ANIMATION_TICK: Duration = Duration::from_millis(50);
 
-const SWEEP_STEP_PERCENT: f32 = 14.0;
+const SWEEP_STEP_PERCENT: f32 = 18.0;
 const FLASH_GAP_STEPS: f32 = 2.0;
 
 // Normalized diagonal sweep coordinate: 0 at lower-left, 2 at upper-right.
@@ -22,6 +22,8 @@ pub(super) struct LevelTransition {
     state: TransitionState,
     scratch: TransitionScratch,
     started_at: Instant,
+    initial_frame_drawn: bool,
+    initial_frame_presented: bool,
     last_drawn_step_index: Option<u32>,
 }
 
@@ -45,6 +47,8 @@ impl LevelTransition {
             state: TransitionState::new(previous_scene.clone(), update.scene.clone()),
             scratch: TransitionScratch::default(),
             started_at: now,
+            initial_frame_drawn: false,
+            initial_frame_presented: false,
             last_drawn_step_index: None,
         })
     }
@@ -77,11 +81,23 @@ impl LevelTransition {
             return true;
         }
         self.draw(renderer, frame, width, height);
+        self.initial_frame_drawn = true;
         self.last_drawn_step_index = Some(step_index);
         false
     }
 
+    pub(super) fn mark_initial_frame_presented_at(&mut self, now: Instant) {
+        if self.initial_frame_presented || !self.initial_frame_drawn {
+            return;
+        }
+        self.started_at = now;
+        self.initial_frame_presented = true;
+    }
+
     fn step_index_at(&self, now: Instant) -> u32 {
+        if !self.initial_frame_presented {
+            return 0;
+        }
         let step_duration = animation_step_duration();
         if step_duration.is_zero() {
             return u32::MAX;

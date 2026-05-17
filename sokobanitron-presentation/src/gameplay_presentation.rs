@@ -205,6 +205,9 @@ impl GameplayPresentationState {
     }
 
     pub fn mark_pending_frame_presented_at(&mut self, now: Instant) {
+        if let Some(level_transition) = self.level_transition.as_mut() {
+            level_transition.mark_initial_frame_presented_at(now);
+        }
         self.animation_runner.mark_initial_frame_presented_at(now);
     }
 

@@ -1,4 +1,4 @@
-use super::{GameplayDamage, GameplayPresentationState};
+use super::{GameplayDamage, GameplayPresentationResult, GameplayPresentationState};
 use crate::editor_presentation::EditorPresentationState;
 use crate::gameplay_animation::{GameplayAnimationPolicy, GameplayAnimationRunner};
 use crate::layout::fit_board_viewport_for_controls;
@@ -958,6 +958,38 @@ fn level_change_starts_level_transition() {
     assert!(result.has_pending_presentation);
     assert!(state.has_pending_presentation());
     assert_eq!(state.current_scene(), Some(&moved_update.scene));
+}
+
+#[test]
+fn level_transition_times_first_step_from_presented_frame() {
+    let previous = gameplay_scene(1);
+    let mut moved_update = gameplay_scene(2);
+    moved_update.cause = GameplayPresentationCause::LevelTransition;
+    let mut state = GameplayPresentationState::new();
+    let mut renderer = Renderer::new();
+    let mut frame = vec![0; 64 * 64];
+    let triggered_at = Instant::now();
+    let presented_at = triggered_at + Duration::from_millis(45);
+
+    state.replace_update_at(previous, triggered_at);
+    state.replace_update_at(moved_update, triggered_at);
+    state.draw_at(&mut renderer, &mut frame, 64, 64, presented_at);
+    state.mark_pending_frame_presented_at(presented_at);
+
+    assert_eq!(
+        state.advance_presentation_with_damage_at(presented_at + Duration::from_millis(99)),
+        GameplayPresentationResult {
+            damage: GameplayDamage::Cells(Vec::new()),
+            has_pending_presentation: true,
+        }
+    );
+    assert_eq!(
+        state.advance_presentation_with_damage_at(presented_at + Duration::from_millis(100)),
+        GameplayPresentationResult {
+            damage: GameplayDamage::Full,
+            has_pending_presentation: true,
+        }
+    );
 }
 
 #[test]
