@@ -49,6 +49,7 @@ impl Renderer {
                 let force_full = gameplay_presentation.take_gameplay_frame_obscured_by_overlay();
                 let result = gameplay_presentation.replace_update_with_damage(update.clone());
                 if force_full {
+                    gameplay_presentation.queue_screen_refresh_flash();
                     gameplay_presentation.draw(self, frame, width, height);
                     FrameDamage::Full
                 } else {

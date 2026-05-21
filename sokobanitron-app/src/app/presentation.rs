@@ -105,8 +105,9 @@ impl AppFrameRenderer {
         app_state.is_gameplay_screen() && self.gameplay_presentation.has_pending_presentation()
     }
 
-    pub fn has_dismissible_level_transition(&self, app_state: &AppState) -> bool {
-        app_state.is_gameplay_screen() && self.gameplay_presentation.has_active_level_transition()
+    pub fn has_dismissible_screen_refresh_flash(&self, app_state: &AppState) -> bool {
+        app_state.is_gameplay_screen()
+            && self.gameplay_presentation.has_active_screen_refresh_flash()
     }
 
     pub fn draw_frame_request(
@@ -189,14 +190,15 @@ impl AppFrameRenderer {
         }
     }
 
-    pub fn dismiss_level_transition_if_visible(
+    pub fn dismiss_screen_refresh_flash_if_visible(
         &mut self,
         app_state: &AppState,
         frame: &mut [u8],
         width: u32,
         height: u32,
     ) -> FrameDamage {
-        if !app_state.is_gameplay_screen() || !self.gameplay_presentation.dismiss_level_transition()
+        if !app_state.is_gameplay_screen()
+            || !self.gameplay_presentation.dismiss_screen_refresh_flash()
         {
             return FrameDamage::Noop;
         }
@@ -569,7 +571,7 @@ mod tests {
     }
 
     #[test]
-    fn gameplay_overlay_preserves_previous_scene_for_level_select_transition() {
+    fn gameplay_overlay_preserves_previous_scene_for_level_select_screen_refresh_flash() {
         let levels = vec![
             "#####\n#@$.#\n#####".to_string(),
             "#######\n#@  $.#\n#######".to_string(),
@@ -601,11 +603,11 @@ mod tests {
         renderer.draw_frame_request(&mut frame, 96, 64, &gameplay_after, &preview_boards);
 
         assert!(renderer.has_pending_visible_presentation(&app_state));
-        assert!(renderer.has_dismissible_level_transition(&app_state));
+        assert!(renderer.has_dismissible_screen_refresh_flash(&app_state));
     }
 
     #[test]
-    fn gameplay_overlay_preserves_previous_scene_for_level_set_transition() {
+    fn gameplay_overlay_preserves_previous_scene_for_level_set_screen_refresh_flash() {
         let alpha_levels = vec!["#####\n#@$.#\n#####".to_string()];
         let beta_levels = vec!["#######\n#@  $.#\n#######".to_string()];
         let mut controller = GameplayController::new(alpha_levels.clone(), None);
@@ -648,11 +650,11 @@ mod tests {
         renderer.draw_frame_request(&mut frame, 96, 64, &gameplay_after, &preview_boards);
 
         assert!(renderer.has_pending_visible_presentation(&app_state));
-        assert!(renderer.has_dismissible_level_transition(&app_state));
+        assert!(renderer.has_dismissible_screen_refresh_flash(&app_state));
     }
 
     #[test]
-    fn renderer_redraws_gameplay_after_fullscreen_overlay() {
+    fn renderer_uses_screen_refresh_flash_after_fullscreen_overlay() {
         let levels = vec!["#####\n#@$.#\n#####".to_string()];
         let controller = GameplayController::new(levels.clone(), None);
         let preview_boards = build_preview_boards(&levels);
@@ -708,6 +710,46 @@ mod tests {
                 renderer.draw_frame_request(&mut frame, 96, 64, &gameplay_after, &preview_boards),
                 FrameDamage::Full
             );
+            assert!(renderer.has_pending_visible_presentation(&app_state));
+            assert!(renderer.has_dismissible_screen_refresh_flash(&app_state));
         }
+    }
+
+    #[test]
+    fn limited_renderer_redraws_gameplay_after_fullscreen_overlay_without_flash() {
+        let levels = vec!["#####\n#@$.#\n#####".to_string()];
+        let controller = GameplayController::new(levels.clone(), None);
+        let app_state = AppState::default();
+        let preview_boards = build_preview_boards(&levels);
+        let mut renderer =
+            AppFrameRenderer::with_gameplay_animation_policy(GameplayAnimationPolicy::Limited);
+        let mut frame = vec![0; 96 * 64];
+
+        let gameplay_before =
+            crate::gameplay::build_current_gameplay_board_frame_request(&controller, &app_state);
+        assert_eq!(
+            renderer.draw_frame_request(&mut frame, 96, 64, &gameplay_before, &preview_boards),
+            FrameDamage::Full
+        );
+
+        let gameplay_menu = FrameRequest::GameplayMenu {
+            screen: GameplayMenuScreenRequest {
+                primary_action_label: Some("EDIT"),
+                show_change_level_set: true,
+            },
+        };
+        assert_eq!(
+            renderer.draw_frame_request(&mut frame, 96, 64, &gameplay_menu, &preview_boards),
+            FrameDamage::Full
+        );
+
+        let gameplay_after =
+            crate::gameplay::build_current_gameplay_board_frame_request(&controller, &app_state);
+        assert_eq!(
+            renderer.draw_frame_request(&mut frame, 96, 64, &gameplay_after, &preview_boards),
+            FrameDamage::Full
+        );
+        assert!(!renderer.has_pending_visible_presentation(&app_state));
+        assert!(!renderer.has_dismissible_screen_refresh_flash(&app_state));
     }
 }

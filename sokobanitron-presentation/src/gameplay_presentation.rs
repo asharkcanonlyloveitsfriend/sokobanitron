@@ -4,11 +4,11 @@
 //! the latest gameplay scene and delegates drawing to the shared gameplay renderer.
 
 mod damage;
-mod level_transition;
 
 use crate::gameplay_animation::{GameplayAnimationPolicy, GameplayAnimationRunner};
 use crate::layout::ScreenRect;
 use crate::renderer::Renderer;
+use crate::screen_refresh_flash::ScreenRefreshFlash;
 use crate::screen_requests::{GameplayPresentationUpdate, GameplayScreenRequest};
 use sokobanitron_gameplay::BoardCell;
 use std::time::Instant;
@@ -16,7 +16,6 @@ use std::time::Instant;
 use self::damage::{
     add_optional_cell, gameplay_damage, merge_damage, normalize_cells, restart_damage,
 };
-use self::level_transition::LevelTransition;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GameplayDamage {
@@ -66,7 +65,8 @@ pub struct GameplayPresentationState {
     animation_policy: GameplayAnimationPolicy,
     current_scene: Option<GameplayScreenRequest>,
     animation_runner: GameplayAnimationRunner,
-    level_transition: Option<LevelTransition>,
+    screen_refresh_flash: Option<ScreenRefreshFlash>,
+    pending_screen_refresh_flash: bool,
     gameplay_frame_obscured_by_overlay: bool,
 }
 
@@ -86,7 +86,8 @@ impl GameplayPresentationState {
             animation_policy,
             current_scene: None,
             animation_runner: GameplayAnimationRunner::default(),
-            level_transition: None,
+            screen_refresh_flash: None,
+            pending_screen_refresh_flash: false,
             gameplay_frame_obscured_by_overlay: false,
         }
     }
@@ -118,12 +119,12 @@ impl GameplayPresentationState {
     ) -> GameplayPresentationResult {
         let previous_scene = self.current_scene.clone();
         let previous_scene_ref = previous_scene.as_ref();
-        let level_transition = if !suspend_presentation_effects
+        let start_screen_refresh_flash = if !suspend_presentation_effects
             && matches!(self.animation_policy, GameplayAnimationPolicy::Full)
         {
-            LevelTransition::for_update(previous_scene_ref, &update, now)
+            update_starts_screen_refresh_flash(previous_scene_ref, &update)
         } else {
-            None
+            false
         };
         let scene_unchanged = previous_scene_ref == Some(&update.scene);
         let mut damage = gameplay_damage(previous_scene_ref, &update.scene);
@@ -139,12 +140,12 @@ impl GameplayPresentationState {
         }
         damage = merge_damage(damage, restart_damage(previous_scene_ref, &update));
         self.current_scene = Some(update.scene.clone());
-        if level_transition.is_some() {
-            self.animation_runner.clear();
-            self.level_transition = level_transition;
+        if start_screen_refresh_flash {
+            self.restart_screen_refresh_flash();
             return GameplayPresentationResult::new(GameplayDamage::Full, true);
         }
-        self.level_transition = None;
+        self.screen_refresh_flash = None;
+        self.pending_screen_refresh_flash = false;
         if suspend_presentation_effects {
             return self.presentation_result(damage);
         }
@@ -197,26 +198,40 @@ impl GameplayPresentationState {
 
     pub fn clear_transient_presentation(&mut self) {
         self.animation_runner.clear();
-        self.level_transition = None;
+        self.screen_refresh_flash = None;
+        self.pending_screen_refresh_flash = false;
     }
 
     pub fn has_pending_presentation(&self) -> bool {
-        self.level_transition.is_some() || self.animation_runner.has_active_animation()
+        self.pending_screen_refresh_flash
+            || self.screen_refresh_flash.is_some()
+            || self.animation_runner.has_active_animation()
     }
 
     pub fn mark_pending_frame_presented_at(&mut self, now: Instant) {
-        if let Some(level_transition) = self.level_transition.as_mut() {
-            level_transition.mark_initial_frame_presented_at(now);
+        if let Some(screen_refresh_flash) = self.screen_refresh_flash.as_mut() {
+            screen_refresh_flash.mark_initial_frame_presented_at(now);
         }
         self.animation_runner.mark_initial_frame_presented_at(now);
     }
 
-    pub fn has_active_level_transition(&self) -> bool {
-        self.level_transition.is_some()
+    pub fn has_active_screen_refresh_flash(&self) -> bool {
+        self.pending_screen_refresh_flash || self.screen_refresh_flash.is_some()
     }
 
-    pub fn dismiss_level_transition(&mut self) -> bool {
-        self.level_transition.take().is_some()
+    pub fn dismiss_screen_refresh_flash(&mut self) -> bool {
+        let had_pending = std::mem::take(&mut self.pending_screen_refresh_flash);
+        let had_active = self.screen_refresh_flash.take().is_some();
+        had_pending || had_active
+    }
+
+    pub fn queue_screen_refresh_flash(&mut self) {
+        if !matches!(self.animation_policy, GameplayAnimationPolicy::Full) {
+            return;
+        }
+        if !self.pending_screen_refresh_flash && self.screen_refresh_flash.is_none() {
+            self.restart_screen_refresh_flash();
+        }
     }
 
     pub fn advance_presentation_with_damage(&mut self) -> GameplayPresentationResult {
@@ -265,9 +280,10 @@ impl GameplayPresentationState {
         if self.current_scene.is_none() {
             return;
         }
-        if let Some(level_transition) = self.level_transition.as_mut() {
-            if level_transition.draw_and_step(renderer, frame, width, height, now) {
-                self.level_transition = None;
+        self.start_pending_screen_refresh_flash(renderer, frame.len(), width, height, now);
+        if let Some(screen_refresh_flash) = self.screen_refresh_flash.as_mut() {
+            if screen_refresh_flash.draw_and_step(frame, now) {
+                self.screen_refresh_flash = None;
             }
             return;
         }
@@ -292,8 +308,11 @@ impl GameplayPresentationState {
         if self.current_scene.is_none() {
             return GameplayPresentationResult::new(GameplayDamage::Cells(Vec::new()), false);
         }
-        if let Some(level_transition) = self.level_transition.as_ref() {
-            let changed = level_transition.is_ready_to_draw(now);
+        if self.pending_screen_refresh_flash {
+            return GameplayPresentationResult::new(GameplayDamage::Full, true);
+        }
+        if let Some(screen_refresh_flash) = self.screen_refresh_flash.as_ref() {
+            let changed = screen_refresh_flash.is_ready_to_draw(now);
             return GameplayPresentationResult::new(
                 if changed {
                     GameplayDamage::Full
@@ -330,6 +349,37 @@ impl GameplayPresentationState {
         GameplayPresentationResult::new(damage, self.has_pending_presentation())
     }
 
+    fn restart_screen_refresh_flash(&mut self) {
+        self.animation_runner.clear();
+        self.screen_refresh_flash = None;
+        self.pending_screen_refresh_flash = true;
+    }
+
+    fn start_pending_screen_refresh_flash(
+        &mut self,
+        renderer: &mut Renderer,
+        frame_len: usize,
+        width: u32,
+        height: u32,
+        now: Instant,
+    ) {
+        if !std::mem::take(&mut self.pending_screen_refresh_flash) {
+            return;
+        }
+        let Some(scene) = self.current_scene.as_ref() else {
+            return;
+        };
+        let mut target_frame = vec![0; frame_len];
+        renderer.draw_gameplay_scene_with_animation(
+            &mut target_frame,
+            width,
+            height,
+            scene,
+            &GameplayAnimationRunner::default(),
+        );
+        self.screen_refresh_flash = Some(ScreenRefreshFlash::new(target_frame, now));
+    }
+
     fn animation_damage_with_hidden_player(
         &self,
         mut dirty: Vec<BoardCell>,
@@ -341,6 +391,25 @@ impl GameplayPresentationState {
         }
         normalize_cells(dirty)
     }
+}
+
+fn update_starts_screen_refresh_flash(
+    previous_scene: Option<&GameplayScreenRequest>,
+    update: &GameplayPresentationUpdate,
+) -> bool {
+    let Some(previous_scene) = previous_scene else {
+        return false;
+    };
+    if !matches!(
+        update.cause,
+        crate::screen_requests::GameplayPresentationCause::LevelTransition
+    ) {
+        return false;
+    }
+    if previous_scene.mode != update.scene.mode {
+        return false;
+    }
+    true
 }
 
 #[cfg(test)]

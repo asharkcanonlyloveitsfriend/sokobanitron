@@ -17,6 +17,7 @@ pub mod gameplay_presentation;
 pub mod hit_test;
 pub mod layout;
 pub mod renderer;
+mod screen_refresh_flash;
 pub mod screen_requests;
 
 pub use assets::{UiIcon, draw_ui_icon_in_rect};

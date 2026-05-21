@@ -914,7 +914,7 @@ fn limited_scene_change_drops_pending_animation() {
 }
 
 #[test]
-fn current_state_same_level_scene_refresh_does_not_start_level_transition() {
+fn current_state_same_level_scene_refresh_does_not_start_screen_refresh_flash() {
     let previous = gameplay_scene(1);
     let moved_update = gameplay_scene(1);
     let mut state = GameplayPresentationState::new();
@@ -929,7 +929,7 @@ fn current_state_same_level_scene_refresh_does_not_start_level_transition() {
 }
 
 #[test]
-fn current_state_different_level_scene_refresh_does_not_start_level_transition() {
+fn current_state_different_level_scene_refresh_does_not_start_screen_refresh_flash() {
     let previous = gameplay_scene(1);
     let moved_update = gameplay_scene(2);
     let mut state = GameplayPresentationState::new();
@@ -944,7 +944,7 @@ fn current_state_different_level_scene_refresh_does_not_start_level_transition()
 }
 
 #[test]
-fn level_change_starts_level_transition() {
+fn level_transition_starts_screen_refresh_flash() {
     let previous = gameplay_scene(1);
     let mut moved_update = gameplay_scene(2);
     moved_update.cause = GameplayPresentationCause::LevelTransition;
@@ -961,7 +961,24 @@ fn level_change_starts_level_transition() {
 }
 
 #[test]
-fn level_transition_times_first_step_from_presented_frame() {
+fn same_level_transition_starts_screen_refresh_flash() {
+    let previous = gameplay_scene(1);
+    let mut moved_update = gameplay_scene(1);
+    moved_update.cause = GameplayPresentationCause::LevelTransition;
+    let mut state = GameplayPresentationState::new();
+    let start = Instant::now();
+
+    state.replace_update_at(previous, start);
+    let result = state.replace_update_at(moved_update.clone(), start + Duration::from_millis(100));
+
+    assert_eq!(result.damage, GameplayDamage::Full);
+    assert!(result.has_pending_presentation);
+    assert!(state.has_pending_presentation());
+    assert_eq!(state.current_scene(), Some(&moved_update.scene));
+}
+
+#[test]
+fn screen_refresh_flash_times_first_phase_from_presented_frame() {
     let previous = gameplay_scene(1);
     let mut moved_update = gameplay_scene(2);
     moved_update.cause = GameplayPresentationCause::LevelTransition;
@@ -977,14 +994,14 @@ fn level_transition_times_first_step_from_presented_frame() {
     state.mark_pending_frame_presented_at(presented_at);
 
     assert_eq!(
-        state.advance_presentation_with_damage_at(presented_at + Duration::from_millis(99)),
+        state.advance_presentation_with_damage_at(presented_at + Duration::from_millis(149)),
         GameplayPresentationResult {
             damage: GameplayDamage::Cells(Vec::new()),
             has_pending_presentation: true,
         }
     );
     assert_eq!(
-        state.advance_presentation_with_damage_at(presented_at + Duration::from_millis(100)),
+        state.advance_presentation_with_damage_at(presented_at + Duration::from_millis(150)),
         GameplayPresentationResult {
             damage: GameplayDamage::Full,
             has_pending_presentation: true,
@@ -993,7 +1010,7 @@ fn level_transition_times_first_step_from_presented_frame() {
 }
 
 #[test]
-fn non_level_transition_update_does_not_start_level_transition() {
+fn non_level_transition_update_does_not_start_screen_refresh_flash() {
     let previous = gameplay_scene(1);
     let mut moved_update = gameplay_scene(2);
     moved_update.cause = GameplayPresentationCause::Restarted;
@@ -1009,7 +1026,7 @@ fn non_level_transition_update_does_not_start_level_transition() {
 }
 
 #[test]
-fn level_transition_frames_hide_new_level_entities_until_complete() {
+fn screen_refresh_flash_initial_frame_draws_inverted_new_level() {
     let previous = update_from_board(
         floor_board(5, 3, Vec::new(), None, None, BoardSolveState::Unsolved),
         GameplayPresentationCause::CurrentState,
@@ -1025,42 +1042,104 @@ fn level_transition_frames_hide_new_level_entities_until_complete() {
         ),
         GameplayPresentationCause::LevelTransition,
     );
-    let mut current_without_entities = update_from_board(
-        floor_board(5, 3, Vec::new(), None, None, BoardSolveState::Unsolved),
-        GameplayPresentationCause::LevelTransition,
-    );
     current_with_entities.scene.level_number = 2;
-    current_without_entities.scene.level_number = 2;
 
     let mut state_with_entities = GameplayPresentationState::new();
-    let mut state_without_entities = GameplayPresentationState::new();
     let mut renderer_with_entities = Renderer::new();
-    let mut renderer_without_entities = Renderer::new();
+    let mut direct_renderer = Renderer::new();
+    let mut flash_frame = vec![0; 96 * 64];
+    let mut direct_frame = vec![0; 96 * 64];
     let start = Instant::now();
     state_with_entities.replace_update_at(previous.clone(), start);
-    state_without_entities.replace_update_at(previous, start);
-    state_with_entities.replace_update_at(current_with_entities, start);
-    state_without_entities.replace_update_at(current_without_entities, start);
+    state_with_entities.replace_update_at(current_with_entities.clone(), start);
 
-    for elapsed_ms in [0, 100, 200, 300] {
-        let mut frame_with_entities = vec![0; 96 * 64];
-        let mut frame_without_entities = vec![0; 96 * 64];
-        let now = start + Duration::from_millis(elapsed_ms);
-        state_with_entities.draw_at(
-            &mut renderer_with_entities,
-            &mut frame_with_entities,
-            96,
-            64,
-            now,
-        );
-        state_without_entities.draw_at(
-            &mut renderer_without_entities,
-            &mut frame_without_entities,
-            96,
-            64,
-            now,
-        );
+    state_with_entities.draw_at(&mut renderer_with_entities, &mut flash_frame, 96, 64, start);
+    direct_renderer.draw_gameplay_scene_with_animation(
+        &mut direct_frame,
+        96,
+        64,
+        &current_with_entities.scene,
+        &GameplayAnimationRunner::default(),
+    );
 
-        assert_eq!(frame_with_entities, frame_without_entities);
-    }
+    assert!(
+        flash_frame
+            .iter()
+            .zip(&direct_frame)
+            .all(|(inverted, target)| *inverted == 255u8.saturating_sub(*target))
+    );
+}
+
+#[test]
+fn screen_refresh_flash_uses_configured_phase_durations_before_settling() {
+    let previous = update_from_board(
+        floor_board(5, 3, Vec::new(), None, None, BoardSolveState::Unsolved),
+        GameplayPresentationCause::CurrentState,
+    );
+    let mut current = update_from_board(
+        floor_board(
+            5,
+            3,
+            vec![cell(2, 1)],
+            Some(cell(1, 1)),
+            Some(cell(2, 1)),
+            BoardSolveState::Unsolved,
+        ),
+        GameplayPresentationCause::LevelTransition,
+    );
+    current.scene.level_number = 2;
+
+    let mut state = GameplayPresentationState::new();
+    let mut renderer = Renderer::new();
+    let mut direct_renderer = Renderer::new();
+    let start = Instant::now();
+    let mut target_frame = vec![0; 96 * 64];
+    let mut initial_inverted_frame = vec![0; 96 * 64];
+    let mut middle_target_frame = vec![0; 96 * 64];
+    let mut second_inverted_frame = vec![0; 96 * 64];
+    let mut final_frame = vec![0; 96 * 64];
+
+    state.replace_update_at(previous, start);
+    state.replace_update_at(current.clone(), start);
+    direct_renderer.draw_gameplay_scene_with_animation(
+        &mut target_frame,
+        96,
+        64,
+        &current.scene,
+        &GameplayAnimationRunner::default(),
+    );
+    state.draw_at(&mut renderer, &mut initial_inverted_frame, 96, 64, start);
+    state.mark_pending_frame_presented_at(start);
+    state.draw_at(
+        &mut renderer,
+        &mut middle_target_frame,
+        96,
+        64,
+        start + Duration::from_millis(150),
+    );
+    state.draw_at(
+        &mut renderer,
+        &mut second_inverted_frame,
+        96,
+        64,
+        start + Duration::from_millis(250),
+    );
+    state.draw_at(
+        &mut renderer,
+        &mut final_frame,
+        96,
+        64,
+        start + Duration::from_millis(350),
+    );
+
+    assert!(
+        initial_inverted_frame
+            .iter()
+            .zip(&target_frame)
+            .all(|(inverted, target)| *inverted == 255u8.saturating_sub(*target))
+    );
+    assert_eq!(middle_target_frame, target_frame);
+    assert_eq!(second_inverted_frame, initial_inverted_frame);
+    assert_eq!(final_frame, target_frame);
+    assert!(!state.has_pending_presentation());
 }
