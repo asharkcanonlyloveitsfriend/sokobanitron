@@ -792,7 +792,7 @@ mod tests {
     }
 
     #[test]
-    fn full_box_move_flash_draws_path_before_cleanup_phase() {
+    fn full_box_move_flash_draws_full_path_for_both_flash_ticks() {
         let now = Instant::now();
         let previous = update_with_state(
             GameplayPresentationCause::CurrentState,
@@ -831,18 +831,15 @@ mod tests {
         );
 
         let damage = runner.advance_to_with_damage(now + Duration::from_millis(50));
+        assert_eq!(damage, vec![BoardCell::new(1, 0), BoardCell::new(2, 0)]);
         assert_eq!(
-            damage,
+            runner.current_dirty_cells(),
             vec![
                 BoardCell::new(1, 0),
                 BoardCell::new(2, 0),
                 BoardCell::new(3, 0),
                 BoardCell::new(3, 1)
             ]
-        );
-        assert_eq!(
-            runner.current_dirty_cells(),
-            vec![BoardCell::new(1, 0), BoardCell::new(2, 0)]
         );
 
         let _ = runner.advance_to_with_damage(now + Duration::from_millis(100));
@@ -881,7 +878,12 @@ mod tests {
 
         assert_eq!(
             runner.clear_damage(),
-            vec![BoardCell::new(1, 0), BoardCell::new(2, 0)]
+            vec![
+                BoardCell::new(1, 0),
+                BoardCell::new(2, 0),
+                BoardCell::new(3, 0),
+                BoardCell::new(3, 1)
+            ]
         );
         assert!(!runner.has_active_animation());
     }

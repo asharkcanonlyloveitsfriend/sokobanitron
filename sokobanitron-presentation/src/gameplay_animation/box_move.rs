@@ -1,6 +1,4 @@
-use super::box_path_drawing::{
-    FULL_BOX_PATH_LINE_WIDTH_CELL_FRACTION, draw_limited_box_path_outline, draw_path_from_progress,
-};
+use super::box_path_drawing::{draw_limited_box_path_outline, draw_path_from_progress};
 use super::entity_flash::{
     EntityFlashPhase, FlashTargets, draw_flashing_entities, entity_flash_duration,
     entity_flash_phase_for_elapsed, flash_color, flash_dirty_cells, flash_targets_from_scenes,
@@ -14,11 +12,6 @@ use crate::screen_requests::{
 use sokobanitron_gameplay::BoardCell;
 use std::time::Duration;
 
-// Full path cleanup tuning knobs: default duration/range plus the long-path curve.
-const FULL_BOX_MOVE_DEFAULT_CLEANUP_DURATION: Duration = Duration::from_millis(150);
-const FULL_BOX_MOVE_DEFAULT_MIN_SEGMENTS: usize = 9;
-const FULL_BOX_MOVE_DEFAULT_MAX_SEGMENTS: usize = 30;
-const FULL_BOX_MOVE_LONG_PATH_EXPONENT: f32 = 0.35;
 const LIMITED_BOX_MOVE_MAX_FRAMES: usize = 3;
 
 pub(super) fn box_move_animation_for_policy(
@@ -61,10 +54,6 @@ pub(super) struct FullBoxMoveAnimation {
     flash_targets: FlashTargets,
     path: Option<Vec<BoardCell>>,
     flash_phase: EntityFlashPhase,
-    cleanup_progress_segments: f32,
-    cleanup_duration: Duration,
-    total_segments: usize,
-    duration: Duration,
 }
 
 pub(super) struct LimitedBoxMoveAnimation {
@@ -82,39 +71,27 @@ impl FullBoxMoveAnimation {
         let flash_targets = flash_targets_from_scenes(previous_scene, current_scene)?;
         let path = box_move_path_is_visible_for_policy(GameplayAnimationPolicy::Full, &path)
             .then_some(path);
-        let total_segments = path
-            .as_ref()
-            .map(|path| path.len().saturating_sub(1))
-            .unwrap_or(0);
-        let cleanup_duration = cleanup_duration(total_segments);
         Some(Self {
             flash_targets,
             path,
             flash_phase: EntityFlashPhase::FlashDark,
-            cleanup_progress_segments: 0.0,
-            cleanup_duration,
-            total_segments,
-            duration: entity_flash_duration().max(cleanup_duration),
         })
     }
 
     fn current_path_dirty_cells(&self) -> Vec<BoardCell> {
-        if let Some(path) = self.path.as_ref() {
-            full_box_move_path_visible_cells(path, self.cleanup_progress_segments)
+        if self.path_is_visible() {
+            self.path.as_ref().cloned().unwrap_or_default()
         } else {
             Vec::new()
         }
     }
 
-    fn progress_for_elapsed(&self, elapsed: Duration) -> f32 {
-        if self.total_segments == 0 {
-            0.0
-        } else if elapsed >= self.cleanup_duration {
-            self.total_segments as f32
-        } else {
-            let cleanup_fraction = elapsed.as_secs_f32() / self.cleanup_duration.as_secs_f32();
-            (cleanup_fraction * self.total_segments as f32).min(self.total_segments as f32)
-        }
+    fn path_is_visible(&self) -> bool {
+        self.path.is_some()
+            && matches!(
+                self.flash_phase,
+                EntityFlashPhase::FlashDark | EntityFlashPhase::FlashLight
+            )
     }
 }
 
@@ -174,7 +151,7 @@ impl GameplayAnimation for FullBoxMoveAnimation {
             scene,
             clip_cell,
             path,
-            self.cleanup_progress_segments,
+            0.0,
         );
     }
 
@@ -203,106 +180,29 @@ impl GameplayAnimation for FullBoxMoveAnimation {
     }
 
     fn duration(&self) -> Duration {
-        self.duration
+        entity_flash_duration()
     }
 
     fn set_elapsed(&mut self, elapsed: Duration) {
         self.flash_phase = entity_flash_phase_for_elapsed(elapsed);
-        self.cleanup_progress_segments = self.progress_for_elapsed(elapsed);
     }
 
     fn advance_to_elapsed(&mut self, elapsed: Duration) -> Vec<BoardCell> {
         let previous_flash_phase = self.flash_phase;
-        let previous_progress = self.cleanup_progress_segments;
+        let previous_path_visible = self.path_is_visible();
         self.set_elapsed(elapsed);
 
         let mut dirty = Vec::new();
         if previous_flash_phase != self.flash_phase {
             dirty.extend(flash_dirty_cells(&self.flash_targets));
         }
-        if let Some(path) = self.path.as_ref() {
-            dirty.extend(full_box_move_path_interval_cells(
-                path,
-                previous_progress,
-                self.cleanup_progress_segments,
-            ));
+        if previous_path_visible != self.path_is_visible()
+            && let Some(path) = self.path.as_ref()
+        {
+            dirty.extend(path.iter().copied());
         }
         normalize_cells(dirty)
     }
-}
-
-fn cleanup_duration(total_segments: usize) -> Duration {
-    match total_segments {
-        0 => Duration::ZERO,
-        segments if segments < FULL_BOX_MOVE_DEFAULT_MIN_SEGMENTS => {
-            FULL_BOX_MOVE_DEFAULT_CLEANUP_DURATION
-                .mul_f32(segments as f32 / FULL_BOX_MOVE_DEFAULT_MIN_SEGMENTS as f32)
-        }
-        segments if segments <= FULL_BOX_MOVE_DEFAULT_MAX_SEGMENTS => {
-            FULL_BOX_MOVE_DEFAULT_CLEANUP_DURATION
-        }
-        segments => FULL_BOX_MOVE_DEFAULT_CLEANUP_DURATION.mul_f32(
-            (segments as f32 / FULL_BOX_MOVE_DEFAULT_MAX_SEGMENTS as f32)
-                .powf(FULL_BOX_MOVE_LONG_PATH_EXPONENT),
-        ),
-    }
-}
-
-pub(super) fn full_box_move_path_visible_cells(
-    path: &[BoardCell],
-    path_progress_segments: f32,
-) -> Vec<BoardCell> {
-    let total_segments = path.len().saturating_sub(1);
-    if total_segments == 0 {
-        return Vec::new();
-    }
-    let consumed = path_progress_segments.min(total_segments as f32);
-    if consumed >= total_segments as f32 {
-        return Vec::new();
-    }
-
-    let start_segment = consumed
-        .floor()
-        .clamp(0.0, (total_segments.saturating_sub(1)) as f32) as usize;
-    let start_fraction = consumed - start_segment as f32;
-    // The stroke is centered on the segment centerline and is `line_width / 2` thick on each
-    // side. Once the consumed front edge has crossed the next cell boundary by half the stroke
-    // width, the previous cell is no longer touched by the visible path footprint.
-    let leading_overlap_threshold = 0.5 + FULL_BOX_PATH_LINE_WIDTH_CELL_FRACTION / 2.0;
-    let first_visible_index = if start_fraction >= leading_overlap_threshold {
-        start_segment + 1
-    } else {
-        start_segment
-    };
-
-    normalize_cells(path[first_visible_index..].to_vec())
-}
-
-pub(super) fn full_box_move_path_interval_cells(
-    path: &[BoardCell],
-    from_progress_segments: f32,
-    to_progress_segments: f32,
-) -> Vec<BoardCell> {
-    let total_segments = path.len().saturating_sub(1);
-    if total_segments == 0 {
-        return Vec::new();
-    }
-    let from = from_progress_segments.clamp(0.0, total_segments as f32);
-    let to = to_progress_segments.clamp(0.0, total_segments as f32);
-    if to <= from {
-        return Vec::new();
-    }
-
-    let first_segment = from
-        .floor()
-        .clamp(0.0, (total_segments.saturating_sub(1)) as f32) as usize;
-    let last_segment = if to >= total_segments as f32 {
-        total_segments - 1
-    } else {
-        to.floor()
-            .clamp(0.0, (total_segments.saturating_sub(1)) as f32) as usize
-    };
-    normalize_cells(path[first_segment..=(last_segment + 1)].to_vec())
 }
 
 impl GameplayAnimation for LimitedBoxMoveAnimation {
@@ -378,11 +278,7 @@ fn normalize_cells(mut cells: Vec<BoardCell>) -> Vec<BoardCell> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        FullBoxMoveAnimation, LimitedBoxMoveAnimation, cleanup_duration,
-        full_box_move_path_interval_cells, full_box_move_path_visible_cells,
-        limited_box_move_sample_cells,
-    };
+    use super::{FullBoxMoveAnimation, LimitedBoxMoveAnimation, limited_box_move_sample_cells};
     use crate::gameplay_animation::GameplayAnimation;
     use crate::gameplay_animation::entity_flash::EntityFlashPhase;
     use crate::layout::fit_board_viewport_for_controls;
@@ -405,48 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn full_box_move_cleanup_duration_curve_matches_tuning_targets() {
-        let shortest_visible_cleanup_ms = cleanup_duration(2).as_secs_f64() * 1000.0;
-        let default_min_cleanup_ms = cleanup_duration(9).as_secs_f64() * 1000.0;
-        let default_max_cleanup_ms = cleanup_duration(30).as_secs_f64() * 1000.0;
-        let long_cleanup_ms = cleanup_duration(586).as_secs_f64() * 1000.0;
-
-        assert!((30.0..=35.0).contains(&shortest_visible_cleanup_ms));
-        assert!((149.0..=151.0).contains(&default_min_cleanup_ms));
-        assert!((149.0..=151.0).contains(&default_max_cleanup_ms));
-        assert!((415.0..=435.0).contains(&long_cleanup_ms));
-    }
-
-    #[test]
-    fn full_box_move_path_dirty_cells_drop_consumed_prefix() {
-        let path = vec![
-            BoardCell::new(0, 0),
-            BoardCell::new(1, 0),
-            BoardCell::new(2, 0),
-            BoardCell::new(3, 0),
-        ];
-
-        assert_eq!(full_box_move_path_visible_cells(&path, 0.0), path);
-        assert_eq!(
-            full_box_move_path_visible_cells(&path, 1.0),
-            vec![
-                BoardCell::new(1, 0),
-                BoardCell::new(2, 0),
-                BoardCell::new(3, 0),
-            ]
-        );
-        assert_eq!(
-            full_box_move_path_visible_cells(&path, 1.61),
-            vec![BoardCell::new(2, 0), BoardCell::new(3, 0)]
-        );
-        assert_eq!(
-            full_box_move_path_visible_cells(&path, 3.0),
-            Vec::<BoardCell>::new()
-        );
-    }
-
-    #[test]
-    fn full_box_move_cleanup_dirty_cells_match_visible_path_footprint() {
+    fn full_box_move_dirty_cells_clear_path_when_flash_completes() {
         let path = vec![
             BoardCell::new(0, 0),
             BoardCell::new(1, 0),
@@ -491,12 +346,8 @@ mod tests {
         assert_eq!(animation.dirty_cells(), path);
 
         animation.flash_phase = EntityFlashPhase::Complete;
-        animation.cleanup_progress_segments = 1.61;
 
-        assert_eq!(
-            animation.dirty_cells(),
-            vec![BoardCell::new(2, 0), BoardCell::new(3, 0)]
-        );
+        assert_eq!(animation.dirty_cells(), Vec::<BoardCell>::new());
     }
 
     #[test]
@@ -513,33 +364,6 @@ mod tests {
         assert_eq!(
             animation.dirty_cells(),
             vec![BoardCell::new(1, 0), BoardCell::new(2, 0)]
-        );
-    }
-
-    #[test]
-    fn full_box_move_path_interval_dirty_cells_cover_disappeared_strip() {
-        let path = vec![
-            BoardCell::new(0, 0),
-            BoardCell::new(1, 0),
-            BoardCell::new(2, 0),
-            BoardCell::new(3, 0),
-        ];
-
-        assert_eq!(
-            full_box_move_path_interval_cells(&path, 0.2, 0.4),
-            vec![BoardCell::new(0, 0), BoardCell::new(1, 0)]
-        );
-        assert_eq!(
-            full_box_move_path_interval_cells(&path, 0.9, 1.1),
-            vec![
-                BoardCell::new(0, 0),
-                BoardCell::new(1, 0),
-                BoardCell::new(2, 0)
-            ]
-        );
-        assert_eq!(
-            full_box_move_path_interval_cells(&path, 2.2, 3.0),
-            vec![BoardCell::new(2, 0), BoardCell::new(3, 0)]
         );
     }
 }
