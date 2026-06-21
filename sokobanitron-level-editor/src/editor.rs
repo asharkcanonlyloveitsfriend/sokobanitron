@@ -87,7 +87,9 @@ impl LevelEditor {
     }
 
     pub fn can_enter_play(&self) -> bool {
-        self.world.player().is_some() && self.has_box_off_goal()
+        self.world.player().is_some()
+            && self.box_count_matches_goal_count()
+            && self.has_box_off_goal()
     }
 
     pub fn can_save(&self) -> bool {
@@ -403,6 +405,10 @@ impl LevelEditor {
             .any(|(x, y)| matches!(self.world.tile(x, y), Tile::Floor))
     }
 
+    fn box_count_matches_goal_count(&self) -> bool {
+        self.world.box_positions().len() == self.world.goal_positions().len()
+    }
+
     fn level_ascii_in_bounds(&self, bounds: NonVoidBounds) -> String {
         let mut lines = Vec::new();
         for y in bounds.min_y..=bounds.max_y {
@@ -465,9 +471,15 @@ impl LevelEditor {
         let before_player = self.world.player();
 
         match tool {
-            DrawTool::Floor => self.paint_floor(world_x, world_y),
-            DrawTool::GoalWithBox => self.paint_goal_with_box(world_x, world_y),
-            DrawTool::Void => self.paint_void(world_x, world_y),
+            DrawTool::Floor => self.world.set_tile(world_x, world_y, Tile::Floor),
+            DrawTool::Goal => self.world.set_tile(world_x, world_y, Tile::Goal),
+            DrawTool::Box => self.paint_box(world_x, world_y),
+            DrawTool::GoalWithBox => {
+                self.world.set_tile(world_x, world_y, Tile::Goal);
+                self.paint_box(world_x, world_y);
+            }
+            DrawTool::RemoveBox => self.world.set_box(world_x, world_y, false),
+            DrawTool::Void => self.world.set_tile(world_x, world_y, Tile::Void),
         }
 
         self.drop_invalid_selection();
@@ -480,84 +492,14 @@ impl LevelEditor {
         changed
     }
 
-    fn paint_floor(&mut self, world_x: i32, world_y: i32) {
-        if matches!(self.world.tile(world_x, world_y), Tile::Goal) {
-            self.remove_goal_box((world_x, world_y));
+    fn paint_box(&mut self, world_x: i32, world_y: i32) {
+        if matches!(self.world.tile(world_x, world_y), Tile::Void) {
+            self.world.set_tile(world_x, world_y, Tile::Floor);
         }
-        self.world.set_tile(world_x, world_y, Tile::Floor);
-    }
-
-    fn paint_goal_with_box(&mut self, world_x: i32, world_y: i32) {
-        let was_goal = matches!(self.world.tile(world_x, world_y), Tile::Goal);
-        if self.world.has_box(world_x, world_y) {
-            self.world.set_box(world_x, world_y, false);
-            if !was_goal {
-                self.restore_box_to_first_available_goal();
-            }
-        } else if was_goal {
-            self.remove_first_box();
-        }
-
-        self.world.set_tile(world_x, world_y, Tile::Goal);
         if self.world.player() == Some((world_x, world_y)) {
             self.world.set_player(None);
         }
         self.world.set_box(world_x, world_y, true);
-    }
-
-    fn paint_void(&mut self, world_x: i32, world_y: i32) {
-        let position = (world_x, world_y);
-        match self.world.tile(world_x, world_y) {
-            Tile::Goal => {
-                self.remove_goal_box(position);
-                self.world.set_tile(world_x, world_y, Tile::Void);
-            }
-            Tile::Floor => {
-                let had_box = self.world.has_box(world_x, world_y);
-                if had_box {
-                    self.world.set_box(world_x, world_y, false);
-                }
-                self.world.set_tile(world_x, world_y, Tile::Void);
-                if had_box {
-                    self.restore_box_to_first_available_goal();
-                }
-            }
-            Tile::Void => {}
-        }
-    }
-
-    fn remove_goal_box(&mut self, position: (i32, i32)) {
-        if self.world.has_box(position.0, position.1) {
-            self.world.set_box(position.0, position.1, false);
-        } else {
-            self.remove_first_box();
-        }
-    }
-
-    fn remove_first_box(&mut self) -> bool {
-        if let Some((x, y)) = self.world.box_positions().into_iter().next() {
-            self.world.set_box(x, y, false);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn restore_box_to_first_available_goal(&mut self) -> bool {
-        let Some(goal) = self
-            .world
-            .goal_positions()
-            .into_iter()
-            .find(|&(x, y)| !self.world.has_box(x, y))
-        else {
-            return false;
-        };
-
-        if self.world.player() == Some(goal) {
-            self.world.set_player(None);
-        }
-        self.world.set_box(goal.0, goal.1, true);
-        true
     }
 
     fn drop_invalid_selection(&mut self) {
@@ -899,6 +841,15 @@ mod tests {
         editor
     }
 
+    fn add_extra_box(editor: &mut LevelEditor) {
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Draw));
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 3,
+            cell_y: 0,
+            tool: DrawTool::Box,
+        });
+    }
+
     fn setup_unsolved_play_editor() -> LevelEditor {
         let mut editor = LevelEditor::new();
         clear_world(&mut editor);
@@ -1000,8 +951,35 @@ mod tests {
     }
 
     #[test]
+    fn set_mode_rejects_play_when_box_goal_counts_differ() {
+        let mut editor = setup_simple_playable_editor();
+        add_extra_box(&mut editor);
+
+        let effects = editor.apply_command(EditorCommand::SetMode(EditorMode::Play));
+
+        assert!(!editor.can_enter_play());
+        assert_no_effects(effects);
+        assert_eq!(editor.mode(), EditorMode::Draw);
+        assert!(editor.play_board().is_none());
+    }
+
+    #[test]
     fn move_toggles_to_draw_when_play_cannot_start() {
         let mut editor = LevelEditor::new();
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Move));
+
+        let effects = editor.apply_command(EditorCommand::ToggleMode);
+
+        assert!(!editor.can_enter_play());
+        assert!(effects.mode_changed);
+        assert_eq!(editor.mode(), EditorMode::Draw);
+        assert!(editor.play_board().is_none());
+    }
+
+    #[test]
+    fn move_toggles_to_draw_when_box_goal_counts_differ() {
+        let mut editor = setup_simple_playable_editor();
+        add_extra_box(&mut editor);
         editor.apply_command(EditorCommand::SetMode(EditorMode::Move));
 
         let effects = editor.apply_command(EditorCommand::ToggleMode);
@@ -1546,7 +1524,7 @@ mod tests {
     }
 
     #[test]
-    fn erasing_floor_under_moved_box_restores_it_to_first_available_goal() {
+    fn erasing_floor_under_moved_box_does_not_restore_it_to_a_goal() {
         let mut editor = setup_simple_playable_editor();
 
         editor.apply_command(EditorCommand::SetMode(EditorMode::Draw));
@@ -1557,11 +1535,13 @@ mod tests {
         });
 
         assert!(!editor.world.has_box(1, 0));
-        assert!(editor.world.has_box(2, 0));
+        assert!(!editor.world.has_box(2, 0));
+        assert_eq!(editor.world.tile(1, 0), Tile::Void);
+        assert_eq!(editor.world.tile(2, 0), Tile::Goal);
     }
 
     #[test]
-    fn restoring_box_to_first_available_goal_uses_sorted_empty_goal() {
+    fn removing_box_does_not_restore_it_to_first_available_goal() {
         let mut editor = LevelEditor::new();
         clear_world(&mut editor);
         for x in 0..=5 {
@@ -1591,17 +1571,17 @@ mod tests {
         editor.apply_command(EditorCommand::PaintCell {
             cell_x: 4,
             cell_y: 0,
-            tool: DrawTool::Void,
+            tool: DrawTool::RemoveBox,
         });
 
-        assert!(editor.world.has_box(0, 0));
+        assert!(!editor.world.has_box(0, 0));
         assert!(!editor.world.has_box(2, 0));
         assert!(!editor.world.has_box(4, 0));
         assert!(editor.world.has_box(5, 0));
     }
 
     #[test]
-    fn restoring_box_to_first_available_goal_removes_player_on_goal() {
+    fn removing_box_from_goal_leaves_goal_and_player_placement_alone() {
         let mut editor = LevelEditor::new();
         clear_world(&mut editor);
         paint_goal_with_box(&mut editor, 0, 0);
@@ -1624,16 +1604,17 @@ mod tests {
         editor.apply_command(EditorCommand::PaintCell {
             cell_x: 1,
             cell_y: 0,
-            tool: DrawTool::Void,
+            tool: DrawTool::RemoveBox,
         });
 
-        assert_eq!(editor.world.player(), None);
-        assert!(editor.world.has_box(0, 0));
+        assert_eq!(editor.world.player(), Some((0, 0)));
+        assert_eq!(editor.world.tile(0, 0), Tile::Goal);
+        assert!(!editor.world.has_box(0, 0));
         assert!(!editor.world.has_box(1, 0));
     }
 
     #[test]
-    fn drawing_goal_with_box_over_moved_box_restores_moved_box_to_first_available_goal() {
+    fn drawing_goal_with_box_over_moved_box_does_not_restore_another_box() {
         let mut editor = LevelEditor::new();
         clear_world(&mut editor);
         paint_goal_with_box(&mut editor, 0, 0);
@@ -1656,12 +1637,12 @@ mod tests {
         });
 
         assert_eq!(editor.world.tile(1, 0), Tile::Goal);
-        assert!(editor.world.has_box(0, 0));
+        assert!(!editor.world.has_box(0, 0));
         assert!(editor.world.has_box(1, 0));
     }
 
     #[test]
-    fn drawing_goal_with_box_on_empty_goal_replaces_first_box() {
+    fn drawing_goal_with_box_on_empty_goal_does_not_remove_existing_box() {
         let mut editor = LevelEditor::new();
         clear_world(&mut editor);
         paint_goal_with_box(&mut editor, 0, 0);
@@ -1684,11 +1665,11 @@ mod tests {
         });
 
         assert!(editor.world.has_box(0, 0));
-        assert!(!editor.world.has_box(1, 0));
+        assert!(editor.world.has_box(1, 0));
     }
 
     #[test]
-    fn deleting_empty_goal_removes_first_box() {
+    fn deleting_empty_goal_does_not_remove_first_box() {
         let mut editor = setup_simple_playable_editor();
 
         editor.apply_command(EditorCommand::SetMode(EditorMode::Draw));
@@ -1698,12 +1679,49 @@ mod tests {
             tool: DrawTool::Void,
         });
 
-        assert!(!editor.world.has_box(1, 0));
+        assert!(editor.world.has_box(1, 0));
         assert!(!editor.world.has_box(2, 0));
+        assert_eq!(editor.world.tile(2, 0), Tile::Void);
     }
 
     #[test]
-    fn deleting_boxed_goal_removes_that_box() {
+    fn removing_goal_from_boxed_goal_leaves_the_box() {
+        let mut editor = LevelEditor::new();
+        clear_world(&mut editor);
+        paint_goal_with_box(&mut editor, 0, 0);
+
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 0,
+            cell_y: 0,
+            tool: DrawTool::Floor,
+        });
+
+        assert_eq!(editor.world.tile(0, 0), Tile::Floor);
+        assert!(editor.world.has_box(0, 0));
+        assert_eq!(editor.world.box_positions().len(), 1);
+        assert!(editor.world.goal_positions().is_empty());
+    }
+
+    #[test]
+    fn removing_box_from_boxed_goal_leaves_the_goal() {
+        let mut editor = LevelEditor::new();
+        clear_world(&mut editor);
+        paint_goal_with_box(&mut editor, 0, 0);
+
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 0,
+            cell_y: 0,
+            tool: DrawTool::RemoveBox,
+        });
+
+        assert_eq!(editor.world.tile(0, 0), Tile::Goal);
+        assert!(!editor.world.has_box(0, 0));
+        assert!(editor.world.box_positions().is_empty());
+        assert_eq!(editor.world.goal_positions().len(), 1);
+    }
+
+    #[test]
+    fn deleting_boxed_cell_removes_only_that_cell_contents() {
         let mut editor = LevelEditor::new();
         clear_world(&mut editor);
         paint_goal_with_box(&mut editor, 0, 0);

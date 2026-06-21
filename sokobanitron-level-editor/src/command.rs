@@ -9,7 +9,10 @@ pub enum EditorMode {
 pub enum DrawTool {
     Floor,
     Void,
+    Goal,
+    Box,
     GoalWithBox,
+    RemoveBox,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

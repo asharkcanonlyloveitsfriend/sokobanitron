@@ -8,10 +8,10 @@ use crate::app::state::AppState;
 use presentation::layout::ScreenRect;
 use presentation::screen_requests::{
     EditorCountOverlay, EditorMenuScreenRequest, EditorModeIndicator, EditorModeMenuScreenRequest,
-    EditorScreenRequest,
+    EditorScreenRequest, EditorWarningKind, EditorWarningOverlay,
 };
 use sokobanitron_gameplay::BoardCell;
-use sokobanitron_level_editor::{EditorMode, LevelEditor};
+use sokobanitron_level_editor::{EditorMode, LevelEditor, Tile};
 
 use super::view::{
     VisibleBoardWindow, build_visible_window, can_save_editor_puzzle, can_zoom_in, can_zoom_out,
@@ -60,6 +60,7 @@ fn build_editor_screen_request(
     let visible = build_visible_window(&app_state.editor, editor);
     EditorScreenRequest {
         move_counts: build_count_overlays(&visible, editor),
+        warnings: build_warning_overlays(&visible, editor),
         board: visible.board,
         viewport: visible.viewport,
         mode_indicator: match snapshot.mode {
@@ -78,24 +79,78 @@ fn build_editor_screen_request(
     }
 }
 
+fn build_warning_overlays(
+    visible: &VisibleBoardWindow,
+    editor: &LevelEditor,
+) -> Vec<EditorWarningOverlay> {
+    let boxes = editor.world().box_positions();
+    let goals = editor.world().goal_positions();
+    match boxes.len().cmp(&goals.len()) {
+        std::cmp::Ordering::Greater => {
+            let extra_count = boxes.len() - goals.len();
+            let boxes_not_on_goals = boxes
+                .into_iter()
+                .filter(|&(world_x, world_y)| {
+                    !matches!(editor.world().tile(world_x, world_y), Tile::Goal)
+                })
+                .collect::<Vec<_>>();
+            let first_extra = boxes_not_on_goals.len().saturating_sub(extra_count);
+            boxes_not_on_goals
+                .into_iter()
+                .skip(first_extra)
+                .filter_map(|(world_x, world_y)| {
+                    visible_cell(visible, world_x, world_y).map(|cell| EditorWarningOverlay {
+                        cell,
+                        kind: EditorWarningKind::Box,
+                    })
+                })
+                .collect()
+        }
+        std::cmp::Ordering::Less => {
+            let extra_count = goals.len() - boxes.len();
+            let unboxed_goals = goals
+                .into_iter()
+                .filter(|&(world_x, world_y)| !editor.world().has_box(world_x, world_y))
+                .collect::<Vec<_>>();
+            let first_extra = unboxed_goals.len().saturating_sub(extra_count);
+            unboxed_goals
+                .into_iter()
+                .skip(first_extra)
+                .filter_map(|(world_x, world_y)| {
+                    visible_cell(visible, world_x, world_y).map(|cell| EditorWarningOverlay {
+                        cell,
+                        kind: EditorWarningKind::Goal,
+                    })
+                })
+                .collect()
+        }
+        std::cmp::Ordering::Equal => Vec::new(),
+    }
+}
+
+fn visible_cell(visible: &VisibleBoardWindow, world_x: i32, world_y: i32) -> Option<BoardCell> {
+    let local_x = world_x - visible.world_origin_x;
+    let local_y = world_y - visible.world_origin_y;
+    if local_x < 0
+        || local_y < 0
+        || local_x >= visible.board.width() as i32
+        || local_y >= visible.board.height() as i32
+    {
+        return None;
+    }
+    Some(BoardCell::new(local_x as u32, local_y as u32))
+}
+
 fn build_count_overlays(
     visible: &VisibleBoardWindow,
     editor: &LevelEditor,
 ) -> Vec<EditorCountOverlay> {
     let mut overlays = Vec::new();
     for count in editor.box_move_counts() {
-        let local_x = count.world_x - visible.world_origin_x;
-        let local_y = count.world_y - visible.world_origin_y;
-        if local_x < 0
-            || local_y < 0
-            || local_x >= visible.board.width() as i32
-            || local_y >= visible.board.height() as i32
-        {
+        let Some(cell) = visible_cell(visible, count.world_x, count.world_y) else {
             continue;
-        }
-        let (cell_x, cell_y, cell_w, cell_h) = visible
-            .viewport
-            .cell_to_screen_rect(BoardCell::new(local_x as u32, local_y as u32));
+        };
+        let (cell_x, cell_y, cell_w, cell_h) = visible.viewport.cell_to_screen_rect(cell);
         let inset = (cell_w / 24).max(1);
         let box_x = cell_x + inset as i32;
         let box_y = cell_y + inset as i32;
@@ -124,7 +179,8 @@ mod tests {
     use super::{build_current_editor_frame_request, build_sleep_editor_frame_request};
     use crate::app::presentation::FrameRequest;
     use crate::app::state::{AppOverlay, AppScreen, AppState};
-    use presentation::screen_requests::EditorModeIndicator;
+    use presentation::screen_requests::{EditorModeIndicator, EditorWarningKind};
+    use sokobanitron_gameplay::TileKind;
     use sokobanitron_level_editor::{DrawTool, EditorCommand, EditorMode, LevelEditor};
 
     fn validated_editor() -> LevelEditor {
@@ -316,6 +372,62 @@ mod tests {
             panic!("expected editor frame");
         };
         assert!(screen.move_counts.is_empty());
+    }
+
+    #[test]
+    fn editor_frame_marks_extra_boxes() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        let mut editor = LevelEditor::new();
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 0,
+            cell_y: 0,
+            tool: DrawTool::Box,
+        });
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 1,
+            cell_y: 0,
+            tool: DrawTool::GoalWithBox,
+        });
+
+        let FrameRequest::Editor { screen } =
+            build_current_editor_frame_request(&app_state, &editor)
+        else {
+            panic!("expected editor frame");
+        };
+
+        assert_eq!(screen.warnings.len(), 1);
+        assert_eq!(screen.warnings[0].kind, EditorWarningKind::Box);
+        assert!(screen.board.has_box(screen.warnings[0].cell));
+        assert_ne!(screen.board.tile(screen.warnings[0].cell), TileKind::Goal);
+    }
+
+    #[test]
+    fn editor_frame_marks_extra_goals() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        let mut editor = LevelEditor::new();
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 0,
+            cell_y: 0,
+            tool: DrawTool::Goal,
+        });
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 1,
+            cell_y: 0,
+            tool: DrawTool::GoalWithBox,
+        });
+
+        let FrameRequest::Editor { screen } =
+            build_current_editor_frame_request(&app_state, &editor)
+        else {
+            panic!("expected editor frame");
+        };
+
+        assert_eq!(screen.warnings.len(), 1);
+        assert_eq!(screen.warnings[0].kind, EditorWarningKind::Goal);
+        assert_eq!(screen.board.tile(screen.warnings[0].cell), TileKind::Goal);
+        assert!(!screen.board.has_box(screen.warnings[0].cell));
     }
 
     #[test]

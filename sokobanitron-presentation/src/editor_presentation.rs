@@ -177,6 +177,10 @@ fn editor_damage(
     add_optional_cell(&mut dirty, current.board.player());
     add_optional_cell(&mut dirty, previous.board.selected_box());
     add_optional_cell(&mut dirty, current.board.selected_box());
+    if previous.warnings != current.warnings {
+        dirty.extend(previous.warnings.iter().map(|warning| warning.cell));
+        dirty.extend(current.warnings.iter().map(|warning| warning.cell));
+    }
     let dirty = normalize_cells(dirty);
     if matches!(previous.mode_indicator, EditorModeIndicator::Draw)
         && !matches!(current.mode_indicator, EditorModeIndicator::Draw)
@@ -476,6 +480,7 @@ mod tests {
             board,
             viewport,
             move_counts: Vec::new(),
+            warnings: Vec::new(),
             mode_indicator,
             puzzle_solved: false,
             can_zoom_out: false,

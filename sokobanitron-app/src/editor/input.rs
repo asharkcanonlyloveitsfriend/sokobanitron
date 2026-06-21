@@ -9,13 +9,12 @@ use crate::shared::{
     MOUSE_POINTER_ID, PinchDirection, PinchGesture, PointerContact, PointerEvent, PointerGesture,
     PointerId, PointerPhase, TouchGestureUpdate,
 };
-use sokobanitron_level_editor::{EditorCommand, EditorMode, LevelEditor, Tile};
+use sokobanitron_level_editor::{DrawTool, EditorCommand, EditorMode, LevelEditor, Tile};
 use std::time::Instant;
 
 use super::hit_test::{
     EditorControlSlot, EditorSurfaceTarget, build_editor_surface_model, editor_surface_target_at,
 };
-use super::paint_mode::PaintMode;
 use super::view::{
     ActiveEditorStroke, EditorDoubleTapTarget, EditorUiState, reset_editor_interaction_state,
     zoom_in, zoom_out,
@@ -146,7 +145,7 @@ pub fn editor_touch(
         return handle_editor_pinch(app_state, editor, pinch);
     }
     if touch_update.suppress_screen_gestures {
-        app_state.editor.interaction.double_tap.clear();
+        clear_editor_double_tap(&mut app_state.editor);
         return None;
     }
 
@@ -244,7 +243,7 @@ fn handle_editor_pinch(
     editor: &mut LevelEditor,
     pinch: PinchGesture,
 ) -> Option<EditorUiAction> {
-    app_state.editor.interaction.double_tap.clear();
+    clear_editor_double_tap(&mut app_state.editor);
     if is_editor_overlay_open(app_state) {
         return None;
     }
@@ -426,12 +425,12 @@ fn begin_editor_board_interaction(
 ) {
     match editor.mode() {
         EditorMode::Draw => {
-            let mode =
-                resolve_paint_mode(&mut app_state.editor, editor, world_x, world_y, contact.at);
-            editor.apply_command(mode.to_command(world_x, world_y));
+            let tool =
+                resolve_paint_tool(&mut app_state.editor, editor, world_x, world_y, contact.at);
+            editor.apply_command(paint_cell_command(world_x, world_y, tool));
             app_state.editor.interaction.active_stroke = Some(ActiveEditorStroke {
                 pointer_id: contact.id,
-                mode,
+                tool,
             });
         }
         EditorMode::Move => {
@@ -499,7 +498,7 @@ fn continue_editor_drag(
     let (screen_x, screen_y) = contact.position.as_f64();
     let target = editor_surface_target_at(&surface, screen_x, screen_y);
     if let Some(EditorSurfaceTarget::BoardCell { world_x, world_y }) = target {
-        editor.apply_command(active.mode.to_command(world_x, world_y));
+        editor.apply_command(paint_cell_command(world_x, world_y, active.tool));
     }
 }
 
@@ -546,7 +545,12 @@ fn is_editor_overlay_open(app_state: &AppState) -> bool {
 
 fn reset_editor_screen_touch_state(ui: &mut EditorUiState) {
     ui.interaction.active_stroke = None;
+    clear_editor_double_tap(ui);
+}
+
+fn clear_editor_double_tap(ui: &mut EditorUiState) {
     ui.interaction.double_tap.clear();
+    ui.interaction.pending_draw_double_tap_tool = None;
 }
 
 fn immediate_draw_mode_double_tap_target(
@@ -585,27 +589,58 @@ fn immediate_draw_mode_double_tap_target(
         .then_some((world_x, world_y))
 }
 
-fn resolve_paint_mode(
+fn resolve_paint_tool(
     ui: &mut EditorUiState,
     editor: &LevelEditor,
     world_x: i32,
     world_y: i32,
     at: Instant,
-) -> PaintMode {
+) -> DrawTool {
     let current_tile = editor.world().tile(world_x, world_y);
     if editor.world().has_box(world_x, world_y) {
-        ui.interaction.double_tap.clear();
-        return PaintMode::Void;
+        clear_editor_double_tap(ui);
+        return DrawTool::RemoveBox;
     }
 
+    let double_tap_tool = draw_double_tap_tool(editor);
     if ui.interaction.double_tap.register_tap(
         EditorDoubleTapTarget::Draw(world_x, world_y),
         at,
         ui.interaction.double_tap_window,
     ) {
-        PaintMode::GoalWithBox
+        ui.interaction
+            .pending_draw_double_tap_tool
+            .take()
+            .unwrap_or(double_tap_tool)
     } else {
-        PaintMode::from_start_tile(current_tile)
+        ui.interaction.pending_draw_double_tap_tool = Some(double_tap_tool);
+        paint_tool_for_start_tile(current_tile)
+    }
+}
+
+fn paint_tool_for_start_tile(tile: Tile) -> DrawTool {
+    match tile {
+        Tile::Void => DrawTool::Floor,
+        Tile::Floor => DrawTool::Void,
+        Tile::Goal => DrawTool::Floor,
+    }
+}
+
+fn draw_double_tap_tool(editor: &LevelEditor) -> DrawTool {
+    let box_count = editor.world().box_positions().len();
+    let goal_count = editor.world().goal_positions().len();
+    match box_count.cmp(&goal_count) {
+        std::cmp::Ordering::Less => DrawTool::Box,
+        std::cmp::Ordering::Equal => DrawTool::GoalWithBox,
+        std::cmp::Ordering::Greater => DrawTool::Goal,
+    }
+}
+
+fn paint_cell_command(cell_x: i32, cell_y: i32, tool: DrawTool) -> EditorCommand {
+    EditorCommand::PaintCell {
+        cell_x,
+        cell_y,
+        tool,
     }
 }
 
@@ -748,6 +783,7 @@ mod tests {
         tap_world_cell(&mut app_state, &mut editor, 1, 0);
         tap_world_cell(&mut app_state, &mut editor, 2, 0);
         app_state.editor.interaction.double_tap.clear();
+        app_state.editor.interaction.pending_draw_double_tap_tool = None;
         (app_state, editor)
     }
 
@@ -787,6 +823,27 @@ mod tests {
             cell_x: 2,
             cell_y: 0,
         });
+        editor
+    }
+
+    fn editor_with_mismatched_box_goal_counts() -> LevelEditor {
+        let mut editor = LevelEditor::new();
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 0,
+            cell_y: 0,
+            tool: DrawTool::GoalWithBox,
+        });
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 1,
+            cell_y: 0,
+            tool: DrawTool::Box,
+        });
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Move));
+        editor.apply_command(EditorCommand::PositionPlayer {
+            cell_x: -1,
+            cell_y: 0,
+        });
+        editor.apply_command(EditorCommand::SetMode(EditorMode::Draw));
         editor
     }
 
@@ -869,6 +926,21 @@ mod tests {
 
         editor_mouse_pressed(&mut app_state, &mut editor, screen_x, screen_y);
 
+        assert_eq!(app_state.ui.overlay, Some(AppOverlay::EditorModeMenu));
+        assert_eq!(editor.mode(), EditorMode::Draw);
+    }
+
+    #[test]
+    fn play_mode_menu_option_stays_disabled_when_box_goal_counts_differ() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        app_state.ui.overlay = Some(AppOverlay::EditorModeMenu);
+        let mut editor = editor_with_mismatched_box_goal_counts();
+        let (screen_x, screen_y) = mode_menu_option_center(&app_state, 2);
+
+        editor_mouse_pressed(&mut app_state, &mut editor, screen_x, screen_y);
+
+        assert!(!editor.can_enter_play());
         assert_eq!(app_state.ui.overlay, Some(AppOverlay::EditorModeMenu));
         assert_eq!(editor.mode(), EditorMode::Draw);
     }
@@ -1197,6 +1269,78 @@ mod tests {
         assert_eq!(app_state.editor.viewport.zoom_steps, 0);
         assert_eq!(editor.world().tile(world_x, world_y), Tile::Goal);
         assert!(editor.world().has_box(world_x, world_y));
+    }
+
+    #[test]
+    fn draw_mode_double_tap_adds_only_box_when_goals_outnumber_boxes() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        let mut editor = LevelEditor::new();
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 1,
+            cell_y: 0,
+            tool: DrawTool::Goal,
+        });
+
+        tap_world_cell(&mut app_state, &mut editor, 1, 0);
+        tap_world_cell(&mut app_state, &mut editor, 1, 0);
+
+        assert_eq!(editor.world().tile(1, 0), Tile::Floor);
+        assert!(editor.world().has_box(1, 0));
+        assert!(editor.world().goal_positions().is_empty());
+    }
+
+    #[test]
+    fn draw_mode_double_tap_adds_only_goal_when_boxes_outnumber_goals() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        let mut editor = LevelEditor::new();
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 1,
+            cell_y: 0,
+            tool: DrawTool::Box,
+        });
+
+        tap_world_cell(&mut app_state, &mut editor, 0, 0);
+        tap_world_cell(&mut app_state, &mut editor, 0, 0);
+
+        assert_eq!(editor.world().tile(0, 0), Tile::Goal);
+        assert!(!editor.world().has_box(0, 0));
+        assert_eq!(editor.world().box_positions().len(), 1);
+    }
+
+    #[test]
+    fn tapping_box_in_draw_mode_removes_only_box() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        let mut editor = LevelEditor::new();
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 0,
+            cell_y: 0,
+            tool: DrawTool::GoalWithBox,
+        });
+
+        tap_world_cell(&mut app_state, &mut editor, 0, 0);
+
+        assert_eq!(editor.world().tile(0, 0), Tile::Goal);
+        assert!(!editor.world().has_box(0, 0));
+    }
+
+    #[test]
+    fn tapping_goal_in_draw_mode_removes_only_goal() {
+        let mut app_state = AppState::default();
+        app_state.ui.screen = AppScreen::Editor;
+        let mut editor = LevelEditor::new();
+        editor.apply_command(EditorCommand::PaintCell {
+            cell_x: 0,
+            cell_y: 0,
+            tool: DrawTool::Goal,
+        });
+
+        tap_world_cell(&mut app_state, &mut editor, 0, 0);
+
+        assert_eq!(editor.world().tile(0, 0), Tile::Floor);
+        assert!(!editor.world().has_box(0, 0));
     }
 
     #[test]

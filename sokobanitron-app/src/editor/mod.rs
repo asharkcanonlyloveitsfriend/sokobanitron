@@ -1,7 +1,6 @@
 mod frame;
 mod hit_test;
 mod input;
-mod paint_mode;
 mod view;
 
 pub use frame::{build_current_editor_frame_request, build_sleep_editor_frame_request};

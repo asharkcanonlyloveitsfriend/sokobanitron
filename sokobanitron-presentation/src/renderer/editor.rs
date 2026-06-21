@@ -6,6 +6,7 @@ use crate::layout::{
 };
 use crate::screen_requests::{
     EditorMenuScreenRequest, EditorModeIndicator, EditorModeMenuScreenRequest, EditorScreenRequest,
+    EditorWarningKind, EditorWarningOverlay,
 };
 
 use super::chrome::{
@@ -86,6 +87,14 @@ impl Renderer {
                 composition,
                 cell,
             );
+            for warning in request
+                .warnings
+                .iter()
+                .copied()
+                .filter(|warning| warning.cell == cell)
+            {
+                self.draw_editor_warning_overlay(frame, width, height, request, warning);
+            }
         }
     }
 
@@ -160,6 +169,9 @@ impl Renderer {
                 button_text_color(self.theme),
             );
         }
+        for warning in &request.warnings {
+            self.draw_editor_warning_overlay(frame, width, height, request, *warning);
+        }
     }
 
     pub fn draw_editor_chrome_on_frame(
@@ -207,6 +219,57 @@ pub(crate) fn editor_board_scene_composition(
     };
     composition.player.sleeping = request.sleeping_player;
     composition
+}
+
+impl Renderer {
+    fn draw_editor_warning_overlay(
+        &mut self,
+        frame: &mut [u8],
+        width: u32,
+        height: u32,
+        request: &EditorScreenRequest,
+        warning: EditorWarningOverlay,
+    ) {
+        let Some(rect) = editor_warning_rect(self, request, warning) else {
+            return;
+        };
+        draw_count_label(
+            frame,
+            width,
+            height,
+            rect,
+            "!",
+            editor_warning_color(self.theme, warning.kind),
+        );
+    }
+}
+
+fn editor_warning_rect(
+    renderer: &Renderer,
+    request: &EditorScreenRequest,
+    warning: EditorWarningOverlay,
+) -> Option<ScreenRect> {
+    let (x, y, size) = renderer.box_sprite_rect_at(&request.viewport, warning.cell)?;
+    screen_rect_from_nonnegative_i32(x, y, size, size)
+}
+
+fn editor_warning_color(theme: RendererTheme, kind: EditorWarningKind) -> u8 {
+    match kind {
+        EditorWarningKind::Box => button_text_color(theme),
+        EditorWarningKind::Goal => theme.gray_5,
+    }
+}
+
+fn screen_rect_from_nonnegative_i32(x: i32, y: i32, w: u32, h: u32) -> Option<ScreenRect> {
+    if x < 0 || y < 0 || w == 0 || h == 0 {
+        return None;
+    }
+    Some(ScreenRect {
+        x: x as u32,
+        y: y as u32,
+        w,
+        h,
+    })
 }
 
 fn draw_editor_controls(
@@ -472,12 +535,14 @@ fn button_text_color(theme: RendererTheme) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use super::Renderer;
+    use super::{Renderer, button_text_color, editor_warning_color, editor_warning_rect};
     use crate::layout::{
-        editor_mode_menu_option_rects, editor_mode_menu_rect, fit_board_viewport_for_controls,
+        BoardViewport, editor_mode_menu_option_rects, editor_mode_menu_rect,
+        fit_board_viewport_for_controls,
     };
     use crate::screen_requests::{
-        EditorModeIndicator, EditorModeMenuScreenRequest, EditorScreenRequest,
+        EditorModeIndicator, EditorModeMenuScreenRequest, EditorScreenRequest, EditorWarningKind,
+        EditorWarningOverlay,
     };
     use sokobanitron_gameplay::{BoardCell, BoardSolveState, BoardView, TileKind};
 
@@ -510,6 +575,7 @@ mod tests {
             viewport: fit_board_viewport_for_controls(64, 64, &board),
             board,
             move_counts: Vec::new(),
+            warnings: Vec::new(),
             mode_indicator: EditorModeIndicator::Move,
             puzzle_solved: false,
             can_zoom_out: false,
@@ -532,6 +598,7 @@ mod tests {
             viewport: fit_board_viewport_for_controls(64, 64, &board),
             board,
             move_counts: Vec::new(),
+            warnings: Vec::new(),
             mode_indicator: EditorModeIndicator::Play,
             puzzle_solved: true,
             can_zoom_out: false,
@@ -554,6 +621,7 @@ mod tests {
             viewport: fit_board_viewport_for_controls(64, 64, &board),
             board,
             move_counts: Vec::new(),
+            warnings: Vec::new(),
             mode_indicator: EditorModeIndicator::Move,
             puzzle_solved: false,
             can_zoom_out: false,
@@ -576,6 +644,7 @@ mod tests {
             viewport: fit_board_viewport_for_controls(256, 256, &board),
             board,
             move_counts: Vec::new(),
+            warnings: Vec::new(),
             mode_indicator: EditorModeIndicator::Draw,
             puzzle_solved: false,
             can_zoom_out: false,
@@ -599,5 +668,70 @@ mod tests {
         let sample_y = second_option.y + 10;
         let idx = (sample_y * 256 + sample_x) as usize;
         assert_eq!(frame[idx], background[idx]);
+    }
+
+    #[test]
+    fn editor_warning_rect_uses_box_label_size_for_goals() {
+        let board = BoardView::new(
+            1,
+            1,
+            vec![TileKind::Goal],
+            vec![false],
+            None,
+            None,
+            BoardSolveState::Unsolved,
+        );
+        let request = EditorScreenRequest {
+            viewport: BoardViewport {
+                origin_x: 0,
+                origin_y: 0,
+                cell_size: 48,
+                board_pixel_width: 48,
+                board_pixel_height: 48,
+                outer_margin_tiles: 0,
+            },
+            board,
+            move_counts: Vec::new(),
+            warnings: Vec::new(),
+            mode_indicator: EditorModeIndicator::Draw,
+            puzzle_solved: false,
+            can_zoom_out: false,
+            can_zoom_in: false,
+            sleeping_player: false,
+        };
+        let renderer = Renderer::new();
+
+        let box_rect = editor_warning_rect(
+            &renderer,
+            &request,
+            EditorWarningOverlay {
+                cell: BoardCell::new(0, 0),
+                kind: EditorWarningKind::Box,
+            },
+        );
+        let goal_rect = editor_warning_rect(
+            &renderer,
+            &request,
+            EditorWarningOverlay {
+                cell: BoardCell::new(0, 0),
+                kind: EditorWarningKind::Goal,
+            },
+        );
+
+        assert_eq!(goal_rect, box_rect);
+    }
+
+    #[test]
+    fn editor_warning_colors_match_box_counts_and_goal_tile_palette() {
+        let renderer = Renderer::new();
+
+        assert_eq!(
+            editor_warning_color(renderer.theme, EditorWarningKind::Box),
+            button_text_color(renderer.theme)
+        );
+        assert_eq!(
+            editor_warning_color(renderer.theme, EditorWarningKind::Goal),
+            renderer.theme.gray_5
+        );
     }
 }

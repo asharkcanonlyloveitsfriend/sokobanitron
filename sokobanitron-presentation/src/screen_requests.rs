@@ -91,6 +91,7 @@ pub struct EditorScreenRequest {
     pub board: BoardView,
     pub viewport: BoardViewport,
     pub move_counts: Vec<EditorCountOverlay>,
+    pub warnings: Vec<EditorWarningOverlay>,
     pub mode_indicator: EditorModeIndicator,
     pub puzzle_solved: bool,
     pub can_zoom_out: bool,
@@ -114,6 +115,18 @@ pub struct EditorModeMenuScreenRequest {
 pub struct EditorCountOverlay {
     pub rect: ScreenRect,
     pub count: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditorWarningOverlay {
+    pub cell: BoardCell,
+    pub kind: EditorWarningKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorWarningKind {
+    Box,
+    Goal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

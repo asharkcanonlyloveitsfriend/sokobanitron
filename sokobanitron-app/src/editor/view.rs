@@ -6,12 +6,10 @@
 
 use presentation::layout::BoardViewport;
 use sokobanitron_gameplay::{BoardCell, BoardSolveState, BoardView, TileKind};
-use sokobanitron_level_editor::{EditorMode, LevelEditor, NonVoidBounds};
+use sokobanitron_level_editor::{DrawTool, EditorMode, LevelEditor, NonVoidBounds};
 
 use crate::shared::{DoubleTapTracker, PointerId, TouchPointerState, TouchStartPolicy};
 use std::time::Duration;
-
-use super::paint_mode::PaintMode;
 
 const GRID_MARGIN_TILES: u32 = 1;
 const BASE_VISIBLE_COLS: u32 = 9;
@@ -41,6 +39,7 @@ pub(crate) struct EditorInteractionState {
     pub touch: TouchPointerState,
     pub active_stroke: Option<ActiveEditorStroke>,
     pub double_tap: DoubleTapTracker<EditorDoubleTapTarget>,
+    pub pending_draw_double_tap_tool: Option<DrawTool>,
     pub double_tap_window: Duration,
 }
 
@@ -51,6 +50,7 @@ impl Default for EditorInteractionState {
             touch: TouchPointerState::with_touch_start_policy(TouchStartPolicy::Deferred),
             active_stroke: None,
             double_tap: DoubleTapTracker::default(),
+            pending_draw_double_tap_tool: None,
             double_tap_window: Duration::from_millis(325),
         }
     }
@@ -59,7 +59,7 @@ impl Default for EditorInteractionState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ActiveEditorStroke {
     pub pointer_id: PointerId,
-    pub mode: PaintMode,
+    pub tool: DrawTool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,6 +103,7 @@ pub fn reset_editor_interaction_state(editor: &mut EditorUiState) {
     editor.interaction.touch.reset();
     editor.interaction.active_stroke = None;
     editor.interaction.double_tap.clear();
+    editor.interaction.pending_draw_double_tap_tool = None;
 }
 
 pub fn reset_editor_view_state(editor: &mut EditorUiState) {
